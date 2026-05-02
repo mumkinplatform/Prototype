@@ -72,7 +72,7 @@ export function LandingPage() {
               <h1 className="text-5xl lg:text-6xl text-gray-900 mb-6 leading-tight" style={{ fontWeight: 800 }}>
                 مُمكّن
                 <br />
-                <span className="text-[#e35654]">نجعل المستحيل ممكنًا</span>
+                <span className="text-[#e35654]">نبتكر لِنُمَكِّن</span>
               </h1>
  
               <p className="text-xl text-gray-600 mb-8 leading-relaxed">
