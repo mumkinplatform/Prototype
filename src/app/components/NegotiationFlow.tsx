@@ -102,14 +102,14 @@ export function NegotiationFlow() {
                   <div className="flex flex-col items-center gap-1.5">
                     <div
                       className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${
-                        done ? "bg-[#a41b42] text-white" : active ? "bg-[#a41b42] text-white shadow-lg shadow-[#a41b42]/30 scale-110" : "bg-gray-100 text-gray-400"
+                        done ? "bg-[#e35654] text-white" : active ? "bg-[#e35654] text-white shadow-lg shadow-[#e35654]/30 scale-110" : "bg-gray-100 text-gray-400"
                       }`}
                     >
                       {done ? <CheckCircle2 className="w-4 h-4" /> : <s.icon className="w-4 h-4" />}
                     </div>
                     <span
                       className="text-xs whitespace-nowrap"
-                      style={{ color: active || done ? "#a41b42" : "#9ca3af", fontWeight: active ? 600 : 400 }}
+                      style={{ color: active || done ? "#e35654" : "#9ca3af", fontWeight: active ? 600 : 400 }}
                     >
                       {s.label}
                     </span>
@@ -117,7 +117,7 @@ export function NegotiationFlow() {
                   {i < steps.length - 1 && (
                     <div
                       className="flex-1 h-0.5 mx-1 rounded-full mb-4 transition-all duration-300"
-                      style={{ background: step > s.id ? "#a41b42" : "#e5e7eb" }}
+                      style={{ background: step > s.id ? "#e35654" : "#e5e7eb" }}
                     />
                   )}
                 </div>
@@ -151,7 +151,7 @@ export function NegotiationFlow() {
                 <div key={i} className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
                   <div
                     className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs flex-shrink-0"
-                    style={{ background: m.from === "me" ? "#a41b42" : "#6366f1", fontWeight: 700 }}
+                    style={{ background: m.from === "me" ? "#e35654" : "#6366f1", fontWeight: 700 }}
                   >
                     {m.from === "me" ? "ر" : "م"}
                   </div>
@@ -159,7 +159,7 @@ export function NegotiationFlow() {
                     <div
                       className={`px-4 py-2.5 rounded-2xl text-sm ${
                         m.from === "me"
-                          ? "bg-[#a41b42] text-white rounded-tr-sm"
+                          ? "bg-[#e35654] text-white rounded-tr-sm"
                           : "bg-white border border-gray-200 text-gray-700 rounded-tl-sm shadow-sm"
                       }`}
                     >
@@ -181,11 +181,11 @@ export function NegotiationFlow() {
                   onChange={(e) => setNewMsg(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && sendMsg()}
                   placeholder="اكتب رسالتك..."
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                 />
                 <button
                   onClick={sendMsg}
-                  className="w-10 h-10 rounded-xl bg-[#a41b42] text-white flex items-center justify-center hover:bg-[#8b1538] transition-colors"
+                  className="w-10 h-10 rounded-xl bg-[#e35654] text-white flex items-center justify-center hover:bg-[#cc4a48] transition-colors"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -195,7 +195,7 @@ export function NegotiationFlow() {
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
               <button
                 onClick={next}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20 transition-colors"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20 transition-colors"
                 style={{ fontWeight: 600 }}
               >
                 التالي: مراجعة الشروط
@@ -219,7 +219,7 @@ export function NegotiationFlow() {
                 </div>
                 <p className="text-gray-500 text-xs">
                   هذه الشروط وضعها <span className="text-[#6366f1]" style={{ fontWeight: 700 }}>المنظم</span> — البنود المميزة بـ
-                  <span className="inline-flex items-center gap-0.5 mx-1 px-1.5 py-0.5 rounded bg-[#a41b42]/10 text-[#a41b42]" style={{ fontWeight: 600, fontSize: "0.65rem" }}>
+                  <span className="inline-flex items-center gap-0.5 mx-1 px-1.5 py-0.5 rounded bg-[#e35654]/10 text-[#e35654]" style={{ fontWeight: 600, fontSize: "0.65rem" }}>
                     <Edit3 className="w-2.5 h-2.5" /> تعديل
                   </span>
                   يمكنك اقتراح تعديل عليها
@@ -230,7 +230,7 @@ export function NegotiationFlow() {
                 <div
                   key={i}
                   className={`flex items-center gap-3 p-4 rounded-xl transition-all ${
-                    editingTerm === i ? "bg-[#a41b42]/5 border border-[#a41b42]/20" : "bg-gray-50"
+                    editingTerm === i ? "bg-[#e35654]/5 border border-[#e35654]/20" : "bg-gray-50"
                   }`}
                 >
                   <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 shadow-sm">
@@ -259,7 +259,7 @@ export function NegotiationFlow() {
                           u[i] = e.target.value;
                           setTermValues(u);
                         }}
-                        className="text-gray-900 text-sm bg-transparent border-b-2 border-[#a41b42] focus:outline-none w-full"
+                        className="text-gray-900 text-sm bg-transparent border-b-2 border-[#e35654] focus:outline-none w-full"
                         style={{ fontWeight: 600 }}
                         autoFocus
                       />
@@ -271,7 +271,7 @@ export function NegotiationFlow() {
                     <button
                       onClick={() => setEditingTerm(editingTerm === i ? null : i)}
                       className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-                        editingTerm === i ? "bg-[#a41b42] text-white" : "text-gray-400 hover:text-[#a41b42] hover:bg-[#a41b42]/10"
+                        editingTerm === i ? "bg-[#e35654] text-white" : "text-gray-400 hover:text-[#e35654] hover:bg-[#e35654]/10"
                       }`}
                       title="اقترح تعديلاً على هذا البند"
                     >
@@ -297,7 +297,7 @@ export function NegotiationFlow() {
               <button onClick={prev} className="flex items-center gap-2 text-gray-500 text-sm hover:text-gray-700 transition-colors" style={{ fontWeight: 500 }}>
                 <ArrowRight className="w-4 h-4" /> رجوع
               </button>
-              <button onClick={next} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20 transition-colors" style={{ fontWeight: 600 }}>
+              <button onClick={next} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20 transition-colors" style={{ fontWeight: 600 }}>
                 التالي: إنشاء العقد
               </button>
             </div>
@@ -314,7 +314,7 @@ export function NegotiationFlow() {
             <div className="px-7 py-6">
               <div className="border border-gray-200 rounded-2xl overflow-hidden">
                 <div className="bg-gradient-to-r from-gray-900 to-gray-700 px-7 py-6 text-center text-white">
-                  <div className="w-12 h-12 rounded-xl bg-[#a41b42] flex items-center justify-center mx-auto mb-3">
+                  <div className="w-12 h-12 rounded-xl bg-[#e35654] flex items-center justify-center mx-auto mb-3">
                     <FileText className="w-6 h-6" />
                   </div>
                   <h3 style={{ fontWeight: 800 }}>عقد رعاية رسمي</h3>
@@ -347,7 +347,7 @@ export function NegotiationFlow() {
                   type="checkbox"
                   checked={agreed}
                   onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-[#a41b42]"
+                  className="mt-0.5 w-4 h-4 accent-[#e35654]"
                 />
                 <span className="text-gray-600 text-sm">قرأت جميع بنود العقد وأوافق على الشرو والأحكام.</span>
               </label>
@@ -359,7 +359,7 @@ export function NegotiationFlow() {
               <button
                 onClick={next}
                 disabled={!agreed}
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm transition-all ${agreed ? "bg-[#a41b42] hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20" : "bg-gray-200 cursor-not-allowed"}`}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm transition-all ${agreed ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20" : "bg-gray-200 cursor-not-allowed"}`}
                 style={{ fontWeight: 600 }}
               >
                 التالي: رفع العقد الموقّع
@@ -396,7 +396,7 @@ export function NegotiationFlow() {
               <button
                 onClick={() => setUploaded(true)}
                 className={`w-full border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-200 ${
-                  uploaded ? "border-green-400 bg-green-50" : "border-[#a41b42]/30 bg-[#a41b42]/5 hover:bg-[#a41b42]/10 hover:border-[#a41b42]/50"
+                  uploaded ? "border-green-400 bg-green-50" : "border-[#e35654]/30 bg-[#e35654]/5 hover:bg-[#e35654]/10 hover:border-[#e35654]/50"
                 }`}
               >
                 {uploaded ? (
@@ -411,8 +411,8 @@ export function NegotiationFlow() {
                   </div>
                 ) : (
                   <div>
-                    <div className="w-16 h-16 rounded-2xl bg-[#a41b42]/10 flex items-center justify-center mx-auto mb-4">
-                      <Upload className="w-8 h-8 text-[#a41b42]" />
+                    <div className="w-16 h-16 rounded-2xl bg-[#e35654]/10 flex items-center justify-center mx-auto mb-4">
+                      <Upload className="w-8 h-8 text-[#e35654]" />
                     </div>
                     <p className="text-gray-800 mb-1" style={{ fontWeight: 700 }}>
                       {isFinancial ? "ارفع الفاتورة أو إثبات الدفع" : "ارفع نسخة العقد الموقّعة أو المختومة"}
@@ -459,7 +459,7 @@ export function NegotiationFlow() {
               <button
                 onClick={next}
                 disabled={!uploaded}
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm transition-all ${uploaded ? "bg-[#a41b42] hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20" : "bg-gray-200 cursor-not-allowed"}`}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm transition-all ${uploaded ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20" : "bg-gray-200 cursor-not-allowed"}`}
                 style={{ fontWeight: 600 }}
               >
                 {isFinancial ? "تأكيد رفع المصاريف ✅" : "تم توقيع العقد ✅"}
@@ -477,7 +477,7 @@ export function NegotiationFlow() {
             <h2 className="text-gray-900 text-2xl mb-2" style={{ fontWeight: 800 }}>🎉 تمّت الرعاية بنجاح!</h2>
             <p className="text-gray-500 mb-2 max-w-sm mx-auto">
               تمّ اعتماد عقد رعايتك لـ{" "}
-              <span style={{ fontWeight: 700, color: "#a41b42" }}>هاكاثون NEOM 2025</span> وأصبح نشطًا.
+              <span style={{ fontWeight: 700, color: "#e35654" }}>هاكاثون NEOM 2025</span> وأصبح نشطًا.
             </p>
             <p className="text-gray-400 text-sm mb-8">سيصلك إشعار بريدي يتضمن نسخة العقد المعتمدة.</p>
 
@@ -505,7 +505,7 @@ export function NegotiationFlow() {
               </button>
               <button
                 onClick={() => navigate("/sponsor/sponsorships")}
-                className="flex items-center gap-2 justify-center px-6 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20 transition-colors"
+                className="flex items-center gap-2 justify-center px-6 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20 transition-colors"
                 style={{ fontWeight: 600 }}
               >
                 عرض رعاياتي

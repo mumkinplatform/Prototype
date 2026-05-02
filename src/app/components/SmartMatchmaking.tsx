@@ -22,7 +22,7 @@ const skillOptions = [
   { id: "frontend", label: "Frontend", icon: Code, color: "#6366f1" },
   { id: "backend", label: "Backend", icon: Database, color: "#10b981" },
   { id: "ai", label: "AI / ML", icon: Cpu, color: "#f59e0b" },
-  { id: "uiux", label: "UI/UX", icon: Layers, color: "#a41b42" },
+  { id: "uiux", label: "UI/UX", icon: Layers, color: "#e35654" },
   { id: "mobile", label: "Mobile", icon: Smartphone, color: "#8b5cf6" },
   { id: "devops", label: "DevOps", icon: Globe, color: "#06b6d4" },
   { id: "data", label: "Data Science", icon: Brain, color: "#ec4899" },
@@ -35,14 +35,14 @@ const suggestedTeams = [
     name: "فريق الابتكار الرقمي",
     score: 98,
     members: [
-      { name: "سلمى العتيبي", skill: "UI/UX", avatar: "س", color: "#a41b42", level: 90 },
+      { name: "سلمى العتيبي", skill: "UI/UX", avatar: "س", color: "#e35654", level: 90 },
       { name: "أحمد المطيري", skill: "AI/ML", avatar: "أ", color: "#f59e0b", level: 88 },
       { name: "نورة الشمري", skill: "Backend", avatar: "ن", color: "#10b981", level: 92 },
       { name: "خالد الدوسري", skill: "Mobile", avatar: "خ", color: "#8b5cf6", level: 85 },
     ],
     tags: ["Frontend", "AI", "Backend", "Mobile"],
     reason: "فريق متكامل يجمع مهارات تقنية متنوعة مع خبرة عملية في مجال الابتكار.",
-    color: "#a41b42",
+    color: "#e35654",
   },
   {
     id: 2,
@@ -64,7 +64,7 @@ const suggestedTeams = [
     members: [
       { name: "منال الحربي", skill: "Blockchain", avatar: "م", color: "#f97316", level: 83 },
       { name: "طارق السبيعي", skill: "Backend", avatar: "ط", color: "#10b981", level: 88 },
-      { name: "دانة الزهراني", skill: "UI/UX", avatar: "د", color: "#a41b42", level: 94 },
+      { name: "دانة الزهراني", skill: "UI/UX", avatar: "د", color: "#e35654", level: 94 },
     ],
     tags: ["Blockchain", "Backend", "UX"],
     reason: "فريق مثالي لمشاريع Web3 والتطبيقات اللامركزية مع تصميم احترافي.",
@@ -127,7 +127,7 @@ export function SmartMatchmaking() {
 
       {/* Header */}
       <div className="text-center mb-10">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#a41b42] to-[#8b1538] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[#a41b42]/25">
+        <div className="w-16 h-16 rounded-2xl bg-[#e35654] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[#e35654]/25">
           <Sparkles className="w-8 h-8 text-white" />
         </div>
         <h1 className="text-3xl text-gray-900 mb-3" style={{ fontWeight: 800 }}>
@@ -145,7 +145,7 @@ export function SmartMatchmaking() {
           <div className="flex items-center justify-center gap-2 mb-8">
             {["اختر مهاراتك", "التحليل الذكي", "اكتشف فريقك"].map((step, i) => (
               <div key={i} className="flex items-center gap-2">
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${i === 0 ? "bg-[#a41b42] text-white" : "bg-gray-100 text-gray-400"}`} style={{ fontWeight: 500 }}>
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${i === 0 ? "bg-[#e35654] text-white" : "bg-gray-100 text-gray-400"}`} style={{ fontWeight: 500 }}>
                   <span className="w-5 h-5 rounded-full bg-white/30 flex items-center justify-center text-xs" style={{ fontWeight: 700 }}>{i + 1}</span>
                   {step}
                 </div>
@@ -156,8 +156,8 @@ export function SmartMatchmaking() {
 
           <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-                <Brain className="w-5 h-5 text-[#a41b42]" />
+              <div className="w-10 h-10 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+                <Brain className="w-5 h-5 text-[#e35654]" />
               </div>
               <div>
                 <h2 className="text-gray-900" style={{ fontWeight: 700 }}>
@@ -176,7 +176,7 @@ export function SmartMatchmaking() {
                     onClick={() => toggleSkill(skill.id)}
                     className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all duration-200 ${
                       active
-                        ? "border-[#a41b42] bg-[#a41b42]/5 shadow-sm"
+                        ? "border-[#e35654] bg-[#e35654]/5 shadow-sm"
                         : "border-gray-100 hover:border-gray-200 bg-gray-50"
                     }`}
                   >
@@ -194,14 +194,14 @@ export function SmartMatchmaking() {
                     <span
                       className="text-sm"
                       style={{
-                        color: active ? "#a41b42" : "#374151",
+                        color: active ? "#e35654" : "#374151",
                         fontWeight: active ? 600 : 400,
                       }}
                     >
                       {skill.label}
                     </span>
                     {active && (
-                      <CheckCircle2 className="w-4 h-4 text-[#a41b42]" />
+                      <CheckCircle2 className="w-4 h-4 text-[#e35654]" />
                     )}
                   </button>
                 );
@@ -213,7 +213,7 @@ export function SmartMatchmaking() {
               <label className="text-gray-700 text-sm block mb-2" style={{ fontWeight: 500 }}>
                 الهاكاثون المستهدف
               </label>
-              <select className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all">
+              <select className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all">
                 <option>هاكاثون NEOM 2025</option>
                 <option>Health Tech Hackathon</option>
                 <option>Fintech Innovation Cup</option>
@@ -231,7 +231,7 @@ export function SmartMatchmaking() {
                 disabled={selectedSkills.length === 0}
                 className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-white text-sm transition-all duration-200 ${
                   selectedSkills.length > 0
-                    ? "bg-[#a41b42] hover:bg-[#8b1538] shadow-lg shadow-[#a41b42]/25"
+                    ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25"
                     : "bg-gray-200 cursor-not-allowed"
                 }`}
                 style={{ fontWeight: 600 }}
@@ -251,15 +251,15 @@ export function SmartMatchmaking() {
           <div className="relative w-24 h-24 mx-auto mb-8">
             <div className="w-24 h-24 rounded-full border-4 border-gray-100" />
             <div
-              className="absolute inset-0 rounded-full border-4 border-[#a41b42] border-t-transparent"
+              className="absolute inset-0 rounded-full border-4 border-[#e35654] border-t-transparent"
               style={{
                 transform: "rotate(-90deg)",
-                background: `conic-gradient(#a41b42 ${loadingProgress}%, transparent 0%)`,
+                background: `conic-gradient(#e35654 ${loadingProgress}%, transparent 0%)`,
                 borderRadius: "50%",
               }}
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <Brain className="w-8 h-8 text-[#a41b42] animate-pulse" />
+              <Brain className="w-8 h-8 text-[#e35654] animate-pulse" />
             </div>
           </div>
 
@@ -273,7 +273,7 @@ export function SmartMatchmaking() {
           <div className="max-w-sm mx-auto">
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
               <div
-                className="h-full bg-[#a41b42] rounded-full transition-all duration-300"
+                className="h-full bg-[#e35654] rounded-full transition-all duration-300"
                 style={{ width: `${loadingProgress}%` }}
               />
             </div>
@@ -323,7 +323,7 @@ export function SmartMatchmaking() {
                 key={team.id}
                 className={`bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all duration-200 cursor-pointer ${
                   selectedTeam === team.id
-                    ? "border-[#a41b42] shadow-md shadow-[#a41b42]/10"
+                    ? "border-[#e35654] shadow-md shadow-[#e35654]/10"
                     : "border-gray-100 hover:border-gray-200"
                 }`}
                 onClick={() => setSelectedTeam(team.id)}
@@ -435,7 +435,7 @@ export function SmartMatchmaking() {
                         className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm transition-all duration-200 flex-1 justify-center ${
                           joined
                             ? "bg-green-100 text-green-700"
-                            : "bg-[#a41b42] text-white hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20"
+                            : "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20"
                         }`}
                         style={{ fontWeight: 600 }}
                       >
@@ -459,10 +459,10 @@ export function SmartMatchmaking() {
           </div>
 
           {/* How it works info */}
-          <div className="mt-8 bg-gradient-to-br from-[#a41b42]/5 to-[#a41b42]/10 rounded-2xl p-6 border border-[#a41b42]/10">
+          <div className="mt-8 bg-gradient-to-br from-[#e35654]/5 to-[#e35654]/10 rounded-2xl p-6 border border-[#e35654]/10">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-                <Brain className="w-4 h-4 text-[#a41b42]" />
+              <div className="w-8 h-8 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+                <Brain className="w-4 h-4 text-[#e35654]" />
               </div>
               <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
                 كيف يعمل النظام؟
@@ -475,8 +475,8 @@ export function SmartMatchmaking() {
                 { icon: Star, title: "فرق متوازنة", desc: "يقترح فرقًا تجمع مهارات تكميلية لتحقيق أفضل النتائج" },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#a41b42]/10 flex items-center justify-center flex-shrink-0">
-                    <item.icon className="w-4 h-4 text-[#a41b42]" />
+                  <div className="w-8 h-8 rounded-lg bg-[#e35654]/10 flex items-center justify-center flex-shrink-0">
+                    <item.icon className="w-4 h-4 text-[#e35654]" />
                   </div>
                   <div>
                     <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 600 }}>

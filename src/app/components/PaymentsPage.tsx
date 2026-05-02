@@ -47,7 +47,7 @@ const invoices = [
     date: "22 يوليو 2024",
     dueDate: "5 أغسطس 2024",
     status: "متأخر",
-    statusColor: "#a41b42",
+    statusColor: "#e35654",
     statusBg: "#fef2f2",
     statusIcon: AlertCircle,
   },
@@ -69,7 +69,7 @@ const invoices = [
 const summary = [
   { label: "إجمالي المدفوعات", value: "195,000 ر.س", color: "#10b981", bg: "#f0fdf4", icon: CheckCircle2 },
   { label: "مستحق الدفع", value: "40,000 ر.س", color: "#f59e0b", bg: "#fffbeb", icon: Clock },
-  { label: "متأخر", value: "22,500 ر.س", color: "#a41b42", bg: "#fef2f2", icon: AlertCircle },
+  { label: "متأخر", value: "22,500 ر.س", color: "#e35654", bg: "#fef2f2", icon: AlertCircle },
   { label: "إجمالي الفواتير", value: "4", color: "#6366f1", bg: "#eef2ff", icon: FileText },
 ];
 
@@ -132,7 +132,7 @@ export function PaymentsPage() {
                 onClick={() => setActiveTab(tab)}
                 className={`px-4 py-2 rounded-xl text-sm transition-all ${
                   activeTab === tab
-                    ? "bg-[#a41b42] text-white shadow-sm"
+                    ? "bg-[#e35654] text-white shadow-sm"
                     : "bg-white border border-gray-200 text-gray-500 hover:border-gray-300"
                 }`}
                 style={{ fontWeight: activeTab === tab ? 700 : 500 }}
@@ -190,7 +190,7 @@ export function PaymentsPage() {
                     {inv.status !== "مدفوع" && (
                       <button
                         onClick={() => navigate("/sponsor/messages", { state: { financial: true } })}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8b1538] shadow-sm shadow-[#a41b42]/20 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20 transition-colors"
                         style={{ fontWeight: 600 }}
                       >
                         <CreditCard className="w-3.5 h-3.5" />

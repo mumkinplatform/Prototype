@@ -27,11 +27,11 @@ const hackathonsData = [
     title: "هاكاثون شفاء التقني",
     org: "وزارة الصحة",
     orgLogo: "ص",
-    orgColor: "#a41b42",
+    orgColor: "#e35654",
     tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#a41b42", "#6366f1"],
+    tagColors: ["#e35654", "#6366f1"],
     type: "حضوري",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     date: "01 يونيو 2025",
     deadline: "15 مايو 2025",
@@ -124,14 +124,14 @@ const hackathonsData = [
     tags: ["المدن الذكية", "الاستدامة"],
     tagColors: ["#f59e0b", "#10b981"],
     type: "حضوري",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     date: "20 يوليو 2025",
     deadline: "5 يوليو 2025",
     prize: "200,000 ر.س",
     viewers: 310,
     teams: 85,
-    cover: "from-amber-700 via-orange-600 to-[#72112e]",
+    cover: "from-amber-700 via-orange-600 to-[#a93b39]",
     coverText: "NEOM\n2025",
     featured: true,
     location: "نيوم، تبوك",
@@ -184,7 +184,7 @@ const hackathonsData = [
     orgLogo: "STC",
     orgColor: "#8b5cf6",
     tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#a41b42"],
+    tagColors: ["#8b5cf6", "#e35654"],
     type: "إلكتروني",
     typeColor: "#10b981",
     typeBg: "#f0fdf4",
@@ -343,7 +343,7 @@ export function HackathonDetails() {
         <div className="relative max-w-6xl mx-auto px-4 sm:px-8 pb-8 pt-6">
           <div className="flex flex-wrap gap-2 mb-4">
             {hackathon.featured && (
-              <span className="flex items-center gap-1.5 bg-[#a41b42] text-white text-xs px-3 py-1.5 rounded-full" style={{ fontWeight: 600 }}>
+              <span className="flex items-center gap-1.5 bg-[#e35654] text-white text-xs px-3 py-1.5 rounded-full" style={{ fontWeight: 600 }}>
                 <Star className="w-3 h-3" />
                 هاكاثون مميز
               </span>
@@ -390,7 +390,7 @@ export function HackathonDetails() {
               { icon: Trophy, label: "إجمالي الجوائز", value: hackathon.prize, color: "#f59e0b" },
               { icon: Users, label: "فرق مشاركة", value: `${hackathon.teams} فريق`, color: "#10b981" },
               { icon: Clock, label: "مدة الهاكاثون", value: hackathon.duration, color: "#6366f1" },
-              { icon: Calendar, label: "تاريخ الانطلاق", value: hackathon.date, color: "#a41b42" },
+              { icon: Calendar, label: "تاريخ الانطلاق", value: hackathon.date, color: "#e35654" },
             ].map((stat, i) => (
               <div key={i} className="bg-white/10 backdrop-blur-sm rounded-2xl p-3.5 border border-white/10">
                 <stat.icon className="w-4 h-4 mb-2" style={{ color: stat.color }} />
@@ -412,7 +412,7 @@ export function HackathonDetails() {
             {/* About */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="text-gray-900 mb-3 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                <Globe className="w-4 h-4 text-[#a41b42]" />
+                <Globe className="w-4 h-4 text-[#e35654]" />
                 عن الهاكاثون
               </h2>
               <p className="text-gray-600 leading-relaxed" style={{ fontSize: "0.9rem" }}>
@@ -422,7 +422,7 @@ export function HackathonDetails() {
               <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-gray-100">
                 {[
                   { label: "المشاركون", value: hackathon.participants, icon: Users, color: "#6366f1" },
-                  { label: "المشاهدات", value: hackathon.viewers, icon: Eye, color: "#a41b42" },
+                  { label: "المشاهدات", value: hackathon.viewers, icon: Eye, color: "#e35654" },
                   { label: "الفرق المسجلة", value: hackathon.teams, icon: Shield, color: "#10b981" },
                 ].map((s, i) => (
                   <div key={i} className="text-center p-3 rounded-xl bg-gray-50">
@@ -437,7 +437,7 @@ export function HackathonDetails() {
             {/* Timeline */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="text-gray-900 mb-5 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                <Calendar className="w-4 h-4 text-[#a41b42]" />
+                <Calendar className="w-4 h-4 text-[#e35654]" />
                 الجدول الزمني
               </h2>
               <div className="relative">
@@ -449,8 +449,8 @@ export function HackathonDetails() {
                       <div
                         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 z-10 border-2"
                         style={{
-                          background: item.done ? "#a41b42" : "white",
-                          borderColor: item.done ? "#a41b42" : "#e5e7eb",
+                          background: item.done ? "#e35654" : "white",
+                          borderColor: item.done ? "#e35654" : "#e5e7eb",
                         }}
                       >
                         {item.done ? (
@@ -465,7 +465,7 @@ export function HackathonDetails() {
                             className="text-xs px-2 py-0.5 rounded-md"
                             style={{
                               background: item.done ? "#fef2f2" : "#f3f4f6",
-                              color: item.done ? "#a41b42" : "#6b7280",
+                              color: item.done ? "#e35654" : "#6b7280",
                               fontWeight: 600,
                             }}
                           >
@@ -493,7 +493,7 @@ export function HackathonDetails() {
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-gray-900 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                  <Handshake className="w-4 h-4 text-[#a41b42]" />
+                  <Handshake className="w-4 h-4 text-[#e35654]" />
                   باقات الرعاية
                 </h2>
                 <span className="text-gray-400 text-xs">اختر الباقة المناسبة لشركتك</span>
@@ -625,7 +625,7 @@ export function HackathonDetails() {
                 disabled={!selectedPackage}
                 className={`w-full py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 ${
                   selectedPackage
-                    ? "bg-[#a41b42] text-white hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/25"
+                    ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/25"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed"
                 }`}
                 style={{ fontWeight: 600 }}
@@ -674,7 +674,7 @@ export function HackathonDetails() {
             </div>
 
             {/* Quick Info */}
-            <div className="bg-gradient-to-br from-[#a41b42] to-[#c03c3a] rounded-2xl p-5 text-white">
+            <div className="bg-[#e35654] rounded-2xl p-5 text-white">
               <h3 className="mb-3" style={{ fontWeight: 700, fontSize: "0.9rem" }}>
                 💡 لماذا ترعى هذا الهاكاثون؟
               </h3>

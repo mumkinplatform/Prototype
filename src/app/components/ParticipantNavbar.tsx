@@ -52,7 +52,7 @@ export function ParticipantNavbar({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Logo - يروح للصفحة الرئيسية */}
         <Link to="/" className="flex items-center gap-2 group">
-          <div className="w-9 h-9 rounded-xl bg-[#a41b42] flex items-center justify-center shadow-sm">
+          <div className="w-9 h-9 rounded-xl bg-[#e35654] flex items-center justify-center shadow-sm">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <span className="text-xl text-gray-900" style={{ fontWeight: 700 }}>
@@ -70,7 +70,7 @@ export function ParticipantNavbar({
                 onClick={() => handleNav(item.page)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-all duration-200 ${
                   active
-                    ? 'bg-[#a41b42]/10 text-[#a41b42]'
+                    ? 'bg-[#e35654]/10 text-[#e35654]'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 }`}
                 style={{ fontWeight: active ? 600 : 400 }}
@@ -88,7 +88,7 @@ export function ParticipantNavbar({
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
               placeholder="ابحث..."
-              className="pr-9 pl-4 py-2 rounded-xl border border-gray-100 bg-gray-50 text-xs w-36 focus:outline-none focus:border-[#a41b42] focus:bg-white focus:w-44 transition-all duration-200"
+              className="pr-9 pl-4 py-2 rounded-xl border border-gray-100 bg-gray-50 text-xs w-36 focus:outline-none focus:border-[#e35654] focus:bg-white focus:w-44 transition-all duration-200"
             />
           </div>
 
@@ -98,13 +98,13 @@ export function ParticipantNavbar({
           {/* Bell */}
           <button
             onClick={() => navigate("/participant/notifications")}
-            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-[#fef2f2] text-gray-400 hover:text-[#a41b42]"
+            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-[#fef2f2] text-gray-400 hover:text-[#e35654]"
             style={{ border: "1px solid #f3f4f6" }}
           >
             <Bell className="w-4 h-4" />
             <span
               className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white"
-              style={{ background: "#a41b42" }}
+              style={{ background: "#e35654" }}
             />
           </button>
 
@@ -113,7 +113,7 @@ export function ParticipantNavbar({
             onClick={handleAvatar}
             className="relative w-9 h-9 rounded-xl flex items-center justify-center text-white transition-transform hover:scale-105"
             style={{
-              background: "linear-gradient(135deg,#a41b42 0%,#8b1538 100%)",
+              background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
               fontWeight: 800,
               fontSize: "0.8rem",
               boxShadow: "0 4px 10px rgba(227,86,84,0.3)",

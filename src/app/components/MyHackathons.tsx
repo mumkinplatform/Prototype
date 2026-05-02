@@ -125,7 +125,7 @@ export default function MyHackathons() {
             </div>
             <Link
               to="/admin/create-hackathon"
-              className="px-6 py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20 transition-all flex items-center gap-2"
+              className="px-6 py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20 transition-all flex items-center gap-2"
               style={{ fontWeight: 600 }}
             >
               <Plus className="w-5 h-5" />
@@ -143,7 +143,7 @@ export default function MyHackathons() {
             onClick={() => setFilterStatus('all')}
             className={`px-4 py-3 text-sm transition-colors ${
               filterStatus === 'all' 
-                ? 'border-b-2 border-[#a41b42] text-[#a41b42]' 
+                ? 'border-b-2 border-[#e35654] text-[#e35654]' 
                 : 'text-gray-500 hover:text-gray-900'
             }`} 
             style={{ fontWeight: 600 }}
@@ -154,7 +154,7 @@ export default function MyHackathons() {
             onClick={() => setFilterStatus('draft')}
             className={`px-4 py-3 text-sm transition-colors ${
               filterStatus === 'draft' 
-                ? 'border-b-2 border-[#a41b42] text-[#a41b42]' 
+                ? 'border-b-2 border-[#e35654] text-[#e35654]' 
                 : 'text-gray-500 hover:text-gray-900'
             }`} 
             style={{ fontWeight: 600 }}
@@ -165,7 +165,7 @@ export default function MyHackathons() {
             onClick={() => setFilterStatus('published')}
             className={`px-4 py-3 text-sm transition-colors ${
               filterStatus === 'published' 
-                ? 'border-b-2 border-[#a41b42] text-[#a41b42]' 
+                ? 'border-b-2 border-[#e35654] text-[#e35654]' 
                 : 'text-gray-500 hover:text-gray-900'
             }`} 
             style={{ fontWeight: 600 }}
@@ -176,7 +176,7 @@ export default function MyHackathons() {
             onClick={() => setFilterStatus('ongoing')}
             className={`px-4 py-3 text-sm transition-colors ${
               filterStatus === 'ongoing' 
-                ? 'border-b-2 border-[#a41b42] text-[#a41b42]' 
+                ? 'border-b-2 border-[#e35654] text-[#e35654]' 
                 : 'text-gray-500 hover:text-gray-900'
             }`} 
             style={{ fontWeight: 600 }}
@@ -187,7 +187,7 @@ export default function MyHackathons() {
             onClick={() => setFilterStatus('completed')}
             className={`px-4 py-3 text-sm transition-colors ${
               filterStatus === 'completed' 
-                ? 'border-b-2 border-[#a41b42] text-[#a41b42]' 
+                ? 'border-b-2 border-[#e35654] text-[#e35654]' 
                 : 'text-gray-500 hover:text-gray-900'
             }`} 
             style={{ fontWeight: 600 }}
@@ -199,7 +199,7 @@ export default function MyHackathons() {
         {/* Hackathons Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredHackathons.map((hackathon) => (
-            <div key={hackathon.id} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#a41b42] hover:shadow-lg transition-all flex flex-col">
+            <div key={hackathon.id} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#e35654] hover:shadow-lg transition-all flex flex-col">
               {/* Image */}
               <div className="relative h-48 overflow-hidden">
                 <img
@@ -253,7 +253,7 @@ export default function MyHackathons() {
                   ) : hackathon.status === 'completed' ? (
                     <Link
                       to={`/admin/hackathon/${hackathon.id}/statistics`}
-                      className="flex-1 px-4 py-2 rounded-lg bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all text-center flex items-center justify-center gap-2"
+                      className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
                       style={{ fontWeight: 600 }}
                     >
                       <span>عرض النتائج</span>
@@ -263,7 +263,7 @@ export default function MyHackathons() {
                     <>
                       <Link
                         to={`/admin/hackathon/${hackathon.id}`}
-                        className="flex-1 px-4 py-2 rounded-lg bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all text-center flex items-center justify-center gap-2"
+                        className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
                         style={{ fontWeight: 600 }}
                       >
                         <span>إدارة الهاكاثون</span>
@@ -291,7 +291,7 @@ export default function MyHackathons() {
             </p>
             <Link
               to="/admin/create-hackathon"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all"
               style={{ fontWeight: 600 }}
             >
               <Plus className="w-5 h-5" />

@@ -338,7 +338,7 @@ export function HackathonRegistrations() {
     const config = {
       'قيد الانتظار': 'bg-yellow-100 text-yellow-700 border-yellow-200',
       'تم القبول': 'bg-green-100 text-green-700 border-green-200',
-      'تم الرفض': 'bg-[#fce7eb] text-[#72112e] border-[#fad1d8]'
+      'تم الرفض': 'bg-[#fce7eb] text-[#a93b39] border-[#fad1d8]'
     };
     return config[status];
   };
@@ -444,16 +444,16 @@ export function HackathonRegistrations() {
           <button
             onClick={() => setFilterStatus('تم الرفض')}
             className={`bg-white rounded-2xl border p-6 text-right transition-all ${
-              filterStatus === 'تم الرفض' ? 'border-[#a41b42] shadow-lg shadow-red-500/20' : 'border-gray-100 hover:border-gray-200'
+              filterStatus === 'تم الرفض' ? 'border-[#e35654] shadow-lg shadow-red-500/20' : 'border-gray-100 hover:border-gray-200'
             }`}
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                filterStatus === 'تم الرفض' ? 'bg-[#8b1538]' : 'bg-[#fef2f4]'
+                filterStatus === 'تم الرفض' ? 'bg-[#cc4a48]' : 'bg-[#fef2f4]'
               }`}>
-                <X className={`w-6 h-6 ${filterStatus === 'تم الرفض' ? 'text-white' : 'text-[#8b1538]'}`} />
+                <X className={`w-6 h-6 ${filterStatus === 'تم الرفض' ? 'text-white' : 'text-[#cc4a48]'}`} />
               </div>
-              <span className="text-xs text-[#8b1538]" style={{ fontWeight: 600 }}>
+              <span className="text-xs text-[#cc4a48]" style={{ fontWeight: 600 }}>
                 {totalRegistrations > 0 ? Math.round((rejectedCount / totalRegistrations) * 100) : 0}%
               </span>
             </div>
@@ -538,7 +538,7 @@ export function HackathonRegistrations() {
 
             <button
               onClick={handleRejectSelected}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#8b1538] text-white text-sm hover:bg-[#72112e] transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#cc4a48] text-white text-sm hover:bg-[#a93b39] transition-all"
               style={{ fontWeight: 600 }}
             >
               <X className="w-4 h-4" />
@@ -614,7 +614,7 @@ export function HackathonRegistrations() {
                         <>
                           <button
                             onClick={() => handleReject(reg.id)}
-                            className="w-8 h-8 rounded-lg bg-gray-50 text-[#8b1538] flex items-center justify-center hover:bg-[#fef2f4] transition-colors"
+                            className="w-8 h-8 rounded-lg bg-gray-50 text-[#cc4a48] flex items-center justify-center hover:bg-[#fef2f4] transition-colors"
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -912,7 +912,7 @@ export function HackathonRegistrations() {
                     handleReject(selectedRegistration.id);
                     setSelectedRegistration(null);
                   }}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-[#fad1d8] text-[#72112e] text-sm hover:bg-[#fef2f4] transition-all"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-[#fad1d8] text-[#a93b39] text-sm hover:bg-[#fef2f4] transition-all"
                   style={{ fontWeight: 600 }}
                 >
                   رفض الطلب

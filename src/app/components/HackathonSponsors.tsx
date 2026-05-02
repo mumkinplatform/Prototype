@@ -375,7 +375,7 @@ export function HackathonSponsors() {
       organizer_signing: { label: 'توقيع المنظم', color: 'bg-indigo-100 text-indigo-700' },
       sponsor_signing: { label: 'توقيع الراعي', color: 'bg-orange-100 text-orange-700' },
       completed: { label: 'مكتمل', color: 'bg-emerald-100 text-emerald-700' },
-      rejected: { label: 'مرفوض', color: 'bg-[#fce7eb] text-[#72112e]' },
+      rejected: { label: 'مرفوض', color: 'bg-[#fce7eb] text-[#a93b39]' },
     };
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
@@ -410,7 +410,7 @@ export function HackathonSponsors() {
             </div>
             <button
               onClick={() => setShowPackageModal(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all shadow-lg shadow-[#a41b42]/30"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-lg shadow-[#e35654]/30"
               style={{ fontWeight: 600 }}
             >
               <Plus className="w-4 h-4" />
@@ -1074,7 +1074,7 @@ export function HackathonSponsors() {
               <div className="flex items-center gap-3 pt-4">
                 <button
                   onClick={handleAddPackage}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all"
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                   style={{ fontWeight: 600 }}
                 >
                   إضافة الباقة
@@ -1137,7 +1137,7 @@ export function HackathonSponsors() {
               <div className="flex items-center gap-3 pt-4">
                 <button
                   onClick={handleSavePackage}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all"
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                   style={{ fontWeight: 600 }}
                 >
                   حفظ التعديلات

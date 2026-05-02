@@ -499,7 +499,7 @@ export function HackathonProjects() {
     if (score >= 90) return 'text-green-600';
     if (score >= 80) return 'text-blue-600';
     if (score >= 70) return 'text-orange-600';
-    return 'text-[#8b1538]';
+    return 'text-[#cc4a48]';
   };
 
   const getTrackColor = (trackName: string) => {
@@ -575,28 +575,28 @@ export function HackathonProjects() {
             onClick={() => setActiveTab('submitted')}
             className={`pb-3 text-sm transition-all relative ${
               activeTab === 'submitted'
-                ? 'text-[#a41b42]'
+                ? 'text-[#e35654]'
                 : 'text-gray-500 hover:text-gray-900'
             }`}
             style={{ fontWeight: 600 }}
           >
             المشاريع المسلّمة
             {activeTab === 'submitted' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#a41b42]"></div>
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#e35654]"></div>
             )}
           </button>
           <button
             onClick={() => setActiveTab('judges')}
             className={`pb-3 text-sm transition-all relative ${
               activeTab === 'judges'
-                ? 'text-[#a41b42]'
+                ? 'text-[#e35654]'
                 : 'text-gray-500 hover:text-gray-900'
             }`}
             style={{ fontWeight: 600 }}
           >
             إدارة الحكام والمتابعة
             {activeTab === 'judges' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#a41b42]"></div>
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#e35654]"></div>
             )}
           </button>
         </div>
@@ -605,7 +605,7 @@ export function HackathonProjects() {
         {activeTab === 'submitted' && (
           <>
             {/* Submission Timeline */}
-            <div className="bg-gradient-to-br from-[#a41b42] to-[#c74543] rounded-2xl p-6 mb-6 text-white">
+            <div className="bg-gradient-to-br from-[#e35654] to-[#c74543] rounded-2xl p-6 mb-6 text-white">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-8">
                   <div>
@@ -669,7 +669,7 @@ export function HackathonProjects() {
               </div>
               <button
                 onClick={handleDistributeProjects}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all shadow-lg shadow-[#a41b42]/30"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-lg shadow-[#e35654]/30"
                 style={{ fontWeight: 600 }}
               >
                 <Users2 className="w-4 h-4" />
@@ -851,7 +851,7 @@ export function HackathonProjects() {
                       <td className="px-6 py-4">
                         <button
                           onClick={() => handleViewProject(project)}
-                          className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-[#a41b42] hover:text-white transition-colors"
+                          className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-[#e35654] hover:text-white transition-colors"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -930,7 +930,7 @@ export function HackathonProjects() {
                         <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>
                           {criteria.name}
                         </p>
-                        <span className="text-sm text-[#a41b42]" style={{ fontWeight: 700 }}>
+                        <span className="text-sm text-[#e35654]" style={{ fontWeight: 700 }}>
                           {criteria.weight}%
                         </span>
                       </div>
@@ -948,7 +948,7 @@ export function HackathonProjects() {
               </h3>
               <button
                 onClick={() => setShowAddJudgeModal(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                 style={{ fontWeight: 600 }}
               >
                 <UserPlus className="w-4 h-4" />
@@ -1097,7 +1097,7 @@ export function HackathonProjects() {
                       <div className="flex items-center justify-between p-3 rounded-xl bg-[#fef2f4] border border-[#fce7eb]">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-[#fce7eb] flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-[#8b1538]" />
+                            <FileText className="w-5 h-5 text-[#cc4a48]" />
                           </div>
                           <div>
                             <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>
@@ -1109,7 +1109,7 @@ export function HackathonProjects() {
                           </div>
                         </div>
                         <button className="w-8 h-8 rounded-lg bg-white hover:bg-[#fef2f4] flex items-center justify-center transition-colors">
-                          <Eye className="w-4 h-4 text-[#8b1538]" />
+                          <Eye className="w-4 h-4 text-[#cc4a48]" />
                         </button>
                       </div>
                     )}
@@ -1167,7 +1167,7 @@ export function HackathonProjects() {
                     toast.info('لم يتم تقييم المشروع بعد');
                   }
                 }}
-                className="w-full px-4 py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all"
+                className="w-full px-4 py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all"
                 style={{ fontWeight: 600 }}
               >
                 {selectedProject.status === 'completed' ? 'عرض تفاصيل التقييم' : 'فتح ملف المشروع كامل'}
@@ -1311,7 +1311,7 @@ export function HackathonProjects() {
               <button onClick={() => setShowSettingsModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50">
                 إلغاء
               </button>
-              <button onClick={handleUpdateSettings} className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538]">
+              <button onClick={handleUpdateSettings} className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48]">
                 حفظ الإعدادات
               </button>
             </div>
@@ -1333,19 +1333,19 @@ export function HackathonProjects() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>الاسم الكامل</label>
-                <input type="text" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" placeholder="أدخل اسم الحكم" />
+                <input type="text" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" placeholder="أدخل اسم الحكم" />
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>البريد الإلكتروني</label>
-                <input type="email" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" placeholder="judge@example.com" />
+                <input type="email" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" placeholder="judge@example.com" />
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>التخصص</label>
-                <input type="text" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" placeholder="مثال: الذكاء الاصطناعي" />
+                <input type="text" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" placeholder="مثال: الذكاء الاصطناعي" />
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>المسار المخصص</label>
-                <select className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]">
+                <select className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]">
                   <option>اختر المسار</option>
                   {mockTracks.map(track => (
                     <option key={track.id} value={track.id}>{track.name}</option>
@@ -1358,7 +1358,7 @@ export function HackathonProjects() {
               <button onClick={() => setShowAddJudgeModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50">
                 إلغاء
               </button>
-              <button onClick={handleInviteJudge} className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] flex items-center justify-center gap-2">
+              <button onClick={handleInviteJudge} className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] flex items-center justify-center gap-2">
                 <Send className="w-4 h-4" />
                 إرسال الدعوة
               </button>
@@ -1407,7 +1407,7 @@ export function HackathonProjects() {
               <button onClick={() => setShowEditCriteriaModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50">
                 إلغاء
               </button>
-              <button onClick={handleUpdateCriteria} className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538]">
+              <button onClick={handleUpdateCriteria} className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48]">
                 حفظ التعديلات
               </button>
             </div>
@@ -1429,20 +1429,20 @@ export function HackathonProjects() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>بداية فتح التسليم</label>
-                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" />
+                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" />
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>نهاية التسليم</label>
-                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" />
+                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" />
               </div>
               <div className="h-px bg-gray-200 my-4"></div>
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>بداية التقييم</label>
-                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" />
+                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" />
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>نهاية التقييم</label>
-                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42]" />
+                <input type="datetime-local" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]" />
               </div>
             </div>
 
@@ -1450,7 +1450,7 @@ export function HackathonProjects() {
               <button onClick={() => setShowEditDeadlineModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50">
                 إلغاء
               </button>
-              <button onClick={handleUpdateDeadline} className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538]">
+              <button onClick={handleUpdateDeadline} className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48]">
                 حفظ التعديلات
               </button>
             </div>
@@ -1513,7 +1513,7 @@ export function HackathonProjects() {
               <button onClick={() => setShowDistributeModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50">
                 إلغاء
               </button>
-              <button onClick={confirmDistribution} className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538]">
+              <button onClick={confirmDistribution} className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48]">
                 تأكيد التوزيع
               </button>
             </div>

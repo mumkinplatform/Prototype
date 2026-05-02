@@ -45,7 +45,7 @@ export function SponsorProfile() {
   });
 
   const stats = [
-    { label: "إجمالي الرعايات", value: "12", icon: Handshake, color: "#a41b42", bg: "#fef2f2" },
+    { label: "إجمالي الرعايات", value: "12", icon: Handshake, color: "#e35654", bg: "#fef2f2" },
     { label: "إجمالي الاستثمار", value: "485K", icon: CreditCard, color: "#10b981", bg: "#f0fdf4" },
     { label: "هاكاثونات مدعومة", value: "8", icon: Target, color: "#6366f1", bg: "#eef2ff" },
     { label: "عقود موقعة", value: "10", icon: FileText, color: "#f59e0b", bg: "#fffbeb" },
@@ -78,7 +78,7 @@ export function SponsorProfile() {
   return (
     <>
       {/* Profile Banner */}
-      <div className="h-28" style={{ background: "linear-gradient(135deg, #a41b42 0%, #8b1538 100%)" }} />
+      <div className="h-28" style={{ background: "linear-gradient(135deg, #e35654 0%, #cc4a48 100%)" }} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
         {/* Profile Header Card */}
@@ -89,14 +89,14 @@ export function SponsorProfile() {
               <div
                 className="w-20 h-20 rounded-2xl border-4 border-white shadow-md flex items-center justify-center text-white -mt-14 flex-shrink-0"
                 style={{
-                  background: "linear-gradient(135deg,#a41b42 0%,#8b1538 100%)",
+                  background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
                   fontWeight: 800,
                   fontSize: "1.5rem",
                 }}
               >
                 ش
               </div>
-              <button className="absolute bottom-2 right-2 w-6 h-6 rounded-lg bg-white shadow-lg flex items-center justify-center text-[#a41b42] opacity-0 group-hover:opacity-100 transition-opacity">
+              <button className="absolute bottom-2 right-2 w-6 h-6 rounded-lg bg-white shadow-lg flex items-center justify-center text-[#e35654] opacity-0 group-hover:opacity-100 transition-opacity">
                 <Camera className="w-3.5 h-3.5" />
               </button>
               <span
@@ -127,7 +127,7 @@ export function SponsorProfile() {
                 {!isEditing ? (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:border-[#a41b42] hover:text-[#a41b42] hover:bg-[#fef2f2] transition-all"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#fef2f2] transition-all"
                     style={{ fontWeight: 600 }}
                   >
                     <Edit3 className="w-4 h-4" />
@@ -137,7 +137,7 @@ export function SponsorProfile() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleSave}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                       style={{ fontWeight: 600 }}
                     >
                       <Save className="w-4 h-4" />
@@ -185,7 +185,7 @@ export function SponsorProfile() {
               onClick={() => setActiveTab(tab.id)}
               className={`py-3.5 px-1 border-b-2 text-sm transition-all ${
                 activeTab === tab.id
-                  ? "border-[#a41b42] text-[#a41b42]"
+                  ? "border-[#e35654] text-[#e35654]"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
               style={{ fontWeight: 600 }}
@@ -227,7 +227,7 @@ export function SponsorProfile() {
                         onChange={(e) =>
                           setProfileData({ ...profileData, [field.key]: e.target.value })
                         }
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                       />
                     ) : (
                       <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm">
@@ -248,7 +248,7 @@ export function SponsorProfile() {
                       value={profileData.bio}
                       onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                       rows={3}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all resize-none"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all resize-none"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm leading-relaxed">
@@ -301,7 +301,7 @@ export function SponsorProfile() {
                       key={i}
                       className={`rounded-2xl border p-4 text-center transition-all ${
                         ach.earned
-                          ? "border-[#a41b42]/20 bg-[#fffbfb] hover:shadow-sm"
+                          ? "border-[#e35654]/20 bg-[#fffbfb] hover:shadow-sm"
                           : "border-gray-100 bg-gray-50 opacity-50"
                       }`}
                     >
@@ -326,7 +326,7 @@ export function SponsorProfile() {
                   </h2>
                   <button
                     onClick={() => navigate("/sponsor/sponsorships")}
-                    className="text-[#a41b42] text-xs hover:underline"
+                    className="text-[#e35654] text-xs hover:underline"
                     style={{ fontWeight: 500 }}
                   >
                     عرض الكل
@@ -340,7 +340,7 @@ export function SponsorProfile() {
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-[#fef2f2] flex items-center justify-center">
-                          <Handshake className="w-4 h-4 text-[#a41b42]" />
+                          <Handshake className="w-4 h-4 text-[#e35654]" />
                         </div>
                         <div>
                           <p className="text-gray-800 text-sm" style={{ fontWeight: 600 }}>{sp.name}</p>
@@ -381,12 +381,12 @@ export function SponsorProfile() {
                       <input
                         type="password"
                         placeholder="••••••••"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                       />
                     </div>
                   ))}
                   <button
-                    className="px-6 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all"
+                    className="px-6 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                     style={{ fontWeight: 600 }}
                   >
                     تحديث كلمة المرور
@@ -416,7 +416,7 @@ export function SponsorProfile() {
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only peer" defaultChecked={i === 2} />
-                        <div className="w-10 h-5.5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#a41b42]" style={{ width: 40, height: 22 }} />
+                        <div className="w-10 h-5.5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#e35654]" style={{ width: 40, height: 22 }} />
                       </label>
                     </div>
                   ))}
@@ -425,7 +425,7 @@ export function SponsorProfile() {
 
               {/* Danger Zone */}
               <div className="bg-white rounded-2xl border border-[#fce7eb] p-6 sm:p-8">
-                <h2 className="text-[#8b1538] mb-3 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+                <h2 className="text-[#cc4a48] mb-3 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
                   <LogOut className="w-5 h-5" />
                   منطقة الخطر
                 </h2>
@@ -433,7 +433,7 @@ export function SponsorProfile() {
                   بمجرد حذف حسابك، سيتم حذف جميع بياناتك وعقودك بشكل نهائي. لا يمكن التراجع عن هذا الإجراء.
                 </p>
                 <button
-                  className="px-5 py-2.5 rounded-xl border-2 border-[#fad1d8] text-[#a41b42] text-sm hover:bg-[#fef2f4] hover:border-[#f8bac7] transition-all"
+                  className="px-5 py-2.5 rounded-xl border-2 border-[#fad1d8] text-[#e35654] text-sm hover:bg-[#fef2f4] hover:border-[#f8bac7] transition-all"
                   style={{ fontWeight: 600 }}
                 >
                   حذف الحساب نهائيًا

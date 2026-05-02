@@ -75,7 +75,7 @@ export function AuthPage() {
         {/* Card */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-br from-[#a41b42] to-[#8b1538] px-8 py-8 text-white text-center">
+          <div className="bg-[#e35654] px-8 py-8 text-white text-center">
             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mx-auto mb-4">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
@@ -133,7 +133,7 @@ export function AuthPage() {
                         onClick={() => setSelectedRole(role.id)}
                         className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 text-right ${
                           active
-                            ? "border-[#a41b42] bg-[#a41b42]/5"
+                            ? "border-[#e35654] bg-[#e35654]/5"
                             : "border-gray-100 hover:border-gray-200 bg-gray-50"
                         }`}
                       >
@@ -158,7 +158,7 @@ export function AuthPage() {
                           <p className="text-gray-400 text-xs">{role.desc}</p>
                         </div>
                         {active && (
-                          <CheckCircle2 className="w-5 h-5 text-[#a41b42]" />
+                          <CheckCircle2 className="w-5 h-5 text-[#e35654]" />
                         )}
                       </button>
                     );
@@ -176,7 +176,7 @@ export function AuthPage() {
                         type="email"
                         placeholder="your@email.com"
                         dir="ltr"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                       />
                     </div>
                     <div>
@@ -187,7 +187,7 @@ export function AuthPage() {
                         <input
                           type={showPass ? "text" : "password"}
                           placeholder="••••••••"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                         />
                         <button
                           onClick={() => setShowPass(!showPass)}
@@ -204,7 +204,7 @@ export function AuthPage() {
                     <div className="flex justify-between items-center">
                       <a
                         href="#"
-                        className="text-[#a41b42] text-xs hover:underline"
+                        className="text-[#e35654] text-xs hover:underline"
                       >
                         نسيت كلمة المرور؟
                       </a>
@@ -217,7 +217,7 @@ export function AuthPage() {
                   disabled={!selectedRole}
                   className={`w-full py-3.5 rounded-2xl text-white text-sm transition-all duration-200 ${
                     selectedRole
-                      ? "bg-[#a41b42] hover:bg-[#8b1538] shadow-lg shadow-[#a41b42]/25"
+                      ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25"
                       : "bg-gray-200 cursor-not-allowed"
                   }`}
                   style={{ fontWeight: 600 }}
@@ -246,7 +246,7 @@ export function AuthPage() {
                     <input
                       type="text"
                       placeholder="محمد العمري"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                     />
                   </div>
                   <div>
@@ -259,7 +259,7 @@ export function AuthPage() {
                       dir="ltr"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                     />
                   </div>
                   <div>
@@ -270,7 +270,7 @@ export function AuthPage() {
                       <input
                         type={showPass ? "text" : "password"}
                         placeholder="8 أحرف على الأقل"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                       />
                       <button
                         onClick={() => setShowPass(!showPass)}
@@ -291,7 +291,7 @@ export function AuthPage() {
                     <textarea
                       placeholder="اكتب نبذة مختصرة عنك..."
                       rows={3}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all resize-none"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all resize-none"
                     />
                   </div>
 
@@ -305,7 +305,7 @@ export function AuthPage() {
                         {["React", "Python", "UI/UX", "AI/ML", "Node.js", "Data"].map((skill) => (
                           <button
                             key={skill}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs hover:border-[#a41b42] hover:text-[#a41b42] hover:bg-[#a41b42]/5 transition-all"
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#e35654]/5 transition-all"
                           >
                             {skill}
                           </button>
@@ -325,7 +325,7 @@ export function AuthPage() {
                           <input
                             type="text"
                             placeholder="شركة ريادة للاستثمار"
-                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                           />
                         </div>
                       </div>
@@ -340,7 +340,7 @@ export function AuthPage() {
                             placeholder="1010XXXXXX"
                             maxLength={10}
                             dir="ltr"
-                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all tracking-widest"
+                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all tracking-widest"
                           />
                         </div>
                         <p className="text-gray-400 text-xs mt-1">رقم مكوّن من 10 أرقام صادر من وزارة التجارة</p>
@@ -349,9 +349,9 @@ export function AuthPage() {
                         <label className="text-gray-700 text-sm block mb-1.5" style={{ fontWeight: 500 }}>
                           وثيقة السجل التجاري
                         </label>
-                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${crFile ? "border-[#a41b42] bg-[#a41b42]/5" : "border-gray-200 hover:border-[#a41b42]/50 bg-gray-50"}`}>
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${crFile ? "bg-[#a41b42]/10" : "bg-gray-100"}`}>
-                            {crFile ? <CheckCircle2 className="w-4 h-4 text-[#a41b42]" /> : <Upload className="w-4 h-4 text-gray-400" />}
+                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${crFile ? "border-[#e35654] bg-[#e35654]/5" : "border-gray-200 hover:border-[#e35654]/50 bg-gray-50"}`}>
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${crFile ? "bg-[#e35654]/10" : "bg-gray-100"}`}>
+                            {crFile ? <CheckCircle2 className="w-4 h-4 text-[#e35654]" /> : <Upload className="w-4 h-4 text-gray-400" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
@@ -381,7 +381,7 @@ export function AuthPage() {
                           <input
                             type="text"
                             placeholder="مركز الابتكار الرقمي"
-                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                           />
                         </div>
                       </div>
@@ -396,7 +396,7 @@ export function AuthPage() {
                             placeholder="1010XXXXXX"
                             maxLength={10}
                             dir="ltr"
-                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all tracking-widest"
+                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all tracking-widest"
                           />
                         </div>
                         <p className="text-gray-400 text-xs mt-1">رقم مكوّن من 10 أرقام صادر من وزارة التجارة</p>
@@ -405,9 +405,9 @@ export function AuthPage() {
                         <label className="text-gray-700 text-sm block mb-1.5" style={{ fontWeight: 500 }}>
                           وثيقة السجل التجاري
                         </label>
-                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${crFile ? "border-[#a41b42] bg-[#a41b42]/5" : "border-gray-200 hover:border-[#a41b42]/50 bg-gray-50"}`}>
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${crFile ? "bg-[#a41b42]/10" : "bg-gray-100"}`}>
-                            {crFile ? <CheckCircle2 className="w-4 h-4 text-[#a41b42]" /> : <Upload className="w-4 h-4 text-gray-400" />}
+                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${crFile ? "border-[#e35654] bg-[#e35654]/5" : "border-gray-200 hover:border-[#e35654]/50 bg-gray-50"}`}>
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${crFile ? "bg-[#e35654]/10" : "bg-gray-100"}`}>
+                            {crFile ? <CheckCircle2 className="w-4 h-4 text-[#e35654]" /> : <Upload className="w-4 h-4 text-gray-400" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
@@ -429,7 +429,7 @@ export function AuthPage() {
 
                 <button
                   onClick={handleSubmitRegister}
-                  className="w-full py-3.5 rounded-2xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] shadow-lg shadow-[#a41b42]/25 transition-all duration-200"
+                  className="w-full py-3.5 rounded-2xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25 transition-all duration-200"
                   style={{ fontWeight: 600 }}
                 >
                   إنشاء الحساب 🚀
@@ -441,11 +441,11 @@ export function AuthPage() {
 
         <p className="text-center text-gray-400 text-xs mt-4">
           بالمتابعة، أنت توافق على{" "}
-          <a href="#" className="text-[#a41b42] hover:underline">
+          <a href="#" className="text-[#e35654] hover:underline">
             الشروط والأحكام
           </a>{" "}
           و{" "}
-          <a href="#" className="text-[#a41b42] hover:underline">
+          <a href="#" className="text-[#e35654] hover:underline">
             سياسة الخصوصية
           </a>
         </p>

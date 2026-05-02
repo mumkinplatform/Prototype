@@ -91,7 +91,7 @@ const exploreHackathons = [
     location: "الإمارات العربية المتحدة",
     participants: 128,
     image: IMG_FINTECH,
-    avatars: ["#a41b42", "#6366f1", "#10b981"],
+    avatars: ["#e35654", "#6366f1", "#10b981"],
   },
   {
     id: 21,
@@ -105,32 +105,32 @@ const exploreHackathons = [
     location: "جدة، المملكة العربية السعودية",
     participants: 120,
     image: IMG_CYBER,
-    avatars: ["#f59e0b", "#a41b42", "#6b7280"],
+    avatars: ["#f59e0b", "#e35654", "#6b7280"],
   },
   {
     id: 22,
     name: "هاكاثون نيوم للذكاء الاصطناعي 2024",
     track: "الذكاء الاصطناعي",
     type: "نشط",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     prize: "100,000 ريال سعودي",
     date: "15 - 18 نوفمبر, 2024",
     location: "الرياض، المملكة العربية السعودية",
     participants: 45,
     image: IMG_AI,
-    avatars: ["#10b981", "#6366f1", "#a41b42"],
+    avatars: ["#10b981", "#6366f1", "#e35654"],
   },
 ];
  
 const teamMembers = [
-  { name: "أحمد محمد", role: "مطوّر Full Stack", color: "#a41b42", initials: "أ", you: true },
+  { name: "أحمد محمد", role: "مطوّر Full Stack", color: "#e35654", initials: "أ", you: true },
   { name: "ريم العتيبي", role: "مصممة UI/UX", color: "#6366f1", initials: "ر" },
   { name: "عبدالله الغامدي", role: "مطوّر AI/ML", color: "#10b981", initials: "ع" },
 ];
  
 const projectFiles = [
-  { name: "برنامج تجريبي.pdf", size: "2.1 MB", color: "#a41b42" },
+  { name: "برنامج تجريبي.pdf", size: "2.1 MB", color: "#e35654" },
   { name: "واجهات مشارك.v1.fig", size: "8.7 MB", color: "#6366f1" },
 ];
  
@@ -193,7 +193,7 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
           <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 0 }}>
             <path 
               d="M 0 200 Q 200 180, 400 200 T 800 200 T 1200 200 T 1600 200" 
-              stroke="#a41b4210" 
+              stroke="#e3565410" 
               strokeWidth="2" 
               fill="none" 
             />
@@ -211,7 +211,7 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
             />
             <path 
               d="M 900 100 Q 950 150, 1000 100 T 1200 100" 
-              stroke="#a41b4212" 
+              stroke="#e3565412" 
               strokeWidth="1.5" 
               fill="none" 
             />
@@ -283,7 +283,7 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
  
             {/* Top Center Right - Mail (التواصل) */}
             <div className="absolute top-24 right-1/3 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center -rotate-12 animate-float" style={{ animation: 'float 7s ease-in-out infinite 4s' }}>
-              <Mail className="w-5 h-5 text-[#a41b42]" />
+              <Mail className="w-5 h-5 text-[#e35654]" />
             </div>
           </div>
  
@@ -291,7 +291,7 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
           <div className="relative text-center max-w-3xl mx-auto" style={{ zIndex: 2 }}>
             <h1 className="text-5xl text-gray-900 mb-6 leading-tight" style={{ fontWeight: 700 }}>
               ابدأ رحلتك في الابتكار<br />
-              <span className="text-[#a41b42]">واصنع المستقبل</span>
+              <span className="text-[#e35654]">واصنع المستقبل</span>
             </h1>
             <p className="text-gray-600 text-lg mb-10 leading-relaxed max-w-2xl mx-auto">
               انضم إلى أفضل الهاكاثونات التقنية وطوّر مهاراتك من خلال تحديات حقيقية،<br />
@@ -300,14 +300,14 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
             <div className="flex items-center justify-center gap-4">
               <button 
                 onClick={() => setView("hackathons")}
-                className="px-10 py-4 rounded-xl bg-[#a41b42] text-white hover:bg-[#8a1537] shadow-lg shadow-[#a41b42]/30 transition-all hover:shadow-xl hover:-translate-y-0.5" 
+                className="px-10 py-4 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/30 transition-all hover:shadow-xl hover:-translate-y-0.5" 
                 style={{ fontWeight: 600 }}
               >
                 استكشف الهاكاثونات
               </button>
               <button 
                 onClick={() => navigate("/participant/workspace")}
-                className="px-10 py-4 rounded-xl bg-white text-gray-700 border-2 border-gray-200 hover:border-[#a41b42] hover:text-[#a41b42] hover:bg-red-50 transition-all hover:-translate-y-0.5" 
+                className="px-10 py-4 rounded-xl bg-white text-gray-700 border-2 border-gray-200 hover:border-[#e35654] hover:text-[#e35654] hover:bg-red-50 transition-all hover:-translate-y-0.5" 
                 style={{ fontWeight: 600 }}
               >
                 مساحة العمل
@@ -338,16 +338,16 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
             {/* Service Card 1 - استكشاف الهاكاثونات */}
             <button 
               onClick={() => setView("hackathons")}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-[#a41b42] transition-all cursor-pointer text-right block w-full"
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-[#e35654] transition-all cursor-pointer text-right block w-full"
             >
               <div className="w-14 h-14 rounded-xl bg-red-50 flex items-center justify-center mb-4">
-                <Sparkles className="w-6 h-6 text-[#a41b42]" />
+                <Sparkles className="w-6 h-6 text-[#e35654]" />
               </div>
               <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>استكشاف الهاكاثونات</h3>
               <p className="text-gray-500 text-sm mb-4 leading-relaxed">
                 ابحث عن الهاكاثونات المتاحة وتعرّف على المسارات والجوائز ومواعيد المشاركة ثم سجّل بسهولة.
               </p>
-              <span className="w-full py-2.5 rounded-xl border-2 border-gray-100 text-[#a41b42] text-sm hover:bg-red-50 hover:border-[#a41b42] transition-all inline-block text-center" style={{ fontWeight: 600 }}>
+              <span className="w-full py-2.5 rounded-xl border-2 border-gray-100 text-[#e35654] text-sm hover:bg-red-50 hover:border-[#e35654] transition-all inline-block text-center" style={{ fontWeight: 600 }}>
                 استكشف
               </span>
             </button>
@@ -414,7 +414,7 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
                     <div className="w-full bg-gray-100 rounded-full h-1.5">
                       <div
                         className="h-1.5 rounded-full"
-                        style={{ width: `${h.progress}%`, background: "#a41b42" }}
+                        style={{ width: `${h.progress}%`, background: "#e35654" }}
                       />
                     </div>
                     <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.65rem" }}>{h.progress}%</p>
@@ -422,7 +422,7 @@ function HomeView({ setView }: { setView: (v: View) => void }) {
                 </div>
                 <button
                   onClick={() => navigate("/participant/workspace")}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8a1537] transition-colors flex-shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] transition-colors flex-shrink-0"
                   style={{ fontWeight: 600 }}
                 >
                   <Play className="w-3 h-3" />
@@ -480,7 +480,7 @@ function RegistrationModal({ onClose }: { onClose: () => void }) {
                 onClick={() => setParticipationType(opt.type)}
                 className={`p-4 rounded-2xl border-2 text-right transition-all ${
                   participationType === opt.type
-                    ? "border-[#a41b42] bg-[#fef2f2]"
+                    ? "border-[#e35654] bg-[#fef2f2]"
                     : "border-gray-100 hover:border-gray-200"
                 }`}
               >
@@ -497,13 +497,13 @@ function RegistrationModal({ onClose }: { onClose: () => void }) {
               <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>خيارات تكوين الفريق:</p>
  
               {/* Email invite */}
-              <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${teamMethod === "email" ? "border-[#a41b42] bg-[#fef2f2]" : "border-gray-100"}`}>
+              <label className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${teamMethod === "email" ? "border-[#e35654] bg-[#fef2f2]" : "border-gray-100"}`}>
                 <input
                   type="radio"
                   name="teamMethod"
                   checked={teamMethod === "email"}
                   onChange={() => setTeamMethod("email")}
-                  className="mt-0.5 accent-[#a41b42]"
+                  className="mt-0.5 accent-[#e35654]"
                 />
                 <div className="flex-1">
                   <p className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>دعوة أعضاء الفريق (الإلكترونية)</p>
@@ -515,10 +515,10 @@ function RegistrationModal({ onClose }: { onClose: () => void }) {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="example@email.com"
-                        className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:border-[#a41b42]"
+                        className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:border-[#e35654]"
                         dir="ltr"
                       />
-                      <button className="px-3 py-1.5 rounded-lg bg-[#a41b42] text-white text-xs" style={{ fontWeight: 600 }}>
+                      <button className="px-3 py-1.5 rounded-lg bg-[#e35654] text-white text-xs" style={{ fontWeight: 600 }}>
                         إرسال
                       </button>
                     </div>
@@ -528,7 +528,7 @@ function RegistrationModal({ onClose }: { onClose: () => void }) {
  
               {/* AI Matching */}
               <label
-                className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${teamMethod === "ai" ? "border-[#a41b42] bg-[#fef2f2]" : "border-gray-100"}`}
+                className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${teamMethod === "ai" ? "border-[#e35654] bg-[#fef2f2]" : "border-gray-100"}`}
                 onClick={() => { setTeamMethod("ai"); window.location.href = "/matchmaking"; }}
               >
                 <input
@@ -536,7 +536,7 @@ function RegistrationModal({ onClose }: { onClose: () => void }) {
                   name="teamMethod"
                   checked={teamMethod === "ai"}
                   onChange={() => setTeamMethod("ai")}
-                  className="mt-0.5 accent-[#a41b42]"
+                  className="mt-0.5 accent-[#e35654]"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -566,7 +566,7 @@ function RegistrationModal({ onClose }: { onClose: () => void }) {
           </button>
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors"
             style={{ fontWeight: 600 }}
           >
             تأكيد ومتابعة
@@ -634,7 +634,7 @@ function WorkspacesListView({
                 <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)" }} />
                 <div className="absolute bottom-4 right-4 left-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs px-3 py-1.5 rounded-full text-white shadow-md" style={{ background: "#a41b42", fontWeight: 600 }}>
+                    <span className="text-xs px-3 py-1.5 rounded-full text-white shadow-md" style={{ background: "#e35654", fontWeight: 600 }}>
                       {h.track}
                     </span>
                     <span
@@ -654,7 +654,7 @@ function WorkspacesListView({
  
                 <button
                   onClick={() => handleEnterWorkspace(h)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-colors shadow-md shadow-[#a41b42]/20"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors shadow-md shadow-[#e35654]/20"
                   style={{ fontWeight: 600 }}
                 >
                   <Play className="w-4 h-4" />
@@ -750,8 +750,8 @@ function FileUploadModal({ onClose, onUpload }: { onClose: () => void; onUpload:
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-              <Upload className="w-4 h-4 text-[#a41b42]" />
+            <div className="w-9 h-9 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+              <Upload className="w-4 h-4 text-[#e35654]" />
             </div>
             <div>
               <h2 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>رفع ملف للمشروع</h2>
@@ -771,7 +771,7 @@ function FileUploadModal({ onClose, onUpload }: { onClose: () => void; onUpload:
             onDrop={handleDrop}
             className="flex flex-col items-center justify-center gap-3 w-full rounded-2xl border-2 border-dashed cursor-pointer transition-all py-10"
             style={{
-              borderColor: dragOver ? "#a41b42" : selectedFile ? "#10b981" : "#e5e7eb",
+              borderColor: dragOver ? "#e35654" : selectedFile ? "#10b981" : "#e5e7eb",
               background: dragOver ? "#fef2f2" : selectedFile ? "#f0fdf4" : "#fafafa",
             }}
           >
@@ -823,11 +823,11 @@ function FileUploadModal({ onClose, onUpload }: { onClose: () => void; onUpload:
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>جارٍ رفع <span className="text-gray-700" style={{ fontWeight: 600 }}>{selectedFile?.name}</span>...</span>
-                <span className="text-[#a41b42]" style={{ fontWeight: 700 }}>{Math.min(progress, 100)}%</span>
+                <span className="text-[#e35654]" style={{ fontWeight: 700 }}>{Math.min(progress, 100)}%</span>
               </div>
               <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#a41b42] rounded-full transition-all duration-150"
+                  className="h-full bg-[#e35654] rounded-full transition-all duration-150"
                   style={{ width: `${Math.min(progress, 100)}%` }}
                 />
               </div>
@@ -854,7 +854,7 @@ function FileUploadModal({ onClose, onUpload }: { onClose: () => void; onUpload:
             onClick={handleUpload}
             disabled={!selectedFile || uploading || done}
             className="flex-1 py-2.5 rounded-xl text-white text-sm transition-colors disabled:opacity-50"
-            style={{ background: "#a41b42", fontWeight: 600 }}
+            style={{ background: "#e35654", fontWeight: 600 }}
           >
             {uploading ? "جارٍ الرفع..." : done ? "✓ تم" : "رفع الملف"}
           </button>
@@ -867,7 +867,7 @@ function FileUploadModal({ onClose, onUpload }: { onClose: () => void; onUpload:
 // ─── Team Chat Box ──────────────────────────────────────��─────────────────────
 const INITIAL_MESSAGES = [
   { id: 1, sender: "سارة أحمد", avatar: "س", color: "#6366f1", text: "مرحباً بالجميع! متحمسون للبدء 🚀", time: "9:00 ص", mine: false },
-  { id: 2, sender: "أنت", avatar: "أ", color: "#a41b42", text: "تمام، هل بدأنا بتقسيم المهام؟", time: "9:02 ص", mine: true },
+  { id: 2, sender: "أنت", avatar: "أ", color: "#e35654", text: "تمام، هل بدأنا بتقسيم المهام؟", time: "9:02 ص", mine: true },
   { id: 3, sender: "محمد علي", avatar: "م", color: "#10b981", text: "أنا أتكفل بالواجهة الأمامية 💻", time: "9:04 ص", mine: false },
 ];
  
@@ -880,7 +880,7 @@ function TeamChatBox() {
     if (!input.trim()) return;
     const now = new Date();
     const time = now.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-    setMessages((prev) => [...prev, { id: Date.now(), sender: "أنت", avatar: "أ", color: "#a41b42", text: input.trim(), time, mine: true }]);
+    setMessages((prev) => [...prev, { id: Date.now(), sender: "أنت", avatar: "أ", color: "#e35654", text: input.trim(), time, mine: true }]);
     setInput("");
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   };
@@ -888,7 +888,7 @@ function TeamChatBox() {
   return (
     <div className="flex flex-col" style={{ height: 340 }}>
       <div className="flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/10">
-        <Users className="w-4 h-4 text-[#a41b42]" />
+        <Users className="w-4 h-4 text-[#e35654]" />
         <span className="text-white text-xs" style={{ fontWeight: 700 }}>شات الفريق</span>
         <span className="mr-auto flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
@@ -909,7 +909,7 @@ function TeamChatBox() {
               )}
               <div
                 className={`px-3 py-2 text-xs leading-relaxed ${msg.mine ? "text-white rounded-2xl rounded-tl-sm" : "text-gray-200 rounded-2xl rounded-tr-sm"}`}
-                style={{ background: msg.mine ? "#a41b42" : "rgba(255,255,255,0.08)", fontWeight: 500 }}
+                style={{ background: msg.mine ? "#e35654" : "rgba(255,255,255,0.08)", fontWeight: 500 }}
               >
                 {msg.text}
               </div>
@@ -934,7 +934,7 @@ function TeamChatBox() {
             onClick={sendMessage}
             disabled={!input.trim()}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors disabled:opacity-30"
-            style={{ background: "#a41b42" }}
+            style={{ background: "#e35654" }}
           >
             <Send className="w-3 h-3 text-white" style={{ transform: "scaleX(-1)" }} />
           </button>
@@ -958,7 +958,7 @@ function FilePreviewModal({ file, previewUrl, onClose }: { file: File; previewUr
     if (isImage) return "🖼️";
     return "📁";
   };
-  const colorMap: Record<string, string> = { pdf:"#a41b42", zip:"#f59e0b", rar:"#f59e0b", pptx:"#6366f1", docx:"#6366f1", mp4:"#10b981", png:"#10b981", jpg:"#10b981" };
+  const colorMap: Record<string, string> = { pdf:"#e35654", zip:"#f59e0b", rar:"#f59e0b", pptx:"#6366f1", docx:"#6366f1", mp4:"#10b981", png:"#10b981", jpg:"#10b981" };
   const color = colorMap[ext] || "#6b7280";
  
   return (
@@ -1040,7 +1040,7 @@ function WorkspaceView({
           <p className="text-gray-500 mb-4">لم يتم اختيار هاكاثون</p>
           <button
             onClick={() => setView("workspaces")}
-            className="px-6 py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8a1537] transition-colors"
+            className="px-6 py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-colors"
             style={{ fontWeight: 600 }}
           >
             العودة إلى مساحات العمل
@@ -1053,7 +1053,7 @@ function WorkspaceView({
   const handleUpload = (file: File) => {
     const ext = file.name.split(".").pop()?.toLowerCase() || "";
     const colorMap: Record<string, string> = {
-      pdf: "#a41b42", zip: "#f59e0b", rar: "#f59e0b",
+      pdf: "#e35654", zip: "#f59e0b", rar: "#f59e0b",
       pptx: "#6366f1", docx: "#6366f1", mp4: "#10b981",
       png: "#10b981", jpg: "#10b981",
     };
@@ -1124,7 +1124,7 @@ function WorkspaceView({
                   </button>
                   <button
                     onClick={() => setShowFinalUploadModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8a1537] shadow-sm transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm transition-colors"
                     style={{ fontWeight: 600 }}
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -1134,7 +1134,7 @@ function WorkspaceView({
               ) : (
                 <button
                   onClick={() => setShowFinalUploadModal(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8a1537] shadow-sm transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm transition-colors"
                   style={{ fontWeight: 600 }}
                 >
                   <Upload className="w-3.5 h-3.5" />
@@ -1195,7 +1195,7 @@ function WorkspaceView({
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <h3 className="text-gray-900 mb-3 text-sm" style={{ fontWeight: 700 }}>جلسة قادمة</h3>
               <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <div className="w-10 h-10 rounded-xl bg-[#a41b42] flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-[#e35654] flex items-center justify-center flex-shrink-0">
                   <Play className="w-4 h-4 text-white" />
                 </div>
                 <div>
@@ -1226,7 +1226,7 @@ function WorkspaceView({
                       <div className="flex items-center gap-1.5">
                         <p className="text-gray-900 text-xs truncate" style={{ fontWeight: 600 }}>{member.name}</p>
                         {member.you && (
-                          <span className="text-xs bg-[#a41b42]/10 text-[#a41b42] px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ fontWeight: 600, fontSize: "0.6rem" }}>
+                          <span className="text-xs bg-[#e35654]/10 text-[#e35654] px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ fontWeight: 600, fontSize: "0.6rem" }}>
                             أنت
                           </span>
                         )}
@@ -1259,7 +1259,7 @@ function WorkspaceView({
                 ))}
                 <button
                   onClick={() => setShowUploadModal(true)}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-xs hover:border-[#a41b42] hover:text-[#a41b42] transition-colors"
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-xs hover:border-[#e35654] hover:text-[#e35654] transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   رفع ملف
@@ -1433,7 +1433,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
   return (
     <div className="min-h-screen bg-white">
       {/* Profile Banner */}
-      <div className="h-28" style={{ background: "linear-gradient(135deg, #a41b42 0%, #8a1537 100%)" }} />
+      <div className="h-28" style={{ background: "linear-gradient(135deg, #e35654 0%, #cc4a48 100%)" }} />
  
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
         {/* Profile Header Card */}
@@ -1441,7 +1441,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
           <div className="flex items-end gap-5">
             <div
               className="w-20 h-20 rounded-2xl border-4 border-white shadow-md flex items-center justify-center text-white -mt-14 flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #a41b42 0%, #8a1537 100%)", fontWeight: 800, fontSize: "1.5rem" }}
+              style={{ background: "linear-gradient(135deg, #e35654 0%, #cc4a48 100%)", fontWeight: 800, fontSize: "1.5rem" }}
             >
               {profileName.charAt(0)}
             </div>
@@ -1464,7 +1464,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
               </button>
               <button
                 onClick={() => setShowAchievementModal(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors"
                 style={{ fontWeight: 600 }}
               >
                 <Award className="w-3.5 h-3.5" />
@@ -1490,8 +1490,8 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-                    <User className="w-4 h-4 text-[#a41b42]" />
+                  <div className="w-8 h-8 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+                    <User className="w-4 h-4 text-[#e35654]" />
                   </div>
                   <span className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>تعديل الملف الشخصي</span>
                 </div>
@@ -1508,7 +1508,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   <input
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                     placeholder="أدخل اسمك الكامل"
                   />
                 </div>
@@ -1518,7 +1518,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   <input
                     value={editTitle}
                     onChange={e => setEditTitle(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                     placeholder="مثال: مطور واجهات أمامية | خبير تقنية"
                   />
                 </div>
@@ -1528,7 +1528,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   <input
                     value={editLocation}
                     onChange={e => setEditLocation(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                     placeholder="مثال: الرياض، المملكة العربية السعودية"
                   />
                 </div>
@@ -1541,7 +1541,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                         {sk}
                         <button
                           onClick={() => setEditSkillsTemp(editSkillsTemp.filter((_, idx) => idx !== i))}
-                          className="text-gray-300 hover:text-[#a41b42] transition-colors"
+                          className="text-gray-300 hover:text-[#e35654] transition-colors"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -1558,7 +1558,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                           setEditNewSkill("");
                         }
                       }}
-                      className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                      className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                       placeholder="أضف مهارة جديدة..."
                     />
                     <button
@@ -1568,7 +1568,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                           setEditNewSkill("");
                         }
                       }}
-                      className="px-3 py-2 rounded-xl bg-[#a41b42]/10 text-[#a41b42] text-xs hover:bg-[#a41b42]/20 transition-colors"
+                      className="px-3 py-2 rounded-xl bg-[#e35654]/10 text-[#e35654] text-xs hover:bg-[#e35654]/20 transition-colors"
                       style={{ fontWeight: 600 }}
                     >
                       <Plus className="w-4 h-4" />
@@ -1582,7 +1582,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
               <div className="flex gap-2 px-6 py-4 border-t border-gray-100">
                 <button
                   onClick={saveProfile}
-                  className="flex-1 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors"
                   style={{ fontWeight: 600 }}
                 >
                   حفظ التغييرات
@@ -1605,8 +1605,8 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-                    <Trophy className="w-4 h-4 text-[#a41b42]" />
+                  <div className="w-8 h-8 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+                    <Trophy className="w-4 h-4 text-[#e35654]" />
                   </div>
                   <span className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>نشر إنجاز جديد</span>
                 </div>
@@ -1634,7 +1634,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                         <button
                           key={type}
                           onClick={() => setAchievementType(type)}
-                          className={`py-2 px-2 rounded-xl border text-xs transition-colors text-center ${achievementType === type ? "border-[#a41b42] bg-[#fef2f2] text-[#a41b42]" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                          className={`py-2 px-2 rounded-xl border text-xs transition-colors text-center ${achievementType === type ? "border-[#e35654] bg-[#fef2f2] text-[#e35654]" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
                           style={{ fontWeight: achievementType === type ? 600 : 400 }}
                         >
                           {type}
@@ -1648,7 +1648,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     <input
                       value={achievementTitle}
                       onChange={e => setAchievementTitle(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                       placeholder="م��ال: الفوز بهاكاثون الذكاء الاصطناعي الوطني"
                     />
                   </div>
@@ -1658,7 +1658,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     <input
                       value={achievementHackathon}
                       onChange={e => setAchievementHackathon(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                       placeholder="مثال: هاكاثون مُمكّن للابتكار 2024"
                     />
                   </div>
@@ -1670,7 +1670,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                         type="date"
                         value={achievementDate}
                         onChange={e => setAchievementDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors cursor-pointer appearance-none bg-white"
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors cursor-pointer appearance-none bg-white"
                         dir="ltr"
                         style={{ colorScheme: "light" }}
                       />
@@ -1679,7 +1679,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                       </div>
                     </div>
                     {achievementDate && (
-                      <p className="text-[#a41b42] text-xs mt-1 flex items-center gap-1">
+                      <p className="text-[#e35654] text-xs mt-1 flex items-center gap-1">
                         <CheckCircle className="w-3 h-3" />
                         {new Date(achievementDate).toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" })}
                       </p>
@@ -1692,7 +1692,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                       value={achievementDesc}
                       onChange={e => setAchievementDesc(e.target.value)}
                       rows={3}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors resize-none"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors resize-none"
                       placeholder="اكتب تفاصيل إضافية عن إنجازك..."
                     />
                   </div>
@@ -1703,7 +1703,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     </label>
                     <label
                       className={`flex flex-col items-center justify-center gap-2 w-full py-5 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${
-                        achievementFile ? "border-[#a41b42] bg-[#fef2f2]" : "border-gray-200 bg-gray-50 hover:border-[#a41b42] hover:bg-[#fef9f9]"
+                        achievementFile ? "border-[#e35654] bg-[#fef2f2]" : "border-gray-200 bg-gray-50 hover:border-[#e35654] hover:bg-[#fef9f9]"
                       }`}
                     >
                       <input
@@ -1717,10 +1717,10 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                       />
                       {achievementFile ? (
                         <>
-                          <div className="w-9 h-9 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-[#a41b42]" />
+                          <div className="w-9 h-9 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+                            <FileText className="w-5 h-5 text-[#e35654]" />
                           </div>
-                          <p className="text-[#a41b42] text-xs text-center" style={{ fontWeight: 600 }}>{achievementFile.name}</p>
+                          <p className="text-[#e35654] text-xs text-center" style={{ fontWeight: 600 }}>{achievementFile.name}</p>
                           <p className="text-gray-400 text-xs">{(achievementFile.size / 1024).toFixed(0)} KB</p>
                           <button
                             type="button"
@@ -1735,7 +1735,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                           <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center">
                             <Upload className="w-5 h-5 text-gray-400" />
                           </div>
-                          <p className="text-gray-600 text-xs text-center" style={{ fontWeight: 500 }}>اسحب الملف هنا أو <span className="text-[#a41b42]">اختر من جهازك</span></p>
+                          <p className="text-gray-600 text-xs text-center" style={{ fontWeight: 500 }}>اسحب الملف هنا أو <span className="text-[#e35654]">اختر من جهازك</span></p>
                           <p className="text-gray-400 text-xs">PDF، صورة، أو Word — بحد أقصى 10MB</p>
                         </>
                       )}
@@ -1750,7 +1750,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   <button
                     onClick={saveAchievement}
                     disabled={!achievementTitle.trim() || !achievementHackathon.trim()}
-                    className="flex-1 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex-1 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ fontWeight: 600 }}
                   >
                     نشر الإنجاز
@@ -1809,7 +1809,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                 <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>روابط سريعة</h3>
                 <button
                   onClick={openLinksModal}
-                  className="text-xs text-[#a41b42] hover:underline flex items-center gap-1"
+                  className="text-xs text-[#e35654] hover:underline flex items-center gap-1"
                   style={{ fontWeight: 500 }}
                 >
                   <Pencil className="w-3 h-3" /> تعديل
@@ -1860,7 +1860,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   onClick={() => setActiveTab(tab.split(" ")[0])}
                   className={`px-4 py-2.5 text-sm transition-colors border-b-2 -mb-px ${
                     activeTab === tab.split(" ")[0]
-                      ? "border-[#a41b42] text-[#a41b42]"
+                      ? "border-[#e35654] text-[#e35654]"
                       : "border-transparent text-gray-500 hover:text-gray-700"
                   }`}
                   style={{ fontWeight: activeTab === tab.split(" ")[0] ? 700 : 400 }}
@@ -1877,7 +1877,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>الهاكاثونات الأخيرة</h3>
                   <button
                     onClick={() => setShowAllHackathons(v => !v)}
-                    className="text-[#a41b42] text-xs hover:underline flex items-center gap-1"
+                    className="text-[#e35654] text-xs hover:underline flex items-center gap-1"
                     style={{ fontWeight: 500 }}
                   >
                     {showAllHackathons ? "عرض أقل ▲" : "عرض الكل ▼"}
@@ -1894,7 +1894,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                   ).map((h, i) => (
                     <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <Trophy className="w-5 h-5 text-[#a41b42]" />
+                        <Trophy className="w-5 h-5 text-[#e35654]" />
                       </div>
                       <div className="flex-1">
                         <h4 className="text-gray-900 text-sm" style={{ fontWeight: 600 }}>{h.name}</h4>
@@ -1904,7 +1904,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                         <span className="text-xs px-2 py-0.5 rounded-full bg-[#f0fdf4] text-green-700" style={{ fontWeight: 600 }}>
                           {h.status}
                         </span>
-                        <p className="text-[#a41b42] text-xs mt-1" style={{ fontWeight: 600 }}>{h.rank}</p>
+                        <p className="text-[#e35654] text-xs mt-1" style={{ fontWeight: 600 }}>{h.rank}</p>
                       </div>
                     </div>
                   ))}
@@ -1916,7 +1916,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>أبرز المشاريع</h3>
                     <button
                       onClick={() => setActiveTab("المشاريع")}
-                      className="text-[#a41b42] text-xs hover:underline"
+                      className="text-[#e35654] text-xs hover:underline"
                       style={{ fontWeight: 500 }}
                     >
                       عرض الكل
@@ -2047,8 +2047,8 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" dir="rtl">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-[#a41b42]/10 flex items-center justify-center">
-                      <Link2 className="w-4 h-4 text-[#a41b42]" />
+                    <div className="w-8 h-8 rounded-xl bg-[#e35654]/10 flex items-center justify-center">
+                      <Link2 className="w-4 h-4 text-[#e35654]" />
                     </div>
                     <span className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>تعديل الروابط السريعة</span>
                   </div>
@@ -2065,7 +2065,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     <input
                       value={editPersonalLink}
                       onChange={e => setEditPersonalLink(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                       placeholder="https://myportfolio.com"
                       dir="ltr"
                     />
@@ -2078,7 +2078,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     <input
                       value={editGithubLink}
                       onChange={e => setEditGithubLink(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#a41b42] transition-colors"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
                       placeholder="https://github.com/username"
                       dir="ltr"
                     />
@@ -2088,13 +2088,13 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     <label className="text-gray-700 text-xs mb-1.5 flex items-center gap-1.5 block" style={{ fontWeight: 600 }}>
                       <FileText className="w-3.5 h-3.5 text-gray-400" /> السيرة الذاتية (PDF)
                     </label>
-                    <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${editCvFileTemp ? "border-[#a41b42] bg-[#fef2f2]" : "border-gray-200 bg-gray-50 hover:border-[#a41b42]"}`}>
+                    <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${editCvFileTemp ? "border-[#e35654] bg-[#fef2f2]" : "border-gray-200 bg-gray-50 hover:border-[#e35654]"}`}>
                       <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setEditCvFileTemp(f); }} />
                       {editCvFileTemp ? (
                         <>
-                          <FileText className="w-5 h-5 text-[#a41b42] flex-shrink-0" />
+                          <FileText className="w-5 h-5 text-[#e35654] flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-[#a41b42] text-xs truncate" style={{ fontWeight: 600 }}>{editCvFileTemp.name}</p>
+                            <p className="text-[#e35654] text-xs truncate" style={{ fontWeight: 600 }}>{editCvFileTemp.name}</p>
                             <p className="text-gray-400 text-xs">{(editCvFileTemp.size / 1024).toFixed(0)} KB</p>
                           </div>
                           <button type="button" onClick={e => { e.preventDefault(); setEditCvFileTemp(null); }} className="text-gray-300 hover:text-red-400 transition-colors">
@@ -2104,7 +2104,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                       ) : (
                         <>
                           <Upload className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                          <p className="text-gray-500 text-xs">اختر ملف السيرة الذاتية <span className="text-[#a41b42]">أو اسحبه هنا</span></p>
+                          <p className="text-gray-500 text-xs">اختر ملف السيرة الذاتية <span className="text-[#e35654]">أو اسحبه هنا</span></p>
                         </>
                       )}
                     </label>
@@ -2116,7 +2116,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                       <CheckCircle className="w-4 h-4" /> تم الحفظ!
                     </div>
                   ) : (
-                    <button onClick={saveLinks} className="flex-1 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-colors" style={{ fontWeight: 600 }}>
+                    <button onClick={saveLinks} className="flex-1 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors" style={{ fontWeight: 600 }}>
                       حفظ الروابط
                     </button>
                   )}
@@ -2151,7 +2151,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                     </span>
                     <button
                       onClick={copyProjectLink}
-                      className={`px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 flex-shrink-0 ${linkCopied ? "bg-green-50 text-green-600" : "bg-[#a41b42] text-white hover:bg-[#8a1537]"}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 flex-shrink-0 ${linkCopied ? "bg-green-50 text-green-600" : "bg-[#e35654] text-white hover:bg-[#cc4a48]"}`}
                       style={{ fontWeight: 600 }}
                     >
                       {linkCopied ? (<><CheckCircle className="w-3 h-3" /> تم النسخ</>) : (<><Link2 className="w-3 h-3" /> نسخ</>)}

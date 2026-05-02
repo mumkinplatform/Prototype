@@ -8,7 +8,7 @@ const colorPalettes = {
   green: { primary: '#10b981', secondary: '#047857' },
   yellow: { primary: '#eab308', secondary: '#a16207' },
   purple: { primary: '#8b5cf6', secondary: '#6d28d9' },
-  red: { primary: '#a41b42', secondary: '#8b1538' },
+  red: { primary: '#a41b42', secondary: '#8a1537' },
   orange: { primary: '#f97316', secondary: '#c2410c' },
 };
 

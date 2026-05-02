@@ -39,7 +39,7 @@ export function AdminSponsorships() {
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 placeholder="ابحث عن راعٍ..."
-                className="pr-10 pl-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm w-64 focus:outline-none focus:border-[#a41b42]"
+                className="pr-10 pl-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm w-64 focus:outline-none focus:border-[#e35654]"
               />
             </div>
             <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-600 hover:bg-gray-50">
@@ -47,7 +47,7 @@ export function AdminSponsorships() {
               تصفية
             </button>
           </div>
-          <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] shadow-lg shadow-[#a41b42]/20" style={{ fontWeight: 600 }}>
+          <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/20" style={{ fontWeight: 600 }}>
             <Plus className="w-4 h-4" />
             إضافة راعٍ جديد
           </button>

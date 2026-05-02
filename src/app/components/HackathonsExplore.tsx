@@ -22,9 +22,9 @@ const hackathons = [
     title: "هاكاثون شفاء التقني",
     org: "وزارة الصحة",
     tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#a41b42", "#6366f1"],
+    tagColors: ["#e35654", "#6366f1"],
     type: "حضوري",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     date: "01 يونيو 2025",
     deadline: "15 مايو 2025",
@@ -78,14 +78,14 @@ const hackathons = [
     tags: ["المدن الذكية", "الاستدامة"],
     tagColors: ["#f59e0b", "#10b981"],
     type: "حضوري",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     date: "20 يوليو 2025",
     deadline: "5 يوليو 2025",
     prize: "200,000 ر.س",
     viewers: 310,
     teams: 85,
-    cover: "bg-gradient-to-br from-amber-700 via-orange-600 to-[#72112e]",
+    cover: "bg-gradient-to-br from-amber-700 via-orange-600 to-[#a93b39]",
     coverText: "NEOM\n2025",
     featured: true,
   },
@@ -112,7 +112,7 @@ const hackathons = [
     title: "قمة الذكاء الاصطناعي العالمية",
     org: "STC",
     tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#a41b42"],
+    tagColors: ["#8b5cf6", "#e35654"],
     type: "إلكتروني",
     typeColor: "#10b981",
     typeBg: "#f0fdf4",
@@ -188,7 +188,7 @@ export function HackathonsExplore() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="ابحث بالاسم، الجهة، أو الموضوع..."
-                className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
               />
             </div>
 
@@ -200,7 +200,7 @@ export function HackathonsExplore() {
                   onClick={() => setActiveType(t)}
                   className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                     activeType === t
-                      ? "bg-white text-[#a41b42] shadow-sm"
+                      ? "bg-white text-[#e35654] shadow-sm"
                       : "text-gray-500 hover:text-gray-700"
                   }`}
                   style={{ fontWeight: activeType === t ? 600 : 400 }}
@@ -215,7 +215,7 @@ export function HackathonsExplore() {
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
-                className="appearance-none pl-8 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-600 focus:outline-none focus:border-[#a41b42] cursor-pointer"
+                className="appearance-none pl-8 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-600 focus:outline-none focus:border-[#e35654] cursor-pointer"
                 style={{ fontWeight: 500 }}
               >
                 {sortOptions.map((o) => (
@@ -232,8 +232,8 @@ export function HackathonsExplore() {
               onClick={() => setOnlyFeatured(!onlyFeatured)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs border transition-all ${
                 onlyFeatured
-                  ? "bg-[#a41b42] text-white border-[#a41b42]"
-                  : "bg-white text-gray-500 border-gray-200 hover:border-[#a41b42]/40"
+                  ? "bg-[#e35654] text-white border-[#e35654]"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-[#e35654]/40"
               }`}
               style={{ fontWeight: 600 }}
             >
@@ -273,7 +273,7 @@ export function HackathonsExplore() {
                   {/* Featured badge */}
                   {h.featured && (
                     <div className="absolute top-3 right-3">
-                      <span className="flex items-center gap-1 bg-[#a41b42] text-white text-xs px-2.5 py-1 rounded-full" style={{ fontWeight: 600 }}>
+                      <span className="flex items-center gap-1 bg-[#e35654] text-white text-xs px-2.5 py-1 rounded-full" style={{ fontWeight: 600 }}>
                         <Star className="w-3 h-3" />
                         مميز
                       </span>
@@ -344,7 +344,7 @@ export function HackathonsExplore() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                      <Clock className="w-3.5 h-3.5 flex-shrink-0 text-[#a41b42]" />
+                      <Clock className="w-3.5 h-3.5 flex-shrink-0 text-[#e35654]" />
                       <span>آخر تسجيل: {h.deadline}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -362,7 +362,7 @@ export function HackathonsExplore() {
                       </span>
                       <button
                         onClick={() => navigate(`/sponsor/hackathon/${h.id}`)}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8b1538] shadow-sm shadow-[#a41b42]/20 transition-all group-hover:shadow-md"
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20 transition-all group-hover:shadow-md"
                         style={{ fontWeight: 600 }}
                       >
                         <Handshake className="w-3.5 h-3.5" />

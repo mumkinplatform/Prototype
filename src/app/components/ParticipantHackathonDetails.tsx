@@ -28,11 +28,11 @@ const hackathonsData = [
     title: "هاكاثون شفاء التقني",
     org: "وزارة الصحة",
     orgLogo: "ص",
-    orgColor: "#a41b42",
+    orgColor: "#e35654",
     tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#a41b42", "#6366f1"],
+    tagColors: ["#e35654", "#6366f1"],
     type: "حضوري",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     date: "01 يونيو 2025",
     deadline: "15 مايو 2025",
@@ -149,7 +149,7 @@ const hackathonsData = [
     tags: ["المدن الذكية", "الاستدامة"],
     tagColors: ["#f59e0b", "#10b981"],
     type: "حضوري",
-    typeColor: "#a41b42",
+    typeColor: "#e35654",
     typeBg: "#fef2f2",
     date: "20 يوليو 2025",
     deadline: "5 يوليو 2025",
@@ -225,7 +225,7 @@ const hackathonsData = [
     orgLogo: "STC",
     orgColor: "#8b5cf6",
     tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#a41b42"],
+    tagColors: ["#8b5cf6", "#e35654"],
     type: "إلكتروني",
     typeColor: "#10b981",
     typeBg: "#f0fdf4",
@@ -343,7 +343,7 @@ function RegistrationModal({
                   }}
                   className={`p-3 rounded-xl border-2 text-right transition-all ${
                     participationType === opt.id
-                      ? "border-[#a41b42] bg-[#fef2f2]"
+                      ? "border-[#e35654] bg-[#fef2f2]"
                       : "border-gray-100 hover:border-gray-200"
                   }`}
                 >
@@ -369,7 +369,7 @@ function RegistrationModal({
               {/* Email invite */}
               <label
                 className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                  teamMethod === "email" ? "border-[#a41b42] bg-[#fef2f2]" : "border-gray-100"
+                  teamMethod === "email" ? "border-[#e35654] bg-[#fef2f2]" : "border-gray-100"
                 }`}
               >
                 <input
@@ -377,11 +377,11 @@ function RegistrationModal({
                   name="teamMethod"
                   checked={teamMethod === "email"}
                   onChange={() => setTeamMethod("email")}
-                  className="mt-0.5 accent-[#a41b42]"
+                  className="mt-0.5 accent-[#e35654]"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <Mail className="w-3.5 h-3.5 text-[#a41b42]" />
+                    <Mail className="w-3.5 h-3.5 text-[#e35654]" />
                     <p className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
                       دعوة أعضاء بالبريد الإلكتروني
                     </p>
@@ -398,12 +398,12 @@ function RegistrationModal({
                           onChange={(e) => setEmail(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && handleAddEmail()}
                           placeholder="example@email.com"
-                          className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:border-[#a41b42]"
+                          className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 focus:outline-none focus:border-[#e35654]"
                           dir="ltr"
                         />
                         <button
                           onClick={handleAddEmail}
-                          className="px-3 py-1.5 rounded-lg bg-[#a41b42] text-white text-xs"
+                          className="px-3 py-1.5 rounded-lg bg-[#e35654] text-white text-xs"
                           style={{ fontWeight: 600 }}
                         >
                           إضافة
@@ -414,7 +414,7 @@ function RegistrationModal({
                           {invitedEmails.map((em) => (
                             <span
                               key={em}
-                              className="flex items-center gap-1 bg-[#fef2f2] text-[#a41b42] px-2 py-0.5 rounded-full text-xs"
+                              className="flex items-center gap-1 bg-[#fef2f2] text-[#e35654] px-2 py-0.5 rounded-full text-xs"
                               dir="ltr"
                             >
                               {em}
@@ -488,7 +488,7 @@ function RegistrationModal({
             disabled={!participationType || (participationType === "team" && !teamMethod)}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm transition-all ${
               participationType && (participationType === "solo" || teamMethod)
-                ? "bg-[#a41b42] text-white hover:bg-[#8a1537] shadow-md"
+                ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             }`}
             style={{ fontWeight: 600 }}
@@ -566,7 +566,7 @@ export function ParticipantHackathonDetails() {
           <div className="flex flex-wrap gap-2 mb-4">
             {hackathon.featured && (
               <span
-                className="flex items-center gap-1.5 bg-[#a41b42] text-white text-xs px-3 py-1.5 rounded-full"
+                className="flex items-center gap-1.5 bg-[#e35654] text-white text-xs px-3 py-1.5 rounded-full"
                 style={{ fontWeight: 600 }}
               >
                 <Star className="w-3 h-3" />
@@ -622,7 +622,7 @@ export function ParticipantHackathonDetails() {
               { icon: Trophy, label: "إجمالي الجوائز", value: hackathon.prize, color: "#f59e0b" },
               { icon: Users, label: "فرق مشاركة", value: `${hackathon.teams} فريق`, color: "#10b981" },
               { icon: Clock, label: "مدة الهاكاثون", value: hackathon.duration, color: "#6366f1" },
-              { icon: Calendar, label: "تاريخ الانطلاق", value: hackathon.date, color: "#a41b42" },
+              { icon: Calendar, label: "تاريخ الانطلاق", value: hackathon.date, color: "#e35654" },
             ].map((stat, i) => (
               <div key={i} className="bg-white/10 backdrop-blur-sm rounded-2xl p-3.5 border border-white/10">
                 <stat.icon className="w-4 h-4 mb-2" style={{ color: stat.color }} />
@@ -648,7 +648,7 @@ export function ParticipantHackathonDetails() {
             {/* About */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="text-gray-900 mb-3 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                <Globe className="w-4 h-4 text-[#a41b42]" />
+                <Globe className="w-4 h-4 text-[#e35654]" />
                 عن الهاكاثون
               </h2>
               <p className="text-gray-600 leading-relaxed" style={{ fontSize: "0.9rem" }}>
@@ -657,7 +657,7 @@ export function ParticipantHackathonDetails() {
               <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-gray-100">
                 {[
                   { label: "المشاركون", value: hackathon.participants, icon: Users, color: "#6366f1" },
-                  { label: "المشاهدات", value: hackathon.viewers, icon: Eye, color: "#a41b42" },
+                  { label: "المشاهدات", value: hackathon.viewers, icon: Eye, color: "#e35654" },
                   { label: "الفرق المسجلة", value: hackathon.teams, icon: Shield, color: "#10b981" },
                 ].map((s, i) => (
                   <div key={i} className="text-center p-3 rounded-xl bg-gray-50">
@@ -672,7 +672,7 @@ export function ParticipantHackathonDetails() {
             {/* Required Skills */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                <Code className="w-4 h-4 text-[#a41b42]" />
+                <Code className="w-4 h-4 text-[#e35654]" />
                 المهارات المطلوبة
               </h2>
               <div className="flex flex-wrap gap-2">
@@ -725,7 +725,7 @@ export function ParticipantHackathonDetails() {
             {/* Timeline */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="text-gray-900 mb-5 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                <Calendar className="w-4 h-4 text-[#a41b42]" />
+                <Calendar className="w-4 h-4 text-[#e35654]" />
                 الجدول الزمني
               </h2>
               <div className="relative">
@@ -736,8 +736,8 @@ export function ParticipantHackathonDetails() {
                       <div
                         className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 z-10 border-2"
                         style={{
-                          background: item.done ? "#a41b42" : "white",
-                          borderColor: item.done ? "#a41b42" : "#e5e7eb",
+                          background: item.done ? "#e35654" : "white",
+                          borderColor: item.done ? "#e35654" : "#e5e7eb",
                         }}
                       >
                         {item.done ? (
@@ -751,7 +751,7 @@ export function ParticipantHackathonDetails() {
                           className="text-xs px-2 py-0.5 rounded-md"
                           style={{
                             background: item.done ? "#fef2f2" : "#f3f4f6",
-                            color: item.done ? "#a41b42" : "#6b7280",
+                            color: item.done ? "#e35654" : "#6b7280",
                             fontWeight: 600,
                           }}
                         >
@@ -849,7 +849,7 @@ export function ParticipantHackathonDetails() {
                   <div className="space-y-2 mb-4">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-gray-400">آخر موعد للتسجيل</span>
-                      <span className="text-[#a41b42]" style={{ fontWeight: 600 }}>{hackathon.deadline}</span>
+                      <span className="text-[#e35654]" style={{ fontWeight: 600 }}>{hackathon.deadline}</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-gray-400">حجم الفريق</span>
@@ -863,7 +863,7 @@ export function ParticipantHackathonDetails() {
  
                   <button
                     onClick={() => setShowRegModal(true)}
-                    className="w-full py-3 rounded-xl text-sm bg-[#a41b42] text-white hover:bg-[#8a1537] shadow-md shadow-[#a41b42]/25 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-3 rounded-xl text-sm bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/25 transition-all flex items-center justify-center gap-2"
                     style={{ fontWeight: 600 }}
                   >
                     <Play className="w-4 h-4" />
@@ -928,7 +928,7 @@ export function ParticipantHackathonDetails() {
             </div>
  
             {/* Why Participate */}
-            <div className="bg-gradient-to-br from-[#a41b42] to-[#c03c3a] rounded-2xl p-5 text-white">
+            <div className="bg-[#e35654] rounded-2xl p-5 text-white">
               <h3 className="mb-3" style={{ fontWeight: 700, fontSize: "0.9rem" }}>
                 🚀 لماذا تشارك؟
               </h3>

@@ -38,7 +38,7 @@ export function Layout() {
             onClick={handleLogoClick}
             className="flex items-center gap-2 group"
           >
-            <div className="w-9 h-9 rounded-xl bg-[#a41b42] flex items-center justify-center shadow-sm">
+            <div className="w-9 h-9 rounded-xl bg-[#e35654] flex items-center justify-center shadow-sm">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <span className="text-xl text-gray-900" style={{ fontWeight: 700 }}>
@@ -72,7 +72,7 @@ export function Layout() {
                   onClick={handleClick}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-all duration-200 ${
                     active
-                      ? "bg-[#a41b42]/10 text-[#a41b42]"
+                      ? "bg-[#e35654]/10 text-[#e35654]"
                       : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                   }`}
                   style={{ fontWeight: active ? 600 : 400 }}
@@ -88,14 +88,14 @@ export function Layout() {
           <div className="hidden md:flex items-center gap-3">
             <button
               onClick={() => navigate("/auth")}
-              className="px-5 py-2 rounded-xl text-[#a41b42] text-sm border border-[#a41b42] hover:bg-[#a41b42]/10 transition-all duration-200"
+              className="px-5 py-2 rounded-xl text-[#e35654] text-sm border border-[#e35654] hover:bg-[#e35654]/10 transition-all duration-200"
               style={{ fontWeight: 500 }}
             >
               تسجيل الدخول
             </button>
             <button
               onClick={() => navigate("/auth")}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#a41b42] text-white text-sm shadow-sm hover:bg-[#8b1538] transition-all duration-200"
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#e35654] text-white text-sm shadow-sm hover:bg-[#cc4a48] transition-all duration-200"
               style={{ fontWeight: 500 }}
             >
               ابدأ الآن
@@ -128,7 +128,7 @@ export function Layout() {
                   }}
                   className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm text-right transition-all duration-200 ${
                     active
-                      ? "bg-[#a41b42]/10 text-[#a41b42]"
+                      ? "bg-[#e35654]/10 text-[#e35654]"
                       : "text-gray-600 hover:bg-gray-100"
                   }`}
                   style={{ fontWeight: active ? 600 : 400 }}
@@ -143,7 +143,7 @@ export function Layout() {
                 navigate("/auth");
                 setMobileOpen(false);
               }}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-[#a41b42] text-white text-sm mt-2"
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-[#e35654] text-white text-sm mt-2"
               style={{ fontWeight: 500 }}
             >
               <LogIn className="w-4 h-4" />
@@ -164,7 +164,7 @@ export function Layout() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-[#a41b42] flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-[#e35654] flex items-center justify-center">
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <span className="text-gray-700" style={{ fontWeight: 600 }}>

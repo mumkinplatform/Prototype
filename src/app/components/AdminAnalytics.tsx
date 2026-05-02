@@ -5,7 +5,7 @@ const stats = [
   { label: 'إجمالي المشاركين', value: '1,248', icon: Users, color: 'bg-blue-50 text-blue-600', iconBg: 'bg-blue-100' },
   { label: 'الهاكاثونات النشطة', value: '5', icon: BarChart3, color: 'bg-green-50 text-green-600', iconBg: 'bg-green-100' },
   { label: 'المشاريع المقدمة', value: '87', icon: Trophy, color: 'bg-amber-50 text-amber-600', iconBg: 'bg-amber-100' },
-  { label: 'معدل النمو', value: '+23%', icon: TrendingUp, color: 'bg-[#fef2f2] text-[#a41b42]', iconBg: 'bg-[#fce7eb]' },
+  { label: 'معدل النمو', value: '+23%', icon: TrendingUp, color: 'bg-[#fef2f2] text-[#e35654]', iconBg: 'bg-[#fce7eb]' },
 ];
 
 export function AdminAnalytics() {

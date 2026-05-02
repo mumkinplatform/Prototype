@@ -77,7 +77,7 @@ const sponsorships = [
     payDate: "20 - 22 نوفمبر 2024",
     financialDate: "22 يوليو 2024",
     deliveryStatus: "تأخر السداد",
-    deliveryColor: "#a41b42",
+    deliveryColor: "#e35654",
     progress: 40,
     note: "يُرجى تسوية الأقساط المتبقية وإرسال تأكيد الدفع",
     actionPrimary: "عرض الفاتورة",
@@ -244,8 +244,8 @@ export function SponsorSponsorships() {
               onClick={() => setMainView("sponsorships")}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm transition-all ${
                 mainView === "sponsorships"
-                  ? "bg-[#a41b42] text-white shadow-md shadow-[#a41b42]/20"
-                  : "bg-white border border-gray-200 text-gray-600 hover:border-[#a41b42] hover:text-[#a41b42]"
+                  ? "bg-[#e35654] text-white shadow-md shadow-[#e35654]/20"
+                  : "bg-white border border-gray-200 text-gray-600 hover:border-[#e35654] hover:text-[#e35654]"
               }`}
               style={{ fontWeight: 600 }}
             >
@@ -256,8 +256,8 @@ export function SponsorSponsorships() {
               onClick={() => setMainView("contracts")}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm transition-all ${
                 mainView === "contracts"
-                  ? "bg-[#a41b42] text-white shadow-md shadow-[#a41b42]/20"
-                  : "bg-white border border-gray-200 text-gray-600 hover:border-[#a41b42] hover:text-[#a41b42]"
+                  ? "bg-[#e35654] text-white shadow-md shadow-[#e35654]/20"
+                  : "bg-white border border-gray-200 text-gray-600 hover:border-[#e35654] hover:text-[#e35654]"
               }`}
               style={{ fontWeight: 600 }}
             >
@@ -266,7 +266,7 @@ export function SponsorSponsorships() {
               {contracts.filter(c => !c.signed).length > 0 && (
                 <span
                   className="w-5 h-5 rounded-full flex items-center justify-center text-white"
-                  style={{ background: mainView === "contracts" ? "rgba(255,255,255,0.3)" : "#a41b42", fontSize: 10, fontWeight: 700 }}
+                  style={{ background: mainView === "contracts" ? "rgba(255,255,255,0.3)" : "#e35654", fontSize: 10, fontWeight: 700 }}
                 >
                   {contracts.filter(c => !c.signed).length}
                 </span>
@@ -285,7 +285,7 @@ export function SponsorSponsorships() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="ابحث في الأنشطة..."
-              className="w-full pr-10 pl-4 py-2 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+              className="w-full pr-10 pl-4 py-2 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
             />
           </div>
 
@@ -297,7 +297,7 @@ export function SponsorSponsorships() {
                 onClick={() => setActiveTab(tab)}
                 className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                   activeTab === tab
-                    ? "bg-[#a41b42] text-white shadow-sm"
+                    ? "bg-[#e35654] text-white shadow-sm"
                     : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                 }`}
                 style={{ fontWeight: activeTab === tab ? 600 : 400 }}
@@ -326,7 +326,7 @@ export function SponsorSponsorships() {
                   className="w-full text-right px-3 py-2 rounded-xl text-sm transition-colors"
                   style={{
                     fontWeight: active ? 700 : 500,
-                    color: active ? "#a41b42" : "#374151",
+                    color: active ? "#e35654" : "#374151",
                     background: active ? "#fef2f2" : "transparent",
                   }}
                   onMouseOver={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
@@ -440,7 +440,7 @@ export function SponsorSponsorships() {
                     return (
                       <button
                         onClick={action}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8b1538] shadow-sm shadow-[#a41b42]/20 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20 transition-colors"
                         style={{ fontWeight: 600 }}
                       >
                         <Icon className="w-3.5 h-3.5" />
@@ -474,8 +474,8 @@ export function SponsorSponsorships() {
 
         {/* CTA */}
         <div className="mt-10 text-center py-10 border-2 border-dashed border-gray-200 rounded-2xl">
-          <div className="w-14 h-14 rounded-2xl bg-[#a41b42]/10 flex items-center justify-center mx-auto mb-4">
-            <Search className="w-7 h-7 text-[#a41b42]" />
+          <div className="w-14 h-14 rounded-2xl bg-[#e35654]/10 flex items-center justify-center mx-auto mb-4">
+            <Search className="w-7 h-7 text-[#e35654]" />
           </div>
           <p className="text-gray-700 mb-1" style={{ fontWeight: 700 }}>هل تبحث عن فرص جديدة؟</p>
           <p className="text-gray-400 text-sm mb-5">
@@ -483,7 +483,7 @@ export function SponsorSponsorships() {
           </p>
           <button
             onClick={() => navigate("/sponsor/opportunities")}
-            className="px-6 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20 transition-colors"
+            className="px-6 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20 transition-colors"
             style={{ fontWeight: 600 }}
           >
             تصفح الهاكاثونات المتاحة
@@ -500,7 +500,7 @@ export function SponsorSponsorships() {
                   { label: "إجمالي العقود", value: contracts.length.toString(), color: "#6366f1", bg: "#eef2ff" },
                   { label: "عقود سارية", value: contracts.filter(c => c.status === "ساري").length.toString(), color: "#10b981", bg: "#f0fdf4" },
                   { label: "بانتظار التوقيع", value: contracts.filter(c => !c.signed).length.toString(), color: "#f59e0b", bg: "#fffbeb" },
-                  { label: "إجمالي القيمة", value: "320K", color: "#a41b42", bg: "#fef2f2" },
+                  { label: "إجمالي القيمة", value: "320K", color: "#e35654", bg: "#fef2f2" },
                 ].map((stat, i) => (
                   <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 text-center hover:shadow-sm transition-shadow">
                     <p className="text-gray-900" style={{ fontWeight: 800, fontSize: "1.3rem" }}>{stat.value}</p>
@@ -520,7 +520,7 @@ export function SponsorSponsorships() {
                     onClick={() => setContractFilter(tab)}
                     className={`px-3.5 py-1.5 rounded-lg text-sm transition-all ${
                       contractFilter === tab
-                        ? "bg-[#a41b42] text-white shadow-sm"
+                        ? "bg-[#e35654] text-white shadow-sm"
                         : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                     }`}
                     style={{ fontWeight: contractFilter === tab ? 600 : 400 }}
@@ -601,7 +601,7 @@ export function SponsorSponsorships() {
                             <>
                               <button
                                 onClick={() => navigate("/sponsor/negotiation")}
-                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8b1538] shadow-sm shadow-[#a41b42]/20 transition-colors"
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20 transition-colors"
                                 style={{ fontWeight: 600 }}
                               >
                                 <FileSignature className="w-3.5 h-3.5" />

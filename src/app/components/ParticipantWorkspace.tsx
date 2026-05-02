@@ -111,7 +111,7 @@ type WorkspaceTab = "home" | "team" | "submission" | "evaluations" | "certificat
 
 // ─── Team Data ──────────────────────────────────────────
 const teamMembers = [
-  { name: "أحمد محمد", role: "مطوّر Full Stack", color: "#a41b42", initials: "أ", you: true, online: true },
+  { name: "أحمد محمد", role: "مطوّر Full Stack", color: "#e35654", initials: "أ", you: true, online: true },
   { name: "ريم العتيبي", role: "مصممة UI/UX", color: "#6366f1", initials: "ر", online: true },
   { name: "عبدالله الغامدي", role: "مطوّر AI/ML", color: "#10b981", initials: "ع", online: false },
   { name: "نورة الشمري", role: "محللة بيانات", color: "#f59e0b", initials: "ن", online: true },
@@ -119,7 +119,7 @@ const teamMembers = [
 
 const chatMessages = [
   { id: 1, sender: "ريم العتيبي", avatar: "ر", color: "#6366f1", text: "خلصت تصميم الواجهة الرئيسية 🎨", time: "10:30 ص", mine: false },
-  { id: 2, sender: "أنت", avatar: "أ", color: "#a41b42", text: "ممتاز! أنا أشتغل على الـ API حالياً", time: "10:32 ص", mine: true },
+  { id: 2, sender: "أنت", avatar: "أ", color: "#e35654", text: "ممتاز! أنا أشتغل على الـ API حالياً", time: "10:32 ص", mine: true },
   { id: 3, sender: "عبدالله الغامدي", avatar: "ع", color: "#10b981", text: "النموذج جاهز للتجربة، أرسلته على GitHub 💻", time: "10:45 ص", mine: false },
   { id: 4, sender: "نورة الشمري", avatar: "ن", color: "#f59e0b", text: "جمعت البيانات المطلوبة وجهزت الـ Dashboard", time: "11:00 ص", mine: false },
 ];
@@ -165,7 +165,7 @@ const certificates = [
 
 // ─── Project Files ──────────────────────────────────────
 const projectFiles = [
-  { name: "العرض التقديمي النهائي.pdf", size: "4.2 MB", color: "#a41b42", date: "18 سبتمبر 2025" },
+  { name: "العرض التقديمي النهائي.pdf", size: "4.2 MB", color: "#e35654", date: "18 سبتمبر 2025" },
   { name: "الكود المصدري.zip", size: "12.8 MB", color: "#6366f1", date: "18 سبتمبر 2025" },
   { name: "فيديو توضيحي.mp4", size: "45.3 MB", color: "#10b981", date: "17 سبتمبر 2025" },
 ];
@@ -231,7 +231,7 @@ const sessions = [
 const timeline = [
   { phase: "التسجيل والقبول", date: "15-30 سبتمبر", status: "completed", color: "#10b981" },
   { phase: "بداية المسابقة", date: "1 أكتوبر", status: "completed", color: "#10b981" },
-  { phase: "تطوير النماذج الأولية", date: "1-7 أكتوبر", status: "active", color: "#a41b42" },
+  { phase: "تطوير النماذج الأولية", date: "1-7 أكتوبر", status: "active", color: "#e35654" },
   { phase: "التسليم الأولي", date: "7 أكتوبر", status: "upcoming", color: "#6b7280" },
   { phase: "التطوير النهائي", date: "8-12 أكتوبر", status: "upcoming", color: "#6b7280" },
   { phase: "التسليم النهائي", date: "13 أكتوبر", status: "upcoming", color: "#6b7280" },
@@ -244,7 +244,7 @@ const sidebarCards: { tab: WorkspaceTab; icon: any; label: string; desc: string;
   { tab: "home", icon: Home, label: "الرئيسية", desc: "نظرة عامة على الهاكاثون", color: "#6366f1", bg: "#eef2ff" },
   { tab: "team", icon: Users, label: "بيانات الفريق", desc: "التواصل مع أعضاء فريقك", color: "#10b981", bg: "#f0fdf4", badge: "4" },
   { tab: "sessions", icon: Video, label: "الجلسات", desc: "الانضمام للجلسات المباشرة", color: "#06b6d4", bg: "#ecfeff", badge: "4" },
-  { tab: "submission", icon: Upload, label: "رفع المشروع", desc: "رفع ومعاينة التسليمات", color: "#a41b42", bg: "#fef2f2", badge: "3" },
+  { tab: "submission", icon: Upload, label: "رفع المشروع", desc: "رفع ومعاينة التسليمات", color: "#e35654", bg: "#fef2f2", badge: "3" },
   { tab: "evaluations", icon: BarChart3, label: "التقييمات", desc: "تقييمات الحكام لمشروعك", color: "#f59e0b", bg: "#fffbeb", badge: "2" },
   { tab: "certificates", icon: Award, label: "الشهادات", desc: "عرض وتحميل شهاداتك", color: "#8b5cf6", bg: "#f5f3ff", badge: "3" },
 ];
@@ -314,7 +314,7 @@ function WorkspacesList() {
                 <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)" }} />
                 <div className="absolute bottom-4 right-4 left-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs px-3 py-1.5 rounded-full text-white shadow-md" style={{ background: "#a41b42", fontWeight: 600 }}>
+                    <span className="text-xs px-3 py-1.5 rounded-full text-white shadow-md" style={{ background: "#e35654", fontWeight: 600 }}>
                       {h.track}
                     </span>
                     <span
@@ -350,7 +350,7 @@ function WorkspacesList() {
 
                 <button
                   onClick={() => handleEnterWorkspace(h.id)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-colors shadow-md shadow-[#a41b42]/20 mt-auto"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors shadow-md shadow-[#e35654]/20 mt-auto"
                   style={{ fontWeight: 600 }}
                 >
                   <Play className="w-4 h-4" />
@@ -578,7 +578,7 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
           {[
             { label: "المسار", value: hackathon.track, color: "#6366f1" },
             { label: "الحالة", value: "نشط - قيد التنفيذ", color: "#10b981" },
-            { label: "نوع المشاركة", value: "فريق (4 أعضاء)", color: "#a41b42" },
+            { label: "نوع المشاركة", value: "فريق (4 أعضاء)", color: "#e35654" },
           ].map((info, i) => (
             <div key={i} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
               <p className="text-gray-400 text-xs mb-1">{info.label}</p>
@@ -591,7 +591,7 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
       {/* Countdown Timer */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Clock className="w-5 h-5" style={{ color: "#a41b42" }} />
+          <Clock className="w-5 h-5" style={{ color: "#e35654" }} />
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
             الوقت المتبقي للتسليم
           </h2>
@@ -608,7 +608,7 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
               className="text-center p-4 rounded-xl"
               style={{ background: "linear-gradient(135deg, #fef2f2 0%, #fff 100%)", border: "1px solid rgba(227,86,84,0.15)" }}
             >
-              <p style={{ fontWeight: 800, fontSize: "1.5rem", color: "#a41b42" }}>{t.value}</p>
+              <p style={{ fontWeight: 800, fontSize: "1.5rem", color: "#e35654" }}>{t.value}</p>
               <p className="text-gray-400 text-xs mt-0.5">{t.label}</p>
             </div>
           ))}
@@ -764,7 +764,7 @@ function TeamTab() {
                 <div
                   className="inline-block px-4 py-2.5 rounded-xl text-sm"
                   style={{
-                    background: msg.mine ? "#a41b42" : "#f9fafb",
+                    background: msg.mine ? "#e35654" : "#f9fafb",
                     color: msg.mine ? "#fff" : "#374151",
                   }}
                 >
@@ -782,11 +782,11 @@ function TeamTab() {
             placeholder="اكتب رسالتك..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] text-sm"
+            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] text-sm"
           />
           <button
             className="w-11 h-11 rounded-xl flex items-center justify-center text-white transition-colors"
-            style={{ background: "#a41b42" }}
+            style={{ background: "#e35654" }}
           >
             <Send className="w-5 h-5" />
           </button>
@@ -841,20 +841,20 @@ function SubmissionTab() {
       {/* Upload Section */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-5">
-          <Upload className="w-5 h-5" style={{ color: "#a41b42" }} />
+          <Upload className="w-5 h-5" style={{ color: "#e35654" }} />
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>رفع المشروع</h2>
         </div>
 
         {/* Upload Area */}
         <div
-          className="border-2 border-dashed rounded-2xl p-8 text-center mb-5 hover:border-[#a41b42] hover:bg-[#fef2f4]/30 transition-all cursor-pointer"
+          className="border-2 border-dashed rounded-2xl p-8 text-center mb-5 hover:border-[#e35654] hover:bg-[#fef2f4]/30 transition-all cursor-pointer"
           style={{ borderColor: "#e5e7eb" }}
         >
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
             style={{ background: "#fef2f2" }}
           >
-            <Upload className="w-8 h-8" style={{ color: "#a41b42" }} />
+            <Upload className="w-8 h-8" style={{ color: "#e35654" }} />
           </div>
           <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>
             اسحب الملفات هنا أو انقر للتحميل
@@ -866,7 +866,7 @@ function SubmissionTab() {
 
         <button
           className="w-full py-3 rounded-xl text-white text-sm transition-colors"
-          style={{ background: "#a41b42", fontWeight: 600 }}
+          style={{ background: "#e35654", fontWeight: 600 }}
         >
           <Plus className="w-4 h-4 inline-block ml-2" />
           إضافة ملفات
@@ -911,7 +911,7 @@ function SubmissionTab() {
                 <button className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#10b981] hover:bg-green-50 transition-colors">
                   <Download className="w-4 h-4" />
                 </button>
-                <button className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#a41b42] hover:bg-[#fef2f4] transition-colors">
+                <button className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>

@@ -103,7 +103,7 @@ export default function HackathonPreview() {
                   onClick={() => setViewMode('participant')}
                   className={`w-full px-4 py-3 rounded-xl text-right transition-all flex items-center gap-3 ${
                     viewMode === 'participant'
-                      ? 'bg-[#a41b42] text-white shadow-md'
+                      ? 'bg-[#e35654] text-white shadow-md'
                       : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
                   }`}
                   style={{ fontWeight: viewMode === 'participant' ? 600 : 500 }}
@@ -122,7 +122,7 @@ export default function HackathonPreview() {
                   onClick={() => setViewMode('sponsor')}
                   className={`w-full px-4 py-3 rounded-xl text-right transition-all flex items-center gap-3 ${
                     viewMode === 'sponsor'
-                      ? 'bg-[#a41b42] text-white shadow-md'
+                      ? 'bg-[#e35654] text-white shadow-md'
                       : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
                   }`}
                   style={{ fontWeight: viewMode === 'sponsor' ? 600 : 500 }}
@@ -141,7 +141,7 @@ export default function HackathonPreview() {
                   onClick={() => setViewMode('workspace')}
                   className={`w-full px-4 py-3 rounded-xl text-right transition-all flex items-center gap-3 ${
                     viewMode === 'workspace'
-                      ? 'bg-[#a41b42] text-white shadow-md'
+                      ? 'bg-[#e35654] text-white shadow-md'
                       : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
                   }`}
                   style={{ fontWeight: viewMode === 'workspace' ? 600 : 500 }}
@@ -194,7 +194,7 @@ export default function HackathonPreview() {
                   {/* Bottom Info */}
                   <div className="absolute bottom-0 right-0 left-0 bg-gradient-to-t from-black/60 to-transparent p-8">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-[#a41b42]" style={{ fontWeight: 700 }}>
+                      <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-[#e35654]" style={{ fontWeight: 700 }}>
                         م
                       </div>
                       <div>
@@ -258,7 +258,7 @@ export default function HackathonPreview() {
                       {/* About */}
                       <div>
                         <h2 className="text-xl text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700 }}>
-                          <div className="w-1 h-6 bg-[#a41b42] rounded-full" />
+                          <div className="w-1 h-6 bg-[#e35654] rounded-full" />
                           عن الهاكاثون
                         </h2>
                         <p className="text-gray-600 leading-relaxed">
@@ -269,7 +269,7 @@ export default function HackathonPreview() {
                       {/* Timeline */}
                       <div>
                         <h2 className="text-xl text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700 }}>
-                          <div className="w-1 h-6 bg-[#a41b42] rounded-full" />
+                          <div className="w-1 h-6 bg-[#e35654] rounded-full" />
                           الجدول الزمني
                         </h2>
                         <div className="space-y-3">
@@ -289,7 +289,7 @@ export default function HackathonPreview() {
 
                       {/* Registration Button */}
                       <div className="flex gap-3">
-                        <button className="flex-1 px-6 py-3.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all text-center" style={{ fontWeight: 600 }}>
+                        <button className="flex-1 px-6 py-3.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all text-center" style={{ fontWeight: 600 }}>
                           سجل الآن
                         </button>
                         <button className="px-6 py-3.5 rounded-xl border-2 border-gray-200 text-gray-700 hover:bg-gray-50 transition-all flex items-center gap-2" style={{ fontWeight: 600 }}>
@@ -386,7 +386,7 @@ export default function HackathonPreview() {
                   {/* Bottom Info */}
                   <div className="absolute bottom-0 right-0 left-0 bg-gradient-to-t from-black/60 to-transparent p-8">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-[#a41b42]" style={{ fontWeight: 700 }}>
+                      <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-[#e35654]" style={{ fontWeight: 700 }}>
                         م
                       </div>
                       <div>
@@ -450,7 +450,7 @@ export default function HackathonPreview() {
                       {/* About */}
                       <div>
                         <h2 className="text-xl text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700 }}>
-                          <Handshake className="w-6 h-6 text-[#a41b42]" />
+                          <Handshake className="w-6 h-6 text-[#e35654]" />
                           عن الهاكاثون
                         </h2>
                         <p className="text-gray-600 leading-relaxed mb-6">
@@ -461,12 +461,12 @@ export default function HackathonPreview() {
                       {/* Sponsorship Packages */}
                       <div>
                         <h2 className="text-xl text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700 }}>
-                          <Star className="w-6 h-6 text-[#a41b42]" />
+                          <Star className="w-6 h-6 text-[#e35654]" />
                           باقات الرعاية المتاحة
                         </h2>
                         <div className="space-y-4">
                           {hackathonData.sponsorshipPackages.map((pkg) => (
-                            <div key={pkg.id} className="border-2 border-gray-200 rounded-2xl p-6 hover:border-[#a41b42] transition-all">
+                            <div key={pkg.id} className="border-2 border-gray-200 rounded-2xl p-6 hover:border-[#e35654] transition-all">
                               <div className="flex items-start justify-between mb-4">
                                 <div>
                                   <h3 className="text-lg text-gray-900 mb-1" style={{ fontWeight: 700 }}>
@@ -479,7 +479,7 @@ export default function HackathonPreview() {
                                 {pkg.type === 'financial' && (
                                   <div className="text-right">
                                     <div className="text-xs text-gray-500 mb-1">القيمة المالية</div>
-                                    <div className="text-xl text-[#a41b42]" style={{ fontWeight: 700 }}>
+                                    <div className="text-xl text-[#e35654]" style={{ fontWeight: 700 }}>
                                       {pkg.value}
                                     </div>
                                   </div>
@@ -499,7 +499,7 @@ export default function HackathonPreview() {
                                 </ul>
                               </div>
 
-                              <button className="w-full px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all text-sm" style={{ fontWeight: 600 }}>
+                              <button className="w-full px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all text-sm" style={{ fontWeight: 600 }}>
                                 طلب هذه الباقة
                               </button>
                             </div>
@@ -510,7 +510,7 @@ export default function HackathonPreview() {
                       {/* CTA */}
                       <div className="bg-gradient-to-br from-orange-50 to-[#fef2f4] border-2 border-orange-200 rounded-2xl p-6">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-[#a41b42] flex items-center justify-center text-white">
+                          <div className="w-12 h-12 rounded-xl bg-[#e35654] flex items-center justify-center text-white">
                             <Handshake className="w-6 h-6" />
                           </div>
                           <div className="flex-1">
@@ -649,7 +649,7 @@ export default function HackathonPreview() {
                         { icon: '🏠', label: 'الرئيسية', color: '#6366f1', active: true },
                         { icon: '👥', label: 'بيانات الفريق', color: '#10b981', active: false },
                         { icon: '📹', label: 'الجلسات', color: '#06b6d4', active: false },
-                        { icon: '📤', label: 'رفع المشروع', color: '#a41b42', active: false },
+                        { icon: '📤', label: 'رفع المشروع', color: '#e35654', active: false },
                         { icon: '📊', label: 'التقييمات', color: '#f59e0b', active: false },
                         { icon: '🏆', label: 'الشهادات', color: '#8b5cf6', active: false },
                       ].map((item, i) => (
@@ -700,7 +700,7 @@ export default function HackathonPreview() {
                             { value: '45', label: 'ثانية' },
                           ].map((time, i) => (
                             <div key={i} className="text-center py-2 rounded-lg bg-[#fef2f4] border border-[#fce7eb]">
-                              <p className="text-sm" style={{ fontWeight: 700, color: '#a41b42' }}>{time.value}</p>
+                              <p className="text-sm" style={{ fontWeight: 700, color: '#e35654' }}>{time.value}</p>
                               <p className="text-xs text-gray-400 mt-0.5">{time.label}</p>
                             </div>
                           ))}
@@ -716,7 +716,7 @@ export default function HackathonPreview() {
                         <div className="space-y-2">
                           {[
                             { phase: 'بداية المسابقة', date: '1 أكتوبر', status: 'completed', color: '#10b981' },
-                            { phase: 'تطوير النماذج الأولية', date: '1-7 أكتوبر', status: 'active', color: '#a41b42' },
+                            { phase: 'تطوير النماذج الأولية', date: '1-7 أكتوبر', status: 'active', color: '#e35654' },
                             { phase: 'التسليم النهائي', date: '13 أكتوبر', status: 'upcoming', color: '#6b7280' },
                           ].map((phase, idx) => (
                             <div key={idx} className="flex items-start gap-2">

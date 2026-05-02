@@ -266,7 +266,7 @@ export function CreateHackathon() {
               </button>
               <Link 
                 to="/admin/hackathon-preview"
-                className="px-4 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] shadow-md shadow-[#a41b42]/20 transition-all flex items-center gap-2" 
+                className="px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20 transition-all flex items-center gap-2" 
                 style={{ fontWeight: 600 }}
               >
                 <Eye className="w-4 h-4" />
@@ -286,11 +286,11 @@ export function CreateHackathon() {
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-gray-600" style={{ fontWeight: 600 }}>اكتمال الإعداد</span>
-                  <span className="text-lg text-[#a41b42]" style={{ fontWeight: 700 }}>{progress}%</span>
+                  <span className="text-lg text-[#e35654]" style={{ fontWeight: 700 }}>{progress}%</span>
                 </div>
                 <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-gradient-to-l from-[#a41b42] to-[#8a1537] rounded-full transition-all duration-500"
+                    className="h-full bg-[#e35654] rounded-full transition-all duration-500"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -309,13 +309,13 @@ export function CreateHackathon() {
                       onClick={() => setActiveSection(section.id)}
                       className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm transition-all ${
                         isActive 
-                          ? 'bg-gradient-to-l from-[#fef2f2] to-[#fee2e2] text-[#a41b42] border border-[#a41b42]/20' 
+                          ? 'bg-gradient-to-l from-[#fef2f2] to-[#fee2e2] text-[#e35654] border border-[#e35654]/20' 
                           : 'text-gray-600 hover:bg-gray-50'
                       }`}
                       style={{ fontWeight: isActive ? 600 : 500 }}
                     >
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        isActive ? 'bg-[#a41b42] text-white' : 'bg-gray-100 text-gray-500'
+                        isActive ? 'bg-[#e35654] text-white' : 'bg-gray-100 text-gray-500'
                       }`}>
                         {isCompleted ? (
                           <CheckCircle2 className="w-4 h-4" />
@@ -325,7 +325,7 @@ export function CreateHackathon() {
                       </div>
                       <span className="flex-1 text-right">{section.label}</span>
                       {isActive && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-[#a41b42]" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#e35654]" />
                       )}
                     </button>
                   );
@@ -364,7 +364,7 @@ export function CreateHackathon() {
                       <input
                         type="text"
                         placeholder="مثال: هاكاثون الابتكار الصحي"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                       />
                     </div>
  
@@ -380,7 +380,7 @@ export function CreateHackathon() {
                         <input
                           type="text"
                           placeholder="health-hackathon-2024"
-                          className="flex-1 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="flex-1 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                         <button className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 text-sm hover:bg-gray-200 transition-all" style={{ fontWeight: 600 }}>
                           تحقق
@@ -396,7 +396,7 @@ export function CreateHackathon() {
                       <textarea
                         rows={5}
                         placeholder="تحدث عن الأهداف، التحديات، والجمهور المستهدف..."
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all resize-none"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none"
                       />
                     </div>
  
@@ -408,7 +408,7 @@ export function CreateHackathon() {
                         </label>
                         <button
                           onClick={addTrack}
-                          className="px-3 py-1.5 rounded-lg bg-[#a41b42] text-white text-xs hover:bg-[#8a1537] transition-all flex items-center gap-1"
+                          className="px-3 py-1.5 rounded-lg bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] transition-all flex items-center gap-1"
                           style={{ fontWeight: 600 }}
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -428,12 +428,12 @@ export function CreateHackathon() {
                                 <input
                                   type="text"
                                   placeholder="اسم المسار (مثال: الذكاء الاصطناعي)"
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10"
+                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10"
                                 />
                                 <textarea
                                   rows={2}
                                   placeholder="وصف المسار والأهداف المطلوبة..."
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 resize-none"
+                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 resize-none"
                                 />
                               </div>
                               <button
@@ -457,7 +457,7 @@ export function CreateHackathon() {
                         {['حضوري', 'عبر الإنترنت', 'هجين (Hybrid)'].map((format) => (
                           <button
                             key={format}
-                            className="px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-700 text-sm hover:border-[#a41b42] hover:bg-red-50 hover:text-[#a41b42] transition-all"
+                            className="px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:bg-red-50 hover:text-[#e35654] transition-all"
                             style={{ fontWeight: 500 }}
                           >
                             {format}
@@ -475,7 +475,7 @@ export function CreateHackathon() {
                         <input
                           type="text"
                           placeholder="الرياض، السعودية"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                       <div>
@@ -485,7 +485,7 @@ export function CreateHackathon() {
                         <input
                           type="text"
                           placeholder="شارع الملك فهد، الرياض"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                     </div>
@@ -498,7 +498,7 @@ export function CreateHackathon() {
                         </label>
                         <input
                           type="date"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                       <div>
@@ -507,7 +507,7 @@ export function CreateHackathon() {
                         </label>
                         <input
                           type="date"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                     </div>
@@ -520,7 +520,7 @@ export function CreateHackathon() {
                         </label>
                         <button
                           onClick={addTimelineEvent}
-                          className="px-3 py-1.5 rounded-lg bg-[#a41b42] text-white text-xs hover:bg-[#8a1537] transition-all flex items-center gap-1"
+                          className="px-3 py-1.5 rounded-lg bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] transition-all flex items-center gap-1"
                           style={{ fontWeight: 600 }}
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -539,15 +539,15 @@ export function CreateHackathon() {
                             <input
                               type="text"
                               placeholder="عنوان الحدث (مثال: افتتاح الهاكاثون)"
-                              className="flex-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                              className="flex-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                             />
                             <input
                               type="date"
-                              className="w-40 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                              className="w-40 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                             />
                             <input
                               type="time"
-                              className="w-32 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                              className="w-32 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                             />
                             <button
                               onClick={() => removeTimelineEvent(event.id)}
@@ -569,7 +569,7 @@ export function CreateHackathon() {
                         <input
                           type="text"
                           placeholder="مؤسسة الابتكار السعودية"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                       <div>
@@ -579,7 +579,7 @@ export function CreateHackathon() {
                         <input
                           type="email"
                           placeholder="contact@hackathon.com"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                     </div>
@@ -590,14 +590,14 @@ export function CreateHackathon() {
                         الظهور <span className="text-red-500">*</span>
                       </label>
                       <div className="space-y-3">
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#a41b42] hover:bg-red-50 transition-all">
+                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
                           <input type="radio" name="visibility" className="mt-1" defaultChecked />
                           <div>
                             <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>هاكاثون عام (Public)</div>
                             <div className="text-xs text-gray-500 mt-1">يظهر للجميع ويمكن لأي شخص التسجيل</div>
                           </div>
                         </label>
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#a41b42] hover:bg-red-50 transition-all">
+                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
                           <input type="radio" name="visibility" className="mt-1" />
                           <div>
                             <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>هاكاثون خاص (Private)</div>
@@ -622,7 +622,7 @@ export function CreateHackathon() {
                     {/* Add Organizer Button */}
                     <button 
                       onClick={addOrganizer}
-                      className="w-full p-6 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#a41b42] hover:bg-red-50 transition-all flex items-center justify-center gap-2 text-gray-600 hover:text-[#a41b42]" 
+                      className="w-full p-6 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#e35654] hover:bg-red-50 transition-all flex items-center justify-center gap-2 text-gray-600 hover:text-[#e35654]" 
                       style={{ fontWeight: 600 }}
                     >
                       <Plus className="w-5 h-5" />
@@ -636,7 +636,7 @@ export function CreateHackathon() {
                         
                         <div className="space-y-4">
                           {organizers.map((organizer) => (
-                            <div key={organizer.id} className="border-2 border-gray-200 rounded-xl p-6 bg-white hover:border-[#a41b42] transition-all">
+                            <div key={organizer.id} className="border-2 border-gray-200 rounded-xl p-6 bg-white hover:border-[#e35654] transition-all">
                               {/* Basic Info */}
                               <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div>
@@ -646,7 +646,7 @@ export function CreateHackathon() {
                                     value={organizer.name}
                                     onChange={(e) => updateOrganizer(organizer.id, 'name', e.target.value)}
                                     placeholder="محمد أحمد"
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#a41b42]"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
                                   />
                                 </div>
                                 <div>
@@ -656,7 +656,7 @@ export function CreateHackathon() {
                                     value={organizer.email}
                                     onChange={(e) => updateOrganizer(organizer.id, 'email', e.target.value)}
                                     placeholder="email@example.com"
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#a41b42]"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
                                   />
                                 </div>
                                 <div>
@@ -664,7 +664,7 @@ export function CreateHackathon() {
                                   <select
                                     value={organizer.role}
                                     onChange={(e) => updateOrganizer(organizer.id, 'role', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#a41b42]"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
                                   >
                                     <option value="">اختر الدور</option>
                                     <option value="manager">مدير</option>
@@ -694,7 +694,7 @@ export function CreateHackathon() {
                                         key={perm.id} 
                                         className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
                                           isSelected 
-                                            ? 'border-[#a41b42] bg-red-50' 
+                                            ? 'border-[#e35654] bg-red-50' 
                                             : 'border-gray-200 hover:bg-gray-50'
                                         }`}
                                       >
@@ -702,10 +702,10 @@ export function CreateHackathon() {
                                           type="checkbox" 
                                           checked={isSelected}
                                           onChange={() => toggleOrganizerPermission(organizer.id, perm.id)}
-                                          className="w-4 h-4 text-[#a41b42] border-gray-300 rounded focus:ring-[#a41b42]"
+                                          className="w-4 h-4 text-[#e35654] border-gray-300 rounded focus:ring-[#e35654]"
                                         />
                                         <span className="text-lg">{perm.icon}</span>
-                                        <span className={`text-sm flex-1 ${isSelected ? 'text-[#a41b42]' : 'text-gray-700'}`} style={{ fontWeight: isSelected ? 600 : 500 }}>
+                                        <span className={`text-sm flex-1 ${isSelected ? 'text-[#e35654]' : 'text-gray-700'}`} style={{ fontWeight: isSelected ? 600 : 500 }}>
                                           {perm.label}
                                         </span>
                                       </label>
@@ -761,7 +761,7 @@ export function CreateHackathon() {
                         </label>
                         <input
                           type="datetime-local"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                       <div>
@@ -770,7 +770,7 @@ export function CreateHackathon() {
                         </label>
                         <input
                           type="datetime-local"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                     </div>
@@ -783,7 +783,7 @@ export function CreateHackathon() {
                       <input
                         type="number"
                         placeholder="18"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                       />
                       <p className="text-xs text-gray-500 mt-2">حدد الحد الأدنى للعمر إذا كان الحدث يتطلب أهلية قانونية أو موافقة الوالدين</p>
                     </div>
@@ -797,7 +797,7 @@ export function CreateHackathon() {
                         <input
                           type="number"
                           placeholder="5"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                       <div>
@@ -807,7 +807,7 @@ export function CreateHackathon() {
                         <input
                           type="number"
                           placeholder="1"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                     </div>
@@ -820,7 +820,7 @@ export function CreateHackathon() {
                       <input
                         type="number"
                         placeholder="500"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                       />
                     </div>
  
@@ -830,21 +830,21 @@ export function CreateHackathon() {
                         نمط المشاركة <span className="text-red-500">*</span>
                       </label>
                       <div className="space-y-3">
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#a41b42] hover:bg-red-50 transition-all">
+                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
                           <input type="radio" name="participation" className="mt-1" defaultChecked />
                           <div>
                             <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>فرق فقط</div>
                             <div className="text-xs text-gray-500 mt-1">يجب على المشاركين التسجيل كفريق</div>
                           </div>
                         </label>
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#a41b42] hover:bg-red-50 transition-all">
+                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
                           <input type="radio" name="participation" className="mt-1" />
                           <div>
                             <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>أفراد وفرق</div>
                             <div className="text-xs text-gray-500 mt-1">يمكن للأفراد التسجيل ثم الانضمام لفريق لاحقاً</div>
                           </div>
                         </label>
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#a41b42] hover:bg-red-50 transition-all">
+                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
                           <input type="radio" name="participation" className="mt-1" />
                           <div>
                             <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>أفراد فقط</div>
@@ -859,7 +859,7 @@ export function CreateHackathon() {
                       <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                         الدول المسموحة <span className="text-red-500">*</span>
                       </label>
-                      <select className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all">
+                      <select className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all">
                         <option>جميع الدول</option>
                         <option>دول الخليج فقط</option>
                         <option>السعودية فقط</option>
@@ -890,7 +890,7 @@ export function CreateHackathon() {
                         className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer block ${
                           uploadedFiles['logo'] 
                             ? 'border-green-500 bg-green-50' 
-                            : 'border-gray-200 hover:border-[#a41b42] hover:bg-red-50'
+                            : 'border-gray-200 hover:border-[#e35654] hover:bg-red-50'
                         }`}
                       >
                         <input 
@@ -926,7 +926,7 @@ export function CreateHackathon() {
                               onClick={() => setSelectedLogoPattern(selectedLogoPattern === p ? null : p)}
                               className={`w-full aspect-square rounded-xl border-2 overflow-hidden transition-all ${
                                 selectedLogoPattern === p
-                                  ? 'border-[#a41b42] ring-2 ring-[#a41b42]/30'
+                                  ? 'border-[#e35654] ring-2 ring-[#e35654]/30'
                                   : 'border-gray-200 hover:border-gray-400'
                               }`}
                             >
@@ -938,7 +938,7 @@ export function CreateHackathon() {
  
                       {/* Logo Preview */}
                       {selectedLogoPattern && (
-                        <div className="mt-4 p-4 rounded-xl border border-[#a41b42]/20 bg-red-50">
+                        <div className="mt-4 p-4 rounded-xl border border-[#e35654]/20 bg-red-50">
                           <p className="text-xs text-gray-500 mb-3" style={{ fontWeight: 600 }}>معاينة الشعار</p>
                           <div className="flex items-center gap-4">
                             <div className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 bg-white">
@@ -970,7 +970,7 @@ export function CreateHackathon() {
                         className={`border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer block ${
                           uploadedFiles['banner'] 
                             ? 'border-green-500 bg-green-50' 
-                            : 'border-gray-200 hover:border-[#a41b42] hover:bg-red-50'
+                            : 'border-gray-200 hover:border-[#e35654] hover:bg-red-50'
                         }`}
                       >
                         <input 
@@ -1006,7 +1006,7 @@ export function CreateHackathon() {
                               onClick={() => setSelectedBannerPattern(selectedBannerPattern === p ? null : p)}
                               className={`w-full rounded-xl border-2 overflow-hidden transition-all ${
                                 selectedBannerPattern === p
-                                  ? 'border-[#a41b42] ring-2 ring-[#a41b42]/30'
+                                  ? 'border-[#e35654] ring-2 ring-[#e35654]/30'
                                   : 'border-gray-200 hover:border-gray-400'
                               }`}
                               style={{ height: '80px' }}
@@ -1019,7 +1019,7 @@ export function CreateHackathon() {
  
                       {/* Banner Preview */}
                       {selectedBannerPattern && (
-                        <div className="mt-4 p-4 rounded-xl border border-[#a41b42]/20 bg-red-50">
+                        <div className="mt-4 p-4 rounded-xl border border-[#e35654]/20 bg-red-50">
                           <p className="text-xs text-gray-500 mb-3" style={{ fontWeight: 600 }}>معاينة الهيدر</p>
                           <div className="w-full rounded-xl overflow-hidden border border-gray-200" style={{ height: '120px' }}>
                             <BannerPattern pattern={selectedBannerPattern} colorPalette={selectedColorPalette} />
@@ -1058,7 +1058,7 @@ export function CreateHackathon() {
                             onClick={() => setSelectedColorPalette(palette.id)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm transition-all ${
                               selectedColorPalette === palette.id
-                                ? 'border-[#a41b42] bg-red-50'
+                                ? 'border-[#e35654] bg-red-50'
                                 : 'border-gray-200 hover:border-gray-400'
                             }`}
                           >
@@ -1117,7 +1117,7 @@ export function CreateHackathon() {
                         </label>
                         <input
                           type="datetime-local"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                       <div>
@@ -1126,7 +1126,7 @@ export function CreateHackathon() {
                         </label>
                         <input
                           type="datetime-local"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                         />
                       </div>
                     </div>
@@ -1139,7 +1139,7 @@ export function CreateHackathon() {
                       <textarea
                         rows={4}
                         placeholder="اكتب وصفاً دقيقاً لنوعية المشاريع المطلوبة، الأهداف، والتوقعات..."
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all resize-none"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none"
                       />
                     </div>
  
@@ -1151,7 +1151,7 @@ export function CreateHackathon() {
                       <textarea
                         rows={4}
                         placeholder="حدد الشروط والمتطلبات الفنية للمشاريع (مثال: يجب أن يكون المشروع مفتوح المصدر، استخدام تقنيات معينة، إلخ...)"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all resize-none"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none"
                       />
                     </div>
  
@@ -1194,13 +1194,13 @@ export function CreateHackathon() {
                         type="number"
                         placeholder="50"
                         defaultValue="50"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all"
                       />
                     </div>
  
                     {/* Allow Late Submissions */}
                     <div>
-                      <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#a41b42] hover:bg-red-50 transition-all">
+                      <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
                         <input type="checkbox" className="mt-1" />
                         <div>
                           <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>السماح بالتسليم المتأخر</div>
@@ -1229,7 +1229,7 @@ export function CreateHackathon() {
                       <textarea
                         rows={5}
                         placeholder="مثال:&#10;• الابتكار والإبداع (30%)&#10;• التنفيذ الفني والجودة (30%)&#10;• التأثير والفائدة (20%)&#10;• العرض والتقديم (20%)"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all resize-none"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none"
                       />
                     </div>
  
@@ -1240,22 +1240,22 @@ export function CreateHackathon() {
                         <input
                           type="text"
                           placeholder="اسم المحكم"
-                          className="px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42]"
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654]"
                         />
                         <input
                           type="email"
                           placeholder="البريد الإلكتروني"
-                          className="px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42]"
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654]"
                         />
                         <input
                           type="text"
                           placeholder="التخصص"
-                          className="px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42]"
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654]"
                         />
                       </div>
                       <button
                         onClick={addJudge}
-                        className="w-full py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8a1537] transition-all flex items-center justify-center gap-2"
+                        className="w-full py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all flex items-center justify-center gap-2"
                         style={{ fontWeight: 600 }}
                       >
                         <Plus className="w-4 h-4" />
@@ -1333,7 +1333,7 @@ export function CreateHackathon() {
                       <h3 className="text-sm text-gray-900" style={{ fontWeight: 700 }}>جوائز الهاكاثون</h3>
                       <button
                         onClick={addPrize}
-                        className="px-4 py-2 rounded-lg bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-all flex items-center gap-2"
+                        className="px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all flex items-center gap-2"
                         style={{ fontWeight: 600 }}
                       >
                         <Plus className="w-4 h-4" />
@@ -1361,7 +1361,7 @@ export function CreateHackathon() {
                                   <input
                                     type="text"
                                     placeholder="المركز الأول"
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                   />
                                 </div>
                                 <div>
@@ -1369,7 +1369,7 @@ export function CreateHackathon() {
                                   <input
                                     type="text"
                                     placeholder="50,000 ريال"
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                   />
                                 </div>
                               </div>
@@ -1378,7 +1378,7 @@ export function CreateHackathon() {
                                 <textarea
                                   rows={3}
                                   placeholder="وصف الجائزة، الشروط، وطريقة الاستلام..."
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42] resize-none"
+                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
                                 />
                               </div>
                             </div>
@@ -1401,7 +1401,7 @@ export function CreateHackathon() {
                       <textarea
                         rows={4}
                         placeholder="اكتب الشروط العامة لاستحقاق واستلام الجوائز..."
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 focus:bg-white transition-all resize-none"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none"
                       />
                     </div>
                   </div>
@@ -1422,7 +1422,7 @@ export function CreateHackathon() {
                       <h3 className="text-sm text-gray-900" style={{ fontWeight: 700 }}>باقات الرعاية</h3>
                       <button
                         onClick={addSponsorPackage}
-                        className="px-4 py-2 rounded-lg bg-[#a41b42] text-white text-sm hover:bg-[#8a1537] transition-all flex items-center gap-2"
+                        className="px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all flex items-center gap-2"
                         style={{ fontWeight: 600 }}
                       >
                         <Plus className="w-4 h-4" />
@@ -1481,12 +1481,12 @@ export function CreateHackathon() {
                                       <input
                                         type="text"
                                         placeholder="الباقة الذهبية"
-                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                       />
                                     </div>
                                     <div>
                                       <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>نوع الرعاية</label>
-                                      <select className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]">
+                                      <select className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]">
                                         <option value="financial">رعاية مالية 💰</option>
                                         <option value="technical">رعاية تقنية 💻</option>
                                         <option value="logistic">رعاية لوجستية 📦</option>
@@ -1501,7 +1501,7 @@ export function CreateHackathon() {
                                     <textarea
                                       rows={2}
                                       placeholder="وصف ��امل للباقة وفوائدها للراعي والهاكاثون..."
-                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42] resize-none"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
                                     />
                                   </div>
                                   <div>
@@ -1509,7 +1509,7 @@ export function CreateHackathon() {
                                     <input
                                       type="text"
                                       placeholder="3 أشهر"
-                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                     />
                                   </div>
                                 </div>
@@ -1527,7 +1527,7 @@ export function CreateHackathon() {
                                       <input
                                         type="text"
                                         placeholder="100,000"
-                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                       />
                                     </div>
                                   </div>
@@ -1550,7 +1550,7 @@ export function CreateHackathon() {
                                         pkg.type === 'media' ? 'مثال: تغطية إعلامية كاملة، نشر على 5 منصات تواصل، تصوير فيديو احترافي، مقابلات...' :
                                         'حدد تفاصيل ما سيقدمه الراعي بالضبط...'
                                       }
-                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42] resize-none"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
                                     />
                                   </div>
                                   <div>
@@ -1558,7 +1558,7 @@ export function CreateHackathon() {
                                     <input
                                       type="text"
                                       placeholder="مثال: 2 مطور، 50 جهاز، 200 وجبة، إلخ"
-                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                     />
                                   </div>
                                 </div>
@@ -1577,7 +1577,7 @@ export function CreateHackathon() {
                                           <input
                                             type="text"
                                             placeholder={`ميزة ${i} - مثال: ظهور الشعار في الموقع، جناح خاص، شهادة تقدير، إلخ`}
-                                            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#a41b42]"
+                                            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                           />
                                         </div>
                                       ))}
@@ -1628,7 +1628,7 @@ export function CreateHackathon() {
                   {currentIndex === sections.length - 1 ? (
                     <button 
                       onClick={handlePublish}
-                      className="px-8 py-3 rounded-xl bg-gradient-to-l from-[#a41b42] to-[#8a1537] text-white hover:shadow-lg hover:shadow-[#a41b42]/30 transition-all flex items-center gap-2" 
+                      className="px-8 py-3 rounded-xl bg-[#e35654] text-white hover:shadow-lg hover:shadow-[#e35654]/30 transition-all flex items-center gap-2" 
                       style={{ fontWeight: 600 }}
                     >
                       <CheckCircle2 className="w-5 h-5" />
@@ -1637,7 +1637,7 @@ export function CreateHackathon() {
                   ) : (
                     <button
                       onClick={handleNext}
-                      className="px-8 py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8a1537] transition-all"
+                      className="px-8 py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all"
                       style={{ fontWeight: 600 }}
                     >
                       التالي

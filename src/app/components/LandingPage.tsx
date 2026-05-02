@@ -58,7 +58,7 @@ export function LandingPage() {
         <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/40 to-white/80" />
         
         {/* Blob Shapes */}
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-[#a41b42]/20 rounded-full blur-3xl" />
+        <div className="absolute top-20 left-1/4 w-96 h-96 bg-[#e35654]/20 rounded-full blur-3xl" />
         <div className="absolute bottom-40 right-1/3 w-80 h-80 bg-orange-200/30 rounded-full blur-3xl" />
  
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -72,7 +72,7 @@ export function LandingPage() {
               <h1 className="text-5xl lg:text-6xl text-gray-900 mb-6 leading-tight" style={{ fontWeight: 800 }}>
                 مُمكّن
                 <br />
-                <span className="text-[#a41b42]">نجعل المستحيل ممكنًا</span>
+                <span className="text-[#e35654]">نجعل المستحيل ممكنًا</span>
               </h1>
  
               <p className="text-xl text-gray-600 mb-8 leading-relaxed">
@@ -82,7 +82,7 @@ export function LandingPage() {
               <div className="flex flex-wrap items-center gap-4">
                 <button
                   onClick={() => navigate("/auth")}
-                  className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-[#a41b42] text-white hover:bg-[#8a1537] shadow-lg shadow-[#a41b42]/30 transition-all"
+                  className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/30 transition-all"
                   style={{ fontWeight: 600 }}
                 >
                   ابدأ الآن
@@ -113,7 +113,7 @@ export function LandingPage() {
                   تحدي تقني شامل يهدف إلى ابتكار حلول مستدامة للمدن الذكية
                 </p>
                 <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-4 h-4 text-[#a41b42]" />
+                  <Users className="w-4 h-4 text-[#e35654]" />
                   <span className="text-xs text-gray-600">340 مشارك</span>
                 </div>
                 <div className="flex gap-2">
@@ -124,7 +124,7 @@ export function LandingPage() {
  
               {/* Card 2 - Middle Left */}
               <div 
-                className="absolute top-32 left-0 w-64 bg-gradient-to-br from-[#a41b42] to-[#8a1537] rounded-2xl shadow-2xl p-5 text-white"
+                className="absolute top-32 left-0 w-64 bg-[#e35654] rounded-2xl shadow-2xl p-5 text-white"
                 style={{ 
                   transform: "rotate(-6deg)",
                   animation: "float 7s ease-in-out infinite 1s"
@@ -198,7 +198,7 @@ export function LandingPage() {
  
               {/* Why Participate Card */}
               <div
-                className="absolute bottom-0 left-0 w-60 bg-gradient-to-br from-[#a41b42] to-[#8a1537] rounded-2xl shadow-2xl p-4 text-white"
+                className="absolute bottom-0 left-0 w-60 bg-[#e35654] rounded-2xl shadow-2xl p-4 text-white"
                 style={{
                   transform: "rotate(-3deg)",
                   animation: "float 9s ease-in-out infinite 0.5s"
@@ -266,7 +266,7 @@ export function LandingPage() {
                     {/* Browser Bar */}
                     <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-300/50 flex-shrink-0">
                       <div className="flex gap-1.5">
-                        <div className="w-2 h-2 rounded-full bg-[#a41b42]" />
+                        <div className="w-2 h-2 rounded-full bg-[#e35654]" />
                         <div className="w-2 h-2 rounded-full bg-yellow-400" />
                         <div className="w-2 h-2 rounded-full bg-green-400" />
                       </div>
@@ -279,7 +279,7 @@ export function LandingPage() {
                     <div className="bg-white rounded-lg p-3 space-y-2 flex-grow">
                       {/* Header */}
                       <div className="flex items-center justify-between mb-2">
-                        <div className="h-2 bg-[#a41b42] rounded w-16" />
+                        <div className="h-2 bg-[#e35654] rounded w-16" />
                         <div className="flex gap-2">
                           <div className="h-2 bg-gray-200 rounded w-12" />
                           <div className="h-2 bg-gray-200 rounded w-12" />
@@ -306,10 +306,10 @@ export function LandingPage() {
                         </div>
                         
                         <div className="bg-gradient-to-br from-rose-50 to-fuchsia-50 rounded p-2 border border-rose-200">
-                          <div className="w-5 h-5 rounded bg-[#a41b42] mb-1 mx-auto flex items-center justify-center">
+                          <div className="w-5 h-5 rounded bg-[#e35654] mb-1 mx-auto flex items-center justify-center">
                             <LayoutDashboard className="w-3 h-3 text-white" />
                           </div>
-                          <div className="h-1 bg-[#c42255] rounded w-full mb-1" />
+                          <div className="h-1 bg-[#ff6b6b] rounded w-full mb-1" />
                           <div className="h-1 bg-[#d4547a] rounded w-3/4" />
                         </div>
                       </div>
@@ -319,7 +319,7 @@ export function LandingPage() {
  
                 {/* Title */}
                 <h3 className="text-xl text-gray-900 mb-2 flex-shrink-0" style={{ fontWeight: 700 }}>
-                  <span className="text-[#a41b42]">منصة واحدة</span> لكل الهاكاثونات
+                  <span className="text-[#e35654]">منصة واحدة</span> لكل الهاكاثونات
                 </h3>
                 
                 {/* Description */}
@@ -349,7 +349,7 @@ export function LandingPage() {
                     <div className="relative flex items-center justify-between w-full max-w-md">
                       {/* Step 1 - Customization */}
                       <div className="flex flex-col items-center gap-3 z-10">
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#a41b42] to-[#c42255] shadow-lg flex items-center justify-center border-4 border-white">
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#e35654] to-[#ff6b6b] shadow-lg flex items-center justify-center border-4 border-white">
                           <span className="text-white text-sm" style={{ fontWeight: 700 }}>1</span>
                         </div>
                         <span className="text-[10px] text-gray-700 text-center leading-tight max-w-[80px]" style={{ fontWeight: 600 }}>التخصيص والهوية البصرية</span>
@@ -357,8 +357,8 @@ export function LandingPage() {
  
                       {/* Step 2 - Registration */}
                       <div className="flex flex-col items-center gap-3 z-10">
-                        <div className="w-14 h-14 rounded-full border-4 border-[#a41b42] bg-white shadow-md flex items-center justify-center">
-                          <span className="text-[#a41b42] text-sm" style={{ fontWeight: 700 }}>2</span>
+                        <div className="w-14 h-14 rounded-full border-4 border-[#e35654] bg-white shadow-md flex items-center justify-center">
+                          <span className="text-[#e35654] text-sm" style={{ fontWeight: 700 }}>2</span>
                         </div>
                         <span className="text-[10px] text-gray-700 text-center leading-tight max-w-[80px]" style={{ fontWeight: 600 }}>إدارة القبول والتسجيل</span>
                       </div>
@@ -376,7 +376,7 @@ export function LandingPage() {
  
                 {/* Title */}
                 <h3 className="text-xl text-gray-900 mb-2 flex-shrink-0" style={{ fontWeight: 700 }}>
-                  تنظيم هاكاثونات <span className="text-[#a41b42]">بسهولة</span>
+                  تنظيم هاكاثونات <span className="text-[#e35654]">بسهولة</span>
                 </h3>
                 
                 {/* Description */}
@@ -520,7 +520,7 @@ export function LandingPage() {
  
                 {/* Title */}
                 <h3 className="text-xl text-gray-900 mb-2 flex-shrink-0" style={{ fontWeight: 700 }}>
-                  تجربة <span className="text-[#a41b42]">أفضل</span> للمشاركين
+                  تجربة <span className="text-[#e35654]">أفضل</span> للمشاركين
                 </h3>
                 
                 {/* Description */}
@@ -577,13 +577,13 @@ export function LandingPage() {
                     </div>
  
                     {/* Featured Card - Centered and Highlighted */}
-                    <div className="relative z-10 w-24 h-16 bg-white rounded-lg shadow-xl border-2 border-[#a41b42] p-2.5 transform scale-110">
+                    <div className="relative z-10 w-24 h-16 bg-white rounded-lg shadow-xl border-2 border-[#e35654] p-2.5 transform scale-110">
                       <div className="flex items-center gap-2 mb-1">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#a41b42] to-[#8a1537] flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-[#e35654] flex items-center justify-center">
                           <Handshake className="w-3 h-3 text-white" />
                         </div>
                         <div className="flex-1">
-                          <div className="h-1 bg-[#c42255] rounded w-full mb-0.5" />
+                          <div className="h-1 bg-[#ff6b6b] rounded w-full mb-0.5" />
                           <div className="h-1 bg-[#d4547a] rounded w-2/3" />
                         </div>
                       </div>
@@ -612,7 +612,7 @@ export function LandingPage() {
  
                 {/* Title */}
                 <h3 className="text-xl text-gray-900 mb-2 flex-shrink-0" style={{ fontWeight: 700 }}>
-                  فرص واضحة <span className="text-[#a41b42]">لدعم الابتكار</span>
+                  فرص واضحة <span className="text-[#e35654]">لدعم الابتكار</span>
                 </h3>
                 
                 {/* Description */}
@@ -662,8 +662,8 @@ export function LandingPage() {
               >
                 {/* Text - Right */}
                 <div className="lg:order-2 text-right">
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#a41b42]/10 text-[#a41b42] mb-4" style={{ fontWeight: 600 }}>
-                    <div className="w-8 h-8 rounded-full bg-[#a41b42] flex items-center justify-center text-white text-sm" style={{ fontWeight: 700 }}>1</div>
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#e35654]/10 text-[#e35654] mb-4" style={{ fontWeight: 600 }}>
+                    <div className="w-8 h-8 rounded-full bg-[#e35654] flex items-center justify-center text-white text-sm" style={{ fontWeight: 700 }}>1</div>
                     <span>لمحة عن مُمكّن</span>
                   </div>
                   <h3 className="text-3xl text-gray-900 mb-4" style={{ fontWeight: 700 }}>
@@ -682,7 +682,7 @@ export function LandingPage() {
                       {/* Header Bar */}
                       <div className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#a41b42] to-[#8a1537] flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-lg bg-[#e35654] flex items-center justify-center">
                             <LayoutDashboard className="w-5 h-5 text-white" />
                           </div>
                           <div>
@@ -722,7 +722,7 @@ export function LandingPage() {
                           <div className="h-2 bg-gray-200 rounded w-8" />
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-[#a41b42] to-[#c42255] rounded-full" style={{ width: '70%' }} />
+                          <div className="h-full bg-gradient-to-r from-[#e35654] to-[#ff6b6b] rounded-full" style={{ width: '70%' }} />
                         </div>
                       </div>
                     </div>
@@ -774,7 +774,7 @@ export function LandingPage() {
                         </div>
                         
                         {/* Center Target */}
-                        <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-[#a41b42] to-[#8a1537] flex items-center justify-center shadow-2xl">
+                        <div className="relative w-24 h-24 rounded-full bg-[#e35654] flex items-center justify-center shadow-2xl">
                           <Target className="w-12 h-12 text-white" />
                         </div>
  
@@ -861,10 +861,10 @@ export function LandingPage() {
                           </div>
                           
                           <div className="bg-gradient-to-br from-rose-50 to-fuchsia-50 rounded-lg p-2 border border-rose-200">
-                            <div className="w-6 h-6 rounded-full bg-[#a41b42] mx-auto mb-1 flex items-center justify-center">
+                            <div className="w-6 h-6 rounded-full bg-[#e35654] mx-auto mb-1 flex items-center justify-center">
                               <LayoutDashboard className="w-3 h-3 text-white" />
                             </div>
-                            <div className="h-1 bg-[#c42255] rounded w-full" />
+                            <div className="h-1 bg-[#ff6b6b] rounded w-full" />
                           </div>
                         </div>
  
@@ -917,7 +917,7 @@ export function LandingPage() {
                 title: "المنظمون",
                 subtitle: "صمّم، وأدر، وأطلق هاكاثونك",
                 icon: LayoutDashboard,
-                color: "#a41b42",
+                color: "#e35654",
                 features: [
                   "تخصيص كامل للهاكاثون",
                   "لوحة تحكم موحدة للإدارة",
@@ -1063,7 +1063,7 @@ export function LandingPage() {
       <section id="contact" className="py-24 bg-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div 
-            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#a41b42] via-[#951940] to-[#8a1537] p-16 text-white shadow-2xl text-center"
+            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#e35654] via-[#d94745] to-[#cc4a48] p-16 text-white shadow-2xl text-center"
             initial={{ opacity: 0, scale: 0.95 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true, margin: "-100px" }}
@@ -1083,7 +1083,7 @@ export function LandingPage() {
               </p>
               <button
                 onClick={() => navigate("/auth")}
-                className="inline-flex items-center gap-3 px-10 py-5 rounded-xl bg-white text-[#a41b42] hover:bg-gray-50 shadow-2xl transition-all hover:scale-105"
+                className="inline-flex items-center gap-3 px-10 py-5 rounded-xl bg-white text-[#e35654] hover:bg-gray-50 shadow-2xl transition-all hover:scale-105"
                 style={{ fontWeight: 700, fontSize: "18px" }}
               >
                 <Sparkles className="w-6 h-6" />

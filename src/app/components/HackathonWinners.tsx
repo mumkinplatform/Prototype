@@ -238,7 +238,7 @@ export function HackathonWinners() {
               </button>
               <button
                 onClick={handlePublishResults}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all shadow-lg shadow-[#a41b42]/30"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-lg shadow-[#e35654]/30"
                 style={{ fontWeight: 600 }}
               >
                 <Send className="w-4 h-4" />
@@ -683,7 +683,7 @@ export function HackathonWinners() {
               </button>
               <button
                 onClick={confirmPublish}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all"
                 style={{ fontWeight: 600 }}
               >
                 تأكيد النشر
@@ -736,7 +736,7 @@ export function HackathonWinners() {
               </button>
               <button
                 onClick={confirmSendEmails}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all"
                 style={{ fontWeight: 600 }}
               >
                 تأكيد الإرسال

@@ -61,7 +61,7 @@ export function Profile() {
   return (
     <>
       {/* Profile Banner */}
-      <div className="h-28" style={{ background: "linear-gradient(135deg, #a41b42 0%, #8b1538 100%)" }} />
+      <div className="h-28" style={{ background: "linear-gradient(135deg, #e35654 0%, #cc4a48 100%)" }} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
         {/* Profile Header Card */}
@@ -72,14 +72,14 @@ export function Profile() {
               <div
                 className="w-20 h-20 rounded-2xl border-4 border-white shadow-md flex items-center justify-center text-white -mt-14 flex-shrink-0"
                 style={{
-                  background: "linear-gradient(135deg,#a41b42 0%,#8b1538 100%)",
+                  background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
                   fontWeight: 800,
                   fontSize: "1.5rem",
                 }}
               >
                 م
               </div>
-              <button className="absolute bottom-2 right-2 w-6 h-6 rounded-lg bg-white shadow-lg flex items-center justify-center text-[#a41b42] opacity-0 group-hover:opacity-100 transition-opacity">
+              <button className="absolute bottom-2 right-2 w-6 h-6 rounded-lg bg-white shadow-lg flex items-center justify-center text-[#e35654] opacity-0 group-hover:opacity-100 transition-opacity">
                 <Camera className="w-3.5 h-3.5" />
               </button>
               <span
@@ -101,7 +101,7 @@ export function Profile() {
                 {!isEditing ? (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:border-[#a41b42] hover:text-[#a41b42] hover:bg-[#fef2f2] transition-all"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#fef2f2] transition-all"
                     style={{ fontWeight: 600 }}
                   >
                     <Edit3 className="w-4 h-4" />
@@ -111,7 +111,7 @@ export function Profile() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleSave}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                       style={{ fontWeight: 600 }}
                     >
                       <Save className="w-4 h-4" />
@@ -164,7 +164,7 @@ export function Profile() {
             onClick={() => setActiveTab('info')}
             className={`py-3.5 px-1 border-b-2 text-sm transition-all ${
               activeTab === 'info'
-                ? 'border-[#a41b42] text-[#a41b42]'
+                ? 'border-[#e35654] text-[#e35654]'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
             style={{ fontWeight: 600 }}
@@ -175,7 +175,7 @@ export function Profile() {
             onClick={() => setActiveTab('stats')}
             className={`py-3.5 px-1 border-b-2 text-sm transition-all ${
               activeTab === 'stats'
-                ? 'border-[#a41b42] text-[#a41b42]'
+                ? 'border-[#e35654] text-[#e35654]'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
             style={{ fontWeight: 600 }}
@@ -186,7 +186,7 @@ export function Profile() {
             onClick={() => setActiveTab('security')}
             className={`py-3.5 px-1 border-b-2 text-sm transition-all ${
               activeTab === 'security'
-                ? 'border-[#a41b42] text-[#a41b42]'
+                ? 'border-[#e35654] text-[#e35654]'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
             style={{ fontWeight: 600 }}
@@ -215,7 +215,7 @@ export function Profile() {
                       type="text"
                       value={profileData.name}
                       onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.name}</p>
@@ -233,7 +233,7 @@ export function Profile() {
                       type="email"
                       value={profileData.email}
                       onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.email}</p>
@@ -251,7 +251,7 @@ export function Profile() {
                       type="tel"
                       value={profileData.phone}
                       onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.phone}</p>
@@ -269,7 +269,7 @@ export function Profile() {
                       type="text"
                       value={profileData.position}
                       onChange={(e) => setProfileData({ ...profileData, position: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.position}</p>
@@ -287,7 +287,7 @@ export function Profile() {
                       type="text"
                       value={profileData.company}
                       onChange={(e) => setProfileData({ ...profileData, company: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.company}</p>
@@ -305,7 +305,7 @@ export function Profile() {
                       type="text"
                       value={profileData.commercialRegister}
                       onChange={(e) => setProfileData({ ...profileData, commercialRegister: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.commercialRegister}</p>
@@ -323,7 +323,7 @@ export function Profile() {
                       type="text"
                       value={profileData.location}
                       onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.location}</p>
@@ -341,7 +341,7 @@ export function Profile() {
                       type="url"
                       value={profileData.website}
                       onChange={(e) => setProfileData({ ...profileData, website: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.website}</p>
@@ -359,7 +359,7 @@ export function Profile() {
                       value={profileData.bio}
                       onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
                       rows={4}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all resize-none"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all resize-none"
                     />
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl leading-relaxed">{profileData.bio}</p>
@@ -449,7 +449,7 @@ export function Profile() {
                     </label>
                     <input
                       type="password"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                       placeholder="••••••••"
                     />
                   </div>
@@ -459,7 +459,7 @@ export function Profile() {
                     </label>
                     <input
                       type="password"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                       placeholder="••••••••"
                     />
                   </div>
@@ -469,11 +469,11 @@ export function Profile() {
                     </label>
                     <input
                       type="password"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#a41b42] transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                       placeholder="••••••••"
                     />
                   </div>
-                  <button className="px-6 py-3 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] transition-all" style={{ fontWeight: 600 }}>
+                  <button className="px-6 py-3 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all" style={{ fontWeight: 600 }}>
                     تحديث كلمة المرور
                   </button>
                 </div>
@@ -493,7 +493,7 @@ export function Profile() {
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#fce7eb] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a41b42]"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#fce7eb] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#e35654]"></div>
                     </label>
                   </div>
                   <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-all">
@@ -503,7 +503,7 @@ export function Profile() {
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#fce7eb] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a41b42]"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#fce7eb] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#e35654]"></div>
                     </label>
                   </div>
                   <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-all">
@@ -513,7 +513,7 @@ export function Profile() {
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#fce7eb] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#a41b42]"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#fce7eb] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#e35654]"></div>
                     </label>
                   </div>
                 </div>

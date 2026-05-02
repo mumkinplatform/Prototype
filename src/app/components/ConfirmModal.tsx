@@ -39,8 +39,8 @@ export default function ConfirmModal({
     danger: {
       bg: 'bg-[#fef2f4]',
       border: 'border-[#fad1d8]',
-      icon: 'text-[#a41b42]',
-      button: 'bg-[#8b1538] hover:bg-[#72112e]'
+      icon: 'text-[#e35654]',
+      button: 'bg-[#cc4a48] hover:bg-[#a93b39]'
     }
   };
 

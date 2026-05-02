@@ -98,7 +98,7 @@ export function VerifyOTP() {
         {/* Card */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-br from-[#a41b42] to-[#c03c3a] px-8 py-10 text-white text-center relative overflow-hidden">
+          <div className="bg-[#e35654] px-8 py-10 text-white text-center relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16" />
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" />
             <motion.div
@@ -143,8 +143,8 @@ export function VerifyOTP() {
                     onKeyDown={(e) => handleKeyDown(index, e)}
                     className={`w-12 h-14 text-center text-xl rounded-xl border-2 bg-gray-50 transition-all duration-200 focus:outline-none ${
                       digit
-                        ? "border-[#a41b42] bg-[#a41b42]/5 text-gray-900"
-                        : "border-gray-200 text-gray-900 focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10"
+                        ? "border-[#e35654] bg-[#e35654]/5 text-gray-900"
+                        : "border-gray-200 text-gray-900 focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10"
                     }`}
                     style={{ fontWeight: 600 }}
                   />
@@ -160,7 +160,7 @@ export function VerifyOTP() {
               disabled={!isComplete || isVerifying}
               className={`w-full py-3.5 rounded-2xl text-white text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
                 isComplete && !isVerifying
-                  ? "bg-gradient-to-l from-[#a41b42] to-[#c03c3a] hover:opacity-90 shadow-lg shadow-[#a41b42]/25"
+                  ? "bg-[#e35654] hover:opacity-90 shadow-lg shadow-[#e35654]/25"
                   : "bg-gray-200 cursor-not-allowed"
               }`}
               style={{ fontWeight: 600 }}
@@ -190,7 +190,7 @@ export function VerifyOTP() {
               {canResend ? (
                 <button
                   onClick={handleResend}
-                  className="flex items-center justify-center gap-2 text-[#a41b42] text-sm hover:underline mx-auto transition-all"
+                  className="flex items-center justify-center gap-2 text-[#e35654] text-sm hover:underline mx-auto transition-all"
                   style={{ fontWeight: 600 }}
                 >
                   <RefreshCcw className="w-4 h-4" />
@@ -199,7 +199,7 @@ export function VerifyOTP() {
               ) : (
                 <p className="text-gray-400 text-sm flex items-center justify-center gap-2">
                   <span>يمكنك إعادة الإرسال بعد</span>
-                  <span className="text-[#a41b42]" style={{ fontWeight: 600 }}>
+                  <span className="text-[#e35654]" style={{ fontWeight: 600 }}>
                     {countdown} ثانية
                   </span>
                 </p>

@@ -62,7 +62,7 @@ const conversations = [
     unread: 3,
     online: false,
     avatar: "أ",
-    color: "#a41b42",
+    color: "#e35654",
   },
   {
     id: 5,
@@ -152,7 +152,7 @@ export function MessagesPage() {
   const convStatuses: Record<number, { label: string; color: string; bg: string; Icon: React.ElementType }> = {
     1: { label: "قيد التفاوض على الشروط", color: "#6366f1", bg: "#eef2ff", Icon: Handshake },
     2: { label: "في انتظار توقيع العقد", color: "#f59e0b", bg: "#fffbeb", Icon: FileText },
-    3: { label: "رفع المصاريف والفواتير", color: "#a41b42", bg: "#fef2f2", Icon: CreditCard },
+    3: { label: "رفع المصاريف والفواتير", color: "#e35654", bg: "#fef2f2", Icon: CreditCard },
     4: { label: "تم الدفع والعقد مكتمل", color: "#10b981", bg: "#f0fdf4", Icon: BadgeCheck },
     5: { label: "دعم فني — لا توجد رعاية نشطة", color: "#8b5cf6", bg: "#f5f3ff", Icon: CheckCircle2 },
   };
@@ -193,7 +193,7 @@ export function MessagesPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="ابحث..."
-                className="w-full pr-10 pl-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:border-[#a41b42] transition-colors"
+                className="w-full pr-10 pl-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:border-[#e35654] transition-colors"
               />
             </div>
           </div>
@@ -209,7 +209,7 @@ export function MessagesPage() {
                 onClick={() => setSelected(c.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-right transition-all border-r-2 ${
                   selected === c.id
-                    ? "bg-[#a41b42]/5 border-[#a41b42]"
+                    ? "bg-[#e35654]/5 border-[#e35654]"
                     : "border-transparent hover:bg-gray-50"
                 }`}
               >
@@ -230,7 +230,7 @@ export function MessagesPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <p
-                      className={`text-sm truncate ${selected === c.id ? "text-[#a41b42]" : "text-gray-900"}`}
+                      className={`text-sm truncate ${selected === c.id ? "text-[#e35654]" : "text-gray-900"}`}
                       style={{ fontWeight: c.unread > 0 ? 700 : 500 }}
                     >
                       {c.name}
@@ -241,7 +241,7 @@ export function MessagesPage() {
                     <p className="text-gray-400 text-xs truncate flex-1">{c.lastMsg}</p>
                     {c.unread > 0 && (
                       <span
-                        className="w-5 h-5 rounded-full bg-[#a41b42] text-white flex items-center justify-center flex-shrink-0 mr-1"
+                        className="w-5 h-5 rounded-full bg-[#e35654] text-white flex items-center justify-center flex-shrink-0 mr-1"
                         style={{ fontSize: 10, fontWeight: 700 }}
                       >
                         {c.unread}
@@ -330,7 +330,7 @@ export function MessagesPage() {
                   <div
                     className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                       m.from === "me"
-                        ? "bg-[#a41b42] text-white rounded-tr-sm"
+                        ? "bg-[#e35654] text-white rounded-tr-sm"
                         : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
                     }`}
                   >
@@ -340,7 +340,7 @@ export function MessagesPage() {
                     <span className="text-gray-300 text-xs">{m.time}</span>
                     {m.from === "me" && (
                       m.read
-                        ? <CheckCheck className="w-3.5 h-3.5 text-[#a41b42]" />
+                        ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
                         : <Check className="w-3.5 h-3.5 text-gray-300" />
                     )}
                   </div>
@@ -351,11 +351,11 @@ export function MessagesPage() {
 
           {/* Financial Upload Panel */}
           {showFinancialPanel && !financialDone && (
-            <div className="bg-white border-t-2 border-[#a41b42]/20 px-5 py-4 flex-shrink-0">
+            <div className="bg-white border-t-2 border-[#e35654]/20 px-5 py-4 flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-[#a41b42]/10 flex items-center justify-center">
-                    <CreditCard className="w-4 h-4 text-[#a41b42]" />
+                  <div className="w-7 h-7 rounded-lg bg-[#e35654]/10 flex items-center justify-center">
+                    <CreditCard className="w-4 h-4 text-[#e35654]" />
                   </div>
                   <div>
                     <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>رفع المستندات المالية</p>
@@ -381,7 +381,7 @@ export function MessagesPage() {
                   </div>
                   <button
                     onClick={() => setFinancialDone(true)}
-                    className="px-4 py-1.5 rounded-xl bg-[#a41b42] text-white text-xs hover:bg-[#8b1538] transition-colors"
+                    className="px-4 py-1.5 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] transition-colors"
                     style={{ fontWeight: 600 }}
                   >
                     تأكيد الإرسال ✅
@@ -390,16 +390,16 @@ export function MessagesPage() {
               ) : (
                 <button
                   onClick={() => setFinancialUploaded(true)}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-[#a41b42]/30 bg-[#a41b42]/5 hover:bg-[#a41b42]/10 hover:border-[#a41b42]/50 transition-all text-right"
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-[#e35654]/30 bg-[#e35654]/5 hover:bg-[#e35654]/10 hover:border-[#e35654]/50 transition-all text-right"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-[#a41b42]/10 flex items-center justify-center flex-shrink-0">
-                    <Upload className="w-4 h-4 text-[#a41b42]" />
+                  <div className="w-9 h-9 rounded-xl bg-[#e35654]/10 flex items-center justify-center flex-shrink-0">
+                    <Upload className="w-4 h-4 text-[#e35654]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>اسحب الملف أو انقر للاختيار</p>
                     <p className="text-gray-400 text-xs mt-0.5">PDF · JPG · PNG — الحد الأقصى 10MB</p>
                   </div>
-                  <span className="text-[#a41b42] text-xs flex-shrink-0" style={{ fontWeight: 600 }}>رفع</span>
+                  <span className="text-[#e35654] text-xs flex-shrink-0" style={{ fontWeight: 600 }}>رفع</span>
                 </button>
               )}
             </div>
@@ -429,7 +429,7 @@ export function MessagesPage() {
                   </p>
                   {[
                     { icon: FileText, label: "رفع عقد", sub: "PDF · DOC · DOCX", color: "#6366f1", bg: "#eef2ff" },
-                    { icon: CreditCard, label: "رفع فاتورة", sub: "PDF · PNG · JPG", color: "#a41b42", bg: "#fef2f2" },
+                    { icon: CreditCard, label: "رفع فاتورة", sub: "PDF · PNG · JPG", color: "#e35654", bg: "#fef2f2" },
                     { icon: Upload,    label: "صور ووسائط", sub: "JPG · PNG · GIF · MP4", color: "#10b981", bg: "#f0fdf4" },
                     { icon: Paperclip, label: "ملف عام", sub: "أي نوع — حتى 20MB", color: "#f59e0b", bg: "#fffbeb" },
                   ].map(({ icon: Icon, label, sub, color, bg }) => (
@@ -456,14 +456,14 @@ export function MessagesPage() {
                 onChange={(e) => setNewMsg(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && send()}
                 placeholder="اكتب رسالتك هنا..."
-                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#a41b42] focus:ring-2 focus:ring-[#a41b42]/10 transition-all"
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
               />
               <button
                 onClick={send}
                 disabled={!newMsg.trim()}
                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
                   newMsg.trim()
-                    ? "bg-[#a41b42] text-white hover:bg-[#8b1538] shadow-md shadow-[#a41b42]/20"
+                    ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20"
                     : "bg-gray-100 text-gray-300"
                 }`}
               >

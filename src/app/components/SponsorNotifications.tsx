@@ -39,7 +39,7 @@ const initialNotifications: Notification[] = [
     time: "منذ 30 دقيقة",
     read: false,
     icon: FileText,
-    color: "#a41b42",
+    color: "#e35654",
     bg: "#fef2f2",
     link: "/sponsor/negotiation",
   },
@@ -210,7 +210,7 @@ export function SponsorNotifications() {
               {unreadCount > 0 && (
                 <button
                   onClick={markAllRead}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-[#a41b42] hover:bg-[#fef2f2] transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-[#e35654] hover:bg-[#fef2f2] transition-colors"
                   style={{ fontWeight: 600 }}
                 >
                   <CheckCheck className="w-4 h-4" />
@@ -232,7 +232,7 @@ export function SponsorNotifications() {
                 onClick={() => setActiveFilter(tab)}
                 className={`px-3.5 py-1.5 rounded-lg text-sm transition-all ${
                   activeFilter === tab
-                    ? "bg-[#a41b42] text-white shadow-sm"
+                    ? "bg-[#e35654] text-white shadow-sm"
                     : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                 }`}
                 style={{ fontWeight: activeFilter === tab ? 600 : 400 }}
@@ -241,7 +241,7 @@ export function SponsorNotifications() {
                 {tab === "غير مقروء" && unreadCount > 0 && (
                   <span
                     className="mr-1.5 inline-flex items-center justify-center w-5 h-5 rounded-full text-white"
-                    style={{ background: activeFilter === tab ? "rgba(255,255,255,0.3)" : "#a41b42", fontSize: 10, fontWeight: 700 }}
+                    style={{ background: activeFilter === tab ? "rgba(255,255,255,0.3)" : "#e35654", fontSize: 10, fontWeight: 700 }}
                   >
                     {unreadCount}
                   </span>
@@ -258,14 +258,14 @@ export function SponsorNotifications() {
                 <div
                   key={notif.id}
                   className={`bg-white rounded-2xl border overflow-hidden transition-all hover:shadow-sm group ${
-                    !notif.read ? "border-[#a41b42]/20 bg-[#fffbfb]" : "border-gray-100"
+                    !notif.read ? "border-[#e35654]/20 bg-[#fffbfb]" : "border-gray-100"
                   }`}
                 >
                   <div className="flex items-start gap-3.5 p-4 sm:p-5">
                     {/* Unread dot */}
                     <div className="flex-shrink-0 mt-2">
                       {!notif.read ? (
-                        <span className="block w-2.5 h-2.5 rounded-full bg-[#a41b42]" />
+                        <span className="block w-2.5 h-2.5 rounded-full bg-[#e35654]" />
                       ) : (
                         <span className="block w-2.5 h-2.5 rounded-full bg-transparent" />
                       )}
@@ -300,7 +300,7 @@ export function SponsorNotifications() {
                               markAsRead(notif.id);
                               navigate(notif.link!);
                             }}
-                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#fef2f2] text-[#a41b42] hover:bg-[#fde8e8] transition-colors"
+                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#fef2f2] text-[#e35654] hover:bg-[#fde8e8] transition-colors"
                             style={{ fontWeight: 600 }}
                           >
                             عرض التفاصيل

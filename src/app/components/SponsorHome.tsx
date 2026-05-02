@@ -52,7 +52,7 @@ const activities = [
   },
   {
     icon: AlertCircle,
-    color: "#a41b42",
+    color: "#e35654",
     bg: "#fef2f2",
     title: "تحديث في متطلبات الرعاية",
     sub: "هاكاثون الطاقة المتجددة",
@@ -146,7 +146,7 @@ export function SponsorHome() {
             {/* Gentle wave lines */}
             <path 
               d="M 0 200 Q 200 180, 400 200 T 800 200 T 1200 200 T 1600 200" 
-              stroke="#a41b4210" 
+              stroke="#e3565410" 
               strokeWidth="2" 
               fill="none" 
             />
@@ -166,7 +166,7 @@ export function SponsorHome() {
             {/* Right side waves */}
             <path 
               d="M 900 100 Q 950 150, 1000 100 T 1200 100" 
-              stroke="#a41b4212" 
+              stroke="#e3565412" 
               strokeWidth="1.5" 
               fill="none" 
             />
@@ -238,7 +238,7 @@ export function SponsorHome() {
 
             {/* Bottom Center - TrendingUp (نمو) */}
             <div className="absolute bottom-20 left-1/3 w-9 h-9 bg-[#fce7eb] rounded-lg flex items-center justify-center rotate-6 animate-float" style={{ animation: 'float 6s ease-in-out infinite 3.5s' }}>
-              <TrendingUp className="w-5 h-5 text-[#a41b42]" />
+              <TrendingUp className="w-5 h-5 text-[#e35654]" />
             </div>
 
             {/* Top Center Right - Rocket (انطلاق) */}
@@ -256,7 +256,7 @@ export function SponsorHome() {
           <div className="relative text-center max-w-3xl mx-auto" style={{ zIndex: 2 }}>
             <h1 className="text-5xl text-gray-900 mb-6 leading-tight" style={{ fontWeight: 700 }}>
               ادعم الابتكار،<br />
-              <span className="text-[#a41b42]">واصنع الفرق</span>
+              <span className="text-[#e35654]">واصنع الفرق</span>
             </h1>
             <p className="text-gray-600 text-lg mb-10 leading-relaxed max-w-2xl mx-auto">
               انضم إلى منظومة الهاكاثونات السعودية وكن جزءًا من بناء جيل المبتكرين.<br />
@@ -265,14 +265,14 @@ export function SponsorHome() {
             <div className="flex items-center justify-center gap-4">
               <button 
                 onClick={() => navigate("/sponsor/opportunities")}
-                className="px-10 py-4 rounded-xl bg-[#a41b42] text-white hover:bg-[#8b1538] shadow-lg shadow-[#a41b42]/30 transition-all hover:shadow-xl hover:-translate-y-0.5" 
+                className="px-10 py-4 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/30 transition-all hover:shadow-xl hover:-translate-y-0.5" 
                 style={{ fontWeight: 600 }}
               >
                 استكشف فرص الرعاية
               </button>
               <button 
                 onClick={() => navigate("/sponsor/sponsorships")}
-                className="px-10 py-4 rounded-xl bg-white text-gray-700 border-2 border-gray-200 hover:border-[#a41b42] hover:text-[#a41b42] hover:bg-[#fef2f4] transition-all hover:-translate-y-0.5" 
+                className="px-10 py-4 rounded-xl bg-white text-gray-700 border-2 border-gray-200 hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#fef2f4] transition-all hover:-translate-y-0.5" 
                 style={{ fontWeight: 600 }}
               >
                 رعاياتي الحالية
@@ -303,10 +303,10 @@ export function SponsorHome() {
             {/* Service Card 1 - رعاياتي */}
             <button
               onClick={() => navigate("/sponsor/sponsorships")}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-[#a41b42] transition-all cursor-pointer text-right"
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-[#e35654] transition-all cursor-pointer text-right"
             >
               <div className="w-14 h-14 rounded-xl bg-[#fef2f4] flex items-center justify-center mb-4">
-                <Handshake className="w-6 h-6 text-[#a41b42]" />
+                <Handshake className="w-6 h-6 text-[#e35654]" />
               </div>
               <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>رعاياتي</h3>
               <p className="text-gray-500 text-sm mb-4 leading-relaxed">
@@ -379,7 +379,7 @@ export function SponsorHome() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-[#fef2f2] flex items-center justify-center">
-                  <MapPin className="w-4 h-4 text-[#a41b42]" />
+                  <MapPin className="w-4 h-4 text-[#e35654]" />
                 </div>
                 <div>
                   <p className="text-gray-800 text-sm" style={{ fontWeight: 700 }}>نظرة على رعاياتك</p>

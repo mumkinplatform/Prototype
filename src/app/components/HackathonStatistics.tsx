@@ -190,7 +190,7 @@ export function HackathonStatistics() {
               {/* Export Button */}
               <button
                 onClick={handleExportReport}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#a41b42] text-white text-sm hover:bg-[#8b1538] transition-all shadow-lg shadow-[#a41b42]/30"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-lg shadow-[#e35654]/30"
                 style={{ fontWeight: 600 }}
               >
                 <Download className="w-4 h-4" />
@@ -229,7 +229,7 @@ export function HackathonStatistics() {
                         ? 'text-green-600'
                         : stat.color === 'purple'
                         ? 'text-purple-600'
-                        : 'text-[#8b1538]'
+                        : 'text-[#cc4a48]'
                     }`}
                   />
                 </div>
@@ -237,7 +237,7 @@ export function HackathonStatistics() {
                   className={`text-xs px-2 py-1 rounded-lg ${
                     stat.change.startsWith('+')
                       ? 'bg-green-100 text-green-700'
-                      : 'bg-[#fce7eb] text-[#72112e]'
+                      : 'bg-[#fce7eb] text-[#a93b39]'
                   }`}
                   style={{ fontWeight: 600 }}
                 >
