@@ -1,6 +1,7 @@
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, Navigate } from "react-router";
 import { SponsorNavbar, type SponsorNavPage } from "./SponsorNavbar";
 import { Sparkles } from "lucide-react";
+import { getUser } from "../../lib/auth";
 
 /** Maps pathname segments to SponsorNavbar active page */
 function getActivePage(pathname: string): SponsorNavPage {
@@ -30,6 +31,11 @@ function getActivePage(pathname: string): SponsorNavPage {
 export function SponsorLayout() {
   const { pathname } = useLocation();
   const activePage = getActivePage(pathname);
+
+  const user = getUser();
+  if (!user || user.role !== "sponsor") {
+    return <Navigate to="/auth" replace />;
+  }
 
   return (
     <div dir="rtl" className="min-h-screen bg-gradient-to-b from-white to-gray-50 font-sans flex flex-col">

@@ -38,6 +38,7 @@ import { ParticipantWorkspace } from "./components/ParticipantWorkspace";
 import { AdminLayout } from "./components/AdminLayout";
 import { RootLayout } from "./components/RootLayout";
 import { VerifyOTP } from "./components/VerifyOTP";
+import { ForgotPassword } from "./components/ForgotPassword";
 
 export const router = createBrowserRouter([
   {
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
           { index: true, Component: LandingPage },
           { path: "auth", Component: AuthPage },
           { path: "verify-otp", Component: VerifyOTP },
+          { path: "forgot-password", Component: ForgotPassword },
         ],
       },
       /* ── Admin (independent layout) ── */

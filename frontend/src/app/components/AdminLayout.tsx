@@ -1,6 +1,7 @@
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, Navigate } from "react-router";
 import { AdminNavbar, type AdminNavPage } from "./AdminNavbar";
 import { Sparkles } from "lucide-react";
+import { getUser } from "../../lib/auth";
 
 /** Maps pathname segments to AdminNavbar active page */
 function getActivePage(pathname: string): AdminNavPage {
@@ -28,6 +29,11 @@ function getActivePage(pathname: string): AdminNavPage {
 export function AdminLayout() {
   const { pathname } = useLocation();
   const activePage = getActivePage(pathname);
+
+  const user = getUser();
+  if (!user || user.role !== "admin") {
+    return <Navigate to="/auth" replace />;
+  }
 
   return (
     <div dir="rtl" className="min-h-screen bg-gradient-to-b from-white to-gray-50 font-sans flex flex-col">

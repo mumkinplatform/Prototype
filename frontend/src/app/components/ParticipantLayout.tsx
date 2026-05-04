@@ -1,6 +1,7 @@
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, Navigate } from "react-router";
 import { ParticipantNavbar, type ParticipantNavPage } from "./ParticipantNavbar";
 import { Sparkles } from "lucide-react";
+import { getUser } from "../../lib/auth";
 
 /** Maps pathname segments to ParticipantNavbar active page */
 function getActivePage(pathname: string): ParticipantNavPage {
@@ -29,6 +30,11 @@ function getActivePage(pathname: string): ParticipantNavPage {
 export function ParticipantLayout() {
   const { pathname } = useLocation();
   const activePage = getActivePage(pathname);
+
+  const user = getUser();
+  if (!user || user.role !== "participant") {
+    return <Navigate to="/auth" replace />;
+  }
 
   return (
     <div dir="rtl" className="min-h-screen bg-gradient-to-b from-white to-gray-50 font-sans flex flex-col">

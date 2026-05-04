@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import {
   LayoutDashboard,
   Handshake,
@@ -13,6 +14,7 @@ import {
   FileCheck,
   Upload,
 } from "lucide-react";
+import { apiPost, ApiError } from "../../lib/api";
 
 const roles = [
   {
@@ -52,21 +54,134 @@ export function AuthPage() {
   const [step, setStep] = useState<1 | 2>(1);
   const [crFile, setCrFile] = useState<File | null>(null);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [bio, setBio] = useState("");
+  const [orgName, setOrgName] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [crNumber, setCrNumber] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleContinue = () => {
-    if (step === 1 && selectedRole) {
-      if (isLogin) {
-        // Navigate to OTP verification for login
-        navigate("/verify-otp", { state: { email, role: selectedRole } });
+  const handleApiError = (err: unknown) => {
+    if (err instanceof ApiError) {
+      if (err.status === 501) {
+        toast.info("هذا الدور قريباً");
+      } else if (err.status === 404) {
+        toast.error("لا يوجد حساب بهذا الدور، يرجى إنشاء حساب جديد");
+      } else if (err.status === 401) {
+        toast.error("البريد أو كلمة المرور غير صحيحة");
+      } else if (err.status === 409) {
+        toast.error("هذا البريد مسجّل مسبقاً بهذا الدور");
       } else {
-        setStep(2);
+        toast.error(err.message);
       }
+    } else {
+      toast.error("تعذّر الاتصال بالخادم");
     }
   };
 
-  const handleSubmitRegister = () => {
-    // Navigate to OTP verification after registration
-    navigate("/verify-otp", { state: { email, role: selectedRole } });
+  const handleContinue = async () => {
+    if (step !== 1 || !selectedRole) return;
+
+    if (!isLogin) {
+      setStep(2);
+      return;
+    }
+
+    if (!email) {
+      toast.error("الرجاء إدخال البريد الإلكتروني");
+      return;
+    }
+    if (!password) {
+      toast.error("الرجاء إدخال كلمة المرور");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await apiPost("/auth/login", {
+        role: selectedRole,
+        email,
+        password,
+      });
+      navigate("/verify-otp", { state: { email, role: selectedRole } });
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmitRegister = async () => {
+    if (!selectedRole) return;
+
+    if (!fullName.trim()) {
+      toast.error("الرجاء إدخال الاسم الكامل");
+      return;
+    }
+    if (!email.trim()) {
+      toast.error("الرجاء إدخال البريد الإلكتروني");
+      return;
+    }
+    if (!password) {
+      toast.error("الرجاء إدخال كلمة المرور");
+      return;
+    }
+    if (password.length < 8) {
+      toast.error("كلمة المرور لازم 8 أحرف على الأقل");
+      return;
+    }
+    if (!bio.trim()) {
+      toast.error("الرجاء إدخال نبذة شخصية");
+      return;
+    }
+    if (selectedRole === "admin") {
+      if (!orgName.trim()) {
+        toast.error("الرجاء إدخال اسم المنظمة");
+        return;
+      }
+    }
+    if (selectedRole === "sponsor") {
+      if (!brandName.trim()) {
+        toast.error("الرجاء إدخال اسم الجهة / الشركة");
+        return;
+      }
+      if (!crNumber.trim()) {
+        toast.error("الرجاء إدخال رقم السجل التجاري");
+        return;
+      }
+      if (!/^\d{10}$/.test(crNumber)) {
+        toast.error("رقم السجل التجاري لازم 10 أرقام");
+        return;
+      }
+    }
+    if (selectedRole === "participant") {
+      if (skills.length === 0) {
+        toast.error("الرجاء اختيار مهارة واحدة على الأقل");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    try {
+      await apiPost("/auth/signup", {
+        role: selectedRole,
+        email,
+        password,
+        fullName,
+        bio,
+        orgName,
+        brandName,
+        crNumber,
+        skills,
+      });
+      navigate("/verify-otp", { state: { email, role: selectedRole } });
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -176,6 +291,8 @@ export function AuthPage() {
                         type="email"
                         placeholder="your@email.com"
                         dir="ltr"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                       />
                     </div>
@@ -187,6 +304,8 @@ export function AuthPage() {
                         <input
                           type={showPass ? "text" : "password"}
                           placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
                           className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                         />
                         <button
@@ -202,28 +321,33 @@ export function AuthPage() {
                       </div>
                     </div>
                     <div className="flex justify-between items-center">
-                      <a
-                        href="#"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate("/forgot-password", {
+                            state: { email, role: selectedRole },
+                          })
+                        }
                         className="text-[#e35654] text-xs hover:underline"
                       >
                         نسيت كلمة المرور؟
-                      </a>
+                      </button>
                     </div>
                   </div>
                 )}
 
                 <button
                   onClick={handleContinue}
-                  disabled={!selectedRole}
+                  disabled={!selectedRole || isSubmitting}
                   className={`w-full py-3.5 rounded-2xl text-white text-sm transition-all duration-200 ${
-                    selectedRole
+                    selectedRole && !isSubmitting
                       ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25"
                       : "bg-gray-200 cursor-not-allowed"
                   }`}
                   style={{ fontWeight: 600 }}
                 >
-                  {isLogin ? "دخول" : "التالي"}
-                  {!isLogin && <ArrowLeft className="inline w-4 h-4 mr-1" />}
+                  {isSubmitting ? "..." : isLogin ? "دخول" : "التالي"}
+                  {!isLogin && !isSubmitting && <ArrowLeft className="inline w-4 h-4 mr-1" />}
                 </button>
               </div>
             )}
@@ -246,6 +370,8 @@ export function AuthPage() {
                     <input
                       type="text"
                       placeholder="محمد العمري"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                     />
                   </div>
@@ -270,6 +396,8 @@ export function AuthPage() {
                       <input
                         type={showPass ? "text" : "password"}
                         placeholder="8 أحرف على الأقل"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                       />
                       <button
@@ -291,6 +419,8 @@ export function AuthPage() {
                     <textarea
                       placeholder="اكتب نبذة مختصرة عنك..."
                       rows={3}
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all resize-none"
                     />
                   </div>
@@ -302,15 +432,31 @@ export function AuthPage() {
                         مهاراتك التقنية
                       </label>
                       <div className="flex flex-wrap gap-2">
-                        {["React", "Python", "UI/UX", "AI/ML", "Node.js", "Data"].map((skill) => (
-                          <button
-                            key={skill}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#e35654]/5 transition-all"
-                          >
-                            {skill}
-                          </button>
-                        ))}
+                        {["React", "Python", "UI/UX", "AI/ML", "Node.js", "Data"].map((skill) => {
+                          const active = skills.includes(skill);
+                          return (
+                            <button
+                              key={skill}
+                              type="button"
+                              onClick={() =>
+                                setSkills((prev) =>
+                                  prev.includes(skill)
+                                    ? prev.filter((s) => s !== skill)
+                                    : [...prev, skill]
+                                )
+                              }
+                              className={`px-3 py-1.5 rounded-lg border text-xs transition-all ${
+                                active
+                                  ? "border-[#e35654] text-[#e35654] bg-[#e35654]/10"
+                                  : "border-gray-200 text-gray-600 hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#e35654]/5"
+                              }`}
+                            >
+                              {skill}
+                            </button>
+                          );
+                        })}
                       </div>
+                      <p className="text-gray-400 text-xs mt-2">اختاري مهارة واحدة على الأقل</p>
                     </div>
                   )}
 
@@ -325,6 +471,8 @@ export function AuthPage() {
                           <input
                             type="text"
                             placeholder="شركة ريادة للاستثمار"
+                            value={brandName}
+                            onChange={(e) => setBrandName(e.target.value)}
                             className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                           />
                         </div>
@@ -340,32 +488,12 @@ export function AuthPage() {
                             placeholder="1010XXXXXX"
                             maxLength={10}
                             dir="ltr"
+                            value={crNumber}
+                            onChange={(e) => setCrNumber(e.target.value)}
                             className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all tracking-widest"
                           />
                         </div>
                         <p className="text-gray-400 text-xs mt-1">رقم مكوّن من 10 أرقام صادر من وزارة التجارة</p>
-                      </div>
-                      <div>
-                        <label className="text-gray-700 text-sm block mb-1.5" style={{ fontWeight: 500 }}>
-                          وثيقة السجل التجاري
-                        </label>
-                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${crFile ? "border-[#e35654] bg-[#e35654]/5" : "border-gray-200 hover:border-[#e35654]/50 bg-gray-50"}`}>
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${crFile ? "bg-[#e35654]/10" : "bg-gray-100"}`}>
-                            {crFile ? <CheckCircle2 className="w-4 h-4 text-[#e35654]" /> : <Upload className="w-4 h-4 text-gray-400" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
-                              {crFile ? crFile.name : "ارفع نسخة من السجل التجاري"}
-                            </p>
-                            <p className="text-gray-400 text-xs mt-0.5">PDF أو صورة — حد أقصى 5 ميغابايت</p>
-                          </div>
-                          <input
-                            type="file"
-                            accept=".pdf,image/*"
-                            className="hidden"
-                            onChange={(e) => setCrFile(e.target.files?.[0] ?? null)}
-                          />
-                        </label>
                       </div>
                     </div>
                   )}
@@ -381,47 +509,11 @@ export function AuthPage() {
                           <input
                             type="text"
                             placeholder="مركز الابتكار الرقمي"
+                            value={orgName}
+                            onChange={(e) => setOrgName(e.target.value)}
                             className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
                           />
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-gray-700 text-sm block mb-1.5" style={{ fontWeight: 500 }}>
-                          رقم السجل التجاري
-                        </label>
-                        <div className="relative">
-                          <FileCheck className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                          <input
-                            type="text"
-                            placeholder="1010XXXXXX"
-                            maxLength={10}
-                            dir="ltr"
-                            className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all tracking-widest"
-                          />
-                        </div>
-                        <p className="text-gray-400 text-xs mt-1">رقم مكوّن من 10 أرقام صادر من وزارة التجارة</p>
-                      </div>
-                      <div>
-                        <label className="text-gray-700 text-sm block mb-1.5" style={{ fontWeight: 500 }}>
-                          وثيقة السجل التجاري
-                        </label>
-                        <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${crFile ? "border-[#e35654] bg-[#e35654]/5" : "border-gray-200 hover:border-[#e35654]/50 bg-gray-50"}`}>
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${crFile ? "bg-[#e35654]/10" : "bg-gray-100"}`}>
-                            {crFile ? <CheckCircle2 className="w-4 h-4 text-[#e35654]" /> : <Upload className="w-4 h-4 text-gray-400" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
-                              {crFile ? crFile.name : "ارفع نسخة من السجل التجاري"}
-                            </p>
-                            <p className="text-gray-400 text-xs mt-0.5">PDF أو صورة — حد أقصى 5 ميغابايت</p>
-                          </div>
-                          <input
-                            type="file"
-                            accept=".pdf,image/*"
-                            className="hidden"
-                            onChange={(e) => setCrFile(e.target.files?.[0] ?? null)}
-                          />
-                        </label>
                       </div>
                     </div>
                   )}
@@ -429,10 +521,15 @@ export function AuthPage() {
 
                 <button
                   onClick={handleSubmitRegister}
-                  className="w-full py-3.5 rounded-2xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25 transition-all duration-200"
+                  disabled={isSubmitting}
+                  className={`w-full py-3.5 rounded-2xl text-white text-sm transition-all duration-200 ${
+                    isSubmitting
+                      ? "bg-gray-200 cursor-not-allowed"
+                      : "bg-[#e35654] hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25"
+                  }`}
                   style={{ fontWeight: 600 }}
                 >
-                  إنشاء الحساب 🚀
+                  {isSubmitting ? "جاري الإنشاء..." : "إنشاء الحساب 🚀"}
                 </button>
               </div>
             )}

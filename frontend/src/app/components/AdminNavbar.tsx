@@ -1,5 +1,6 @@
-import { Link } from 'react-router';
-import { Search, Bell, Sparkles } from 'lucide-react';
+import { Link, useNavigate } from 'react-router';
+import { Search, Bell, Sparkles, LogOut } from 'lucide-react';
+import { clearAuth } from '../../lib/auth';
 
 export type AdminNavPage = 'home' | 'hackathons' | 'analytics';
 
@@ -8,6 +9,12 @@ interface AdminNavbarProps {
 }
 
 export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
+  const navigate = useNavigate();
+  const handleLogout = () => {
+    clearAuth();
+    navigate('/');
+  };
+
   return (
     <header className="bg-white border-b border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -101,6 +108,17 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
               style={{ background: '#10b981' }}
             />
           </Link>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            title="تسجيل الخروج"
+            aria-label="تسجيل الخروج"
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all text-gray-400 hover:bg-[#fef2f2] hover:text-[#e35654]"
+            style={{ border: '1px solid #f3f4f6' }}
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </header>

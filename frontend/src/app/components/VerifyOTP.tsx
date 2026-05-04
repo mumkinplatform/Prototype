@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from "react-router";
 import { Mail, CheckCircle2, ArrowLeft, RefreshCcw } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
+import { apiPost, ApiError } from "../../lib/api";
+import { saveAuth, type AuthUser, type Role } from "../../lib/auth";
  
 export function VerifyOTP() {
   const navigate = useNavigate();
@@ -62,27 +64,44 @@ export function VerifyOTP() {
       return;
     }
     setIsVerifying(true);
-    setTimeout(() => {
-      setIsVerifying(false);
+    try {
+      const data = await apiPost<{ token: string; user: AuthUser }>(
+        "/auth/verify-otp",
+        { role, email, code }
+      );
+      saveAuth(data.token, data.user);
       toast.success("تم التحقق بنجاح! 🎉");
-      const roleMap: { [key: string]: string } = {
+      const roleMap: Record<Role, string> = {
         admin: "/admin",
         sponsor: "/sponsor",
         participant: "/participant",
       };
       setTimeout(() => {
-        navigate(roleMap[role] || "/participant");
-      }, 1000);
-    }, 2000);
+        navigate(roleMap[data.user.role] || "/participant");
+      }, 800);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error("الكود غير صحيح أو منتهي");
+      } else {
+        toast.error("تعذّر التحقق، حاولي مرة أخرى");
+      }
+    } finally {
+      setIsVerifying(false);
+    }
   };
  
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!canResend) return;
     setCanResend(false);
     setCountdown(60);
     setOtp(["", "", "", "", "", ""]);
     inputRefs.current[0]?.focus();
-    toast.success("تم إرسال كود جديد إلى بريدك الإلكتروني");
+    try {
+      await apiPost("/auth/resend-otp", { role, email });
+      toast.success("تم إرسال كود جديد إلى بريدك الإلكتروني");
+    } catch {
+      toast.error("تعذّر إعادة الإرسال، حاولي بعد قليل");
+    }
   };
  
   const isComplete = otp.every((digit) => digit !== "");

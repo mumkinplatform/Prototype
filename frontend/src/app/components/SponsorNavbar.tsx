@@ -1,5 +1,6 @@
 import { useNavigate, Link } from "react-router";
-import { Search, Bell, MessageCircle, Sparkles } from "lucide-react";
+import { Search, Bell, MessageCircle, Sparkles, LogOut } from "lucide-react";
+import { clearAuth } from "../../lib/auth";
 
 export type SponsorNavPage =
   | "home"
@@ -125,6 +126,20 @@ export function SponsorNavbar({ activePage, onAvatarClick }: SponsorNavbarProps)
               className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
               style={{ background: "#10b981" }}
             />
+          </button>
+
+          {/* Logout */}
+          <button
+            onClick={() => {
+              clearAuth();
+              navigate("/");
+            }}
+            title="تسجيل الخروج"
+            aria-label="تسجيل الخروج"
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all text-gray-400 hover:bg-[#fef2f2] hover:text-[#e35654]"
+            style={{ border: "1px solid #f3f4f6" }}
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
 
