@@ -8,6 +8,10 @@ export const pool = mysql.createPool({
   password: env.db.password,
   database: env.db.database,
   charset: 'utf8mb4_unicode_ci',
+  // Return DATETIME / DATE columns as raw strings ("YYYY-MM-DD HH:MM:SS") instead of
+  // JS Date objects. Avoids implicit UTC conversion that shifts the user's entered
+  // hours when the DB connection timezone differs from the browser's timezone.
+  dateStrings: true,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

@@ -1,14 +1,18 @@
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { 
-  ArrowRight, 
-  Gavel, 
-  UserCheck, 
-  Users, 
-  BarChart3, 
-  DollarSign, 
+import {
+  ArrowRight,
+  Gavel,
+  UserCheck,
+  Users,
+  BarChart3,
+  DollarSign,
   Trophy,
-  ExternalLink
+  ExternalLink,
+  Undo2,
+  Loader2,
 } from 'lucide-react';
+import { apiGet, apiPost, ApiError } from '../../lib/api';
 
 interface ManagementCard {
   id: string;
@@ -26,6 +30,43 @@ interface ManagementCard {
 
 export default function HackathonManagement() {
   const { id } = useParams();
+  const [status, setStatus] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [reverting, setReverting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet<{ hackathon: { H_status: string } }>(`/hackathons/${id}`);
+        if (!cancelled) setStatus(data.hackathon.H_status);
+      } catch (err) {
+        if (!cancelled) setStatus(null);
+        console.error('failed to load hackathon status', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  const handleRevertToDraft = async () => {
+    if (!id) return;
+    setReverting(true);
+    setErrorMsg(null);
+    try {
+      await apiPost(`/hackathons/${id}/unpublish`);
+      setStatus('draft');
+      setConfirming(false);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'تعذّر إرجاع الهاكاثون لمسودة';
+      setErrorMsg(msg);
+    } finally {
+      setReverting(false);
+    }
+  };
 
   const managementCards: ManagementCard[] = [
     {
@@ -129,6 +170,95 @@ export default function HackathonManagement() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+        {/* Status banner */}
+        {status && (
+          <div
+            className={`mb-8 rounded-2xl border p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${
+              status === 'published'
+                ? 'bg-green-50 border-green-200'
+                : 'bg-amber-50 border-amber-200'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-2.5 h-2.5 rounded-full ${
+                  status === 'published' ? 'bg-green-500' : 'bg-amber-500'
+                }`}
+              />
+              <div>
+                <div className="text-sm text-gray-900" style={{ fontWeight: 700 }}>
+                  {status === 'published' ? 'الهاكاثون منشور' : 'الهاكاثون مسودة'}
+                </div>
+                <div className="text-xs text-gray-600 mt-0.5">
+                  {status === 'published'
+                    ? 'مرئي للعموم على الصفحة العامة. لإجراء تعديلات جوهرية، أرجعه لمسودة أولاً.'
+                    : 'غير مرئي للعموم. أكمل التعديلات ثم أعد النشر.'}
+                </div>
+              </div>
+            </div>
+            {status === 'published' && (
+              <div className="flex items-center gap-2">
+                {!confirming ? (
+                  <button
+                    onClick={() => {
+                      setErrorMsg(null);
+                      setConfirming(true);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 text-sm flex items-center gap-2 transition-all"
+                    style={{ fontWeight: 600 }}
+                  >
+                    <Undo2 className="w-4 h-4" />
+                    <span>إرجاع كمسودة</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleRevertToDraft}
+                      disabled={reverting}
+                      className="px-4 py-2.5 rounded-xl bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-60 text-sm flex items-center gap-2 transition-all"
+                      style={{ fontWeight: 600 }}
+                    >
+                      {reverting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>جارٍ الإرجاع...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Undo2 className="w-4 h-4" />
+                          <span>تأكيد الإرجاع</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setConfirming(false)}
+                      disabled={reverting}
+                      className="px-3 py-2.5 rounded-xl text-gray-600 hover:bg-gray-100 text-sm transition-all"
+                    >
+                      إلغاء
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {status === 'draft' && (
+              <Link
+                to={`/admin/create-hackathon/${id}`}
+                className="px-4 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm flex items-center gap-2 transition-all"
+                style={{ fontWeight: 600 }}
+              >
+                <span>متابعة التعديل</span>
+                <ExternalLink className="w-4 h-4" />
+              </Link>
+            )}
+          </div>
+        )}
+        {errorMsg && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorMsg}
+          </div>
+        )}
+
         {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {managementCards.map((card) => (

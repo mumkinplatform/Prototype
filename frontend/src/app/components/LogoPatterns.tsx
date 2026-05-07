@@ -113,6 +113,41 @@ export function LogoPattern({ pattern, colorPalette }: LogoPatternProps) {
         <rect x="126" y="83" width="6" height="15" rx="2" fill="white" opacity="0.8" />
       </svg>
     ),
+    'logo-7': (
+      <svg viewBox="0 0 200 200" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="logoGrad7" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
+            <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
+          </linearGradient>
+        </defs>
+        {/* Square Background */}
+        <rect x="20" y="20" width="160" height="160" rx="25" fill="url(#logoGrad7)" />
+        {/* Star */}
+        <polygon
+          points="100,55 113,89 149,89 120,110 131,144 100,124 69,144 80,110 51,89 87,89"
+          fill="white"
+        />
+      </svg>
+    ),
+    'logo-8': (
+      <svg viewBox="0 0 200 200" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="logoGrad8" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
+            <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
+          </linearGradient>
+        </defs>
+        {/* Square Background */}
+        <rect x="20" y="20" width="160" height="160" rx="25" fill="url(#logoGrad8)" />
+        {/* Globe */}
+        <circle cx="100" cy="100" r="40" fill="white" />
+        <ellipse cx="100" cy="100" rx="40" ry="14" fill="none" stroke={colors.primary} strokeWidth="3" />
+        <ellipse cx="100" cy="100" rx="14" ry="40" fill="none" stroke={colors.primary} strokeWidth="3" />
+        <line x1="60" y1="100" x2="140" y2="100" stroke={colors.primary} strokeWidth="3" />
+        <line x1="100" y1="60" x2="100" y2="140" stroke={colors.primary} strokeWidth="3" />
+      </svg>
+    ),
   };
 
   return patterns[pattern as keyof typeof patterns] || patterns['logo-1'];

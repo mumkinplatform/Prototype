@@ -1,67 +1,276 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Users, Building2, Layout, Calendar, Trophy, Clock, MapPin, Eye, CheckCircle2, Handshake, Star, MessageCircle, FileText, BarChart3, Settings, Globe, ArrowRight, Target, Flag } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
+import { toast } from 'sonner';
 import { BannerPattern } from './BannerPatterns';
 import { LogoPattern } from './LogoPatterns';
+import { apiGet, ApiError } from '../../lib/api';
 
 type ViewMode = 'participant' | 'sponsor' | 'workspace';
 
+interface SponsorshipPackage {
+  id: string;
+  name: string;
+  type: string;
+  value?: string;
+  description: string;
+  benefits: string[];
+}
+
+interface TimelineMilestone {
+  date: string;
+  label: string;
+  done: boolean;
+}
+
+interface HackathonData {
+  title: string;
+  org: string;
+  description: string;
+  date: string;
+  deadline: string;
+  location: string;
+  category: string;
+  type: string;
+  prize: string;
+  duration: string;
+  participants: number;
+  teams: number;
+  views: number;
+  tags: string[];
+  timeline: TimelineMilestone[];
+  sponsorshipPackages: SponsorshipPackage[];
+}
+
+const ARABIC_MONTHS = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
+
+// Accepts both "YYYY-MM-DD HH:MM:SS" (mysql2 dateStrings) and ISO formats; treats as local.
+function parseLocal(v: string): Date | null {
+  const d = new Date(v.replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDateShort(v: string | null | undefined): string {
+  if (!v) return '';
+  const d = parseLocal(v);
+  if (!d) return '';
+  return `${d.getDate()} ${ARABIC_MONTHS[d.getMonth()]}`;
+}
+
+function fmtDateFull(v: string | null | undefined): string {
+  if (!v) return '';
+  const d = parseLocal(v);
+  if (!d) return '';
+  return `${d.getDate()} ${ARABIC_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function calcDurationHours(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start || !end) return '';
+  const a = parseLocal(start)?.getTime();
+  const b = parseLocal(end)?.getTime();
+  if (a == null || b == null || Number.isNaN(a) || Number.isNaN(b) || b <= a) return '';
+  const hours = Math.round((b - a) / (1000 * 60 * 60));
+  if (hours < 48) return `${hours} ساعة`;
+  const days = Math.round(hours / 24);
+  return `${days} يوم`;
+}
+
+const EMPTY_DATA: HackathonData = {
+  title: '',
+  org: '',
+  description: '',
+  date: '',
+  deadline: '',
+  location: '',
+  category: '',
+  type: '',
+  prize: '',
+  duration: '',
+  participants: 0,
+  teams: 0,
+  views: 0,
+  tags: [],
+  timeline: [],
+  sponsorshipPackages: [],
+};
+
 export default function HackathonPreview() {
+  const navigate = useNavigate();
+  const { id } = useParams();
   const [viewMode, setViewMode] = useState<ViewMode>('participant');
+  const [loading, setLoading] = useState(true);
+  const [hackathonData, setHackathonData] = useState<HackathonData>(EMPTY_DATA);
+  const [selectedColorPalette, setSelectedColorPalette] = useState<string>('red');
+  const [selectedLogo, setSelectedLogo] = useState<string | null>(null);
+  const [selectedBanner, setSelectedBanner] = useState<string | null>(null);
+  const [logoUploadDataUrl, setLogoUploadDataUrl] = useState<string | null>(null);
+  const [bannerUploadDataUrl, setBannerUploadDataUrl] = useState<string | null>(null);
 
-  // Default customization values
-  const selectedColorPalette = 'purple';
-  const selectedLogo = 'logo-1';
-  const selectedBanner = 'pattern-1';
+  useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      return;
+    }
 
-  // بيانات تجريبية - سيتم استبدالها ببيانات الهاكاثون الحقيقية
-  const hackathonData = {
-    title: 'هاكاثون الذكاء الاصطناعي 2024',
-    org: 'مؤسسة التقنية',
-    description: 'قمة تقنية عالمية لتطوير حلول الذكاء الاصطناعي والتعلم الآلي، تجمع المطورين والباحثين من أكثر من 20 دولة لبناء نماذج ذكاء اصطناعي تحل مشكلات حقيقية.',
-    date: '5 سبتمبر 2025',
-    deadline: '20 أغسطس 2025',
-    location: 'الرياض، المملكة العربية السعودية',
-    category: 'الذكاء الاصطناعي',
-    type: 'حضوري',
-    image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&auto=format&fit=crop',
-    prize: '120,000 ريال',
-    duration: '48 ساعة',
-    participants: 350,
-    teams: 70,
-    views: 241,
-    tags: ['ذكاء اصطناعي', 'تعلم آلي'],
-    timeline: [
-      { date: '20 أغسطس', label: 'آخر موعد للتسجيل', done: false },
-      { date: '28 أغسطس', label: 'الإعلان عن الفرق المقبولة', done: false },
-      { date: '5 سبتمبر', label: 'بداية الهاكاثون', done: false },
-      { date: '7 سبتمبر', label: 'العروض النهائية', done: false }
-    ],
-    sponsorshipPackages: [
-      {
-        id: '1',
-        name: 'الراعي الذهبي',
-        type: 'financial',
-        value: '50,000 ر.س',
-        description: 'أعلى مستوى رعاية مع ظهور بارز في جميع المواد التسويقية',
-        benefits: ['شعار كبير في جميع المواد', 'كلمة افتتاحية 5 دقائق', 'جناح VIP', 'ذكر خاص في المراسلات']
-      },
-      {
-        id: '2',
-        name: 'الراعي الفضي',
-        type: 'financial',
-        value: '30,000 ر.س',
-        description: 'رعاية متوسطة مع ظهور جيد',
-        benefits: ['شعار متوسط في المواد', 'جناح عادي', 'ذكر في الموقع']
-      },
-      {
-        id: '3',
-        name: 'رعاية عينية - جوائز',
-        type: 'in-kind',
-        description: 'تقديم جوائز عينية للفائزين مثل أجهزة أو اشتراكات',
-        benefits: ['ذكر كراعي للجوائز', 'شعار على شهادات الفائزين']
-      }
-    ]
+    apiGet<{
+      hackathon: Record<string, unknown>;
+      tracks: { HT_ID: number; HT_Name: string }[];
+      sponsorPackages: {
+        SP_ID: number;
+        SP_Name: string;
+        SP_Type: string;
+        SP_Description: string | null;
+        SP_Price: string | null;
+        SP_Benefits: unknown;
+      }[];
+      prizes: { HP_ID: number; HP_Amount: string | null }[];
+    }>(`/hackathons/${id}`)
+      .then((data) => {
+        const h = data.hackathon as Record<string, string | number | null | undefined>;
+
+        // Parse branding JSON
+        let branding: Record<string, unknown> = {};
+        try {
+          const raw = h.H_Branding;
+          branding =
+            typeof raw === 'string' && raw.trim() !== ''
+              ? JSON.parse(raw)
+              : raw && typeof raw === 'object'
+                ? (raw as Record<string, unknown>)
+                : {};
+        } catch {
+          branding = {};
+        }
+        setSelectedColorPalette((branding.colorPalette as string) || 'red');
+        setSelectedLogo(
+          branding.logoMode === 'pattern' ? ((branding.logoPattern as string) || null) : null
+        );
+        setSelectedBanner(
+          branding.bannerMode === 'pattern' ? ((branding.bannerPattern as string) || null) : null
+        );
+        setLogoUploadDataUrl(
+          branding.logoMode === 'upload' ? ((branding.logoUploadDataUrl as string) || null) : null
+        );
+        setBannerUploadDataUrl(
+          branding.bannerMode === 'upload' ? ((branding.bannerUploadDataUrl as string) || null) : null
+        );
+
+        // Build timeline from fixed milestones
+        const timeline: TimelineMilestone[] = [];
+        if (h.H_Registration_StartDate) timeline.push({ date: fmtDateShort(h.H_Registration_StartDate as string), label: 'فتح التسجيل', done: false });
+        if (h.H_Registration_EndDate) timeline.push({ date: fmtDateShort(h.H_Registration_EndDate as string), label: 'إغلاق التسجيل', done: false });
+        if (h.H_Announcement_Date) timeline.push({ date: fmtDateShort(h.H_Announcement_Date as string), label: 'إعلان المقبولين', done: false });
+        if (h.H_Hackathon_StartDate) timeline.push({ date: fmtDateShort(h.H_Hackathon_StartDate as string), label: 'بدء الهاكاثون', done: false });
+        if (h.H_Winners_Date) timeline.push({ date: fmtDateShort(h.H_Winners_Date as string), label: 'إعلان الفائزين', done: false });
+
+        // Sum prizes for headline value
+        const prizeAmounts = data.prizes
+          .map((p) => Number(String(p.HP_Amount || '').replace(/[^\d.]/g, '')))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const totalPrize = prizeAmounts.reduce((a, b) => a + b, 0);
+
+        const sponsorshipPackages: SponsorshipPackage[] = data.sponsorPackages.map((s) => {
+          let benefits: string[] = [];
+          try {
+            const raw = s.SP_Benefits;
+            const parsed =
+              typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+            if (Array.isArray(parsed)) benefits = parsed.filter((x): x is string => typeof x === 'string');
+          } catch {
+            benefits = [];
+          }
+          return {
+            id: String(s.SP_ID),
+            name: s.SP_Name,
+            type: s.SP_Type,
+            value: s.SP_Price ? `${s.SP_Price} ر.س` : undefined,
+            description: s.SP_Description ?? '',
+            benefits,
+          };
+        });
+
+        const isOnline = h.H_type === 'عبر الإنترنت';
+
+        setHackathonData({
+          title: (h.H_title as string) ?? 'بدون عنوان',
+          org: (h.H_public_name as string) ?? '',
+          description: (h.H_description as string) ?? '',
+          date: fmtDateFull(h.H_StartDate as string),
+          deadline: fmtDateFull(h.H_Registration_EndDate as string),
+          location: isOnline ? 'عبر الإنترنت' : ((h.H_city as string) ?? ''),
+          category: data.tracks[0]?.HT_Name ?? '',
+          type: (h.H_type as string) ?? '',
+          prize: totalPrize > 0 ? `${totalPrize.toLocaleString('en-US')} ريال` : '—',
+          duration: calcDurationHours(h.H_StartDate as string, h.H_EndDate as string) || '—',
+          participants: 0,
+          teams: 0,
+          views: 0,
+          tags: data.tracks.map((t) => t.HT_Name).slice(0, 5),
+          timeline,
+          sponsorshipPackages,
+        });
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) {
+          toast.error('المسوّدة غير موجودة');
+          navigate('/admin/my-hackathons');
+        } else if (err instanceof ApiError && err.status === 403) {
+          toast.error('ليس لديك صلاحية لهذه المسوّدة');
+          navigate('/admin/my-hackathons');
+        } else {
+          toast.error('تعذّر تحميل المعاينة');
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [id, navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" dir="rtl">
+        <p className="text-gray-500">جاري تحميل المعاينة...</p>
+      </div>
+    );
+  }
+
+  // Unified renderers — use uploaded image if available, otherwise the selected pattern,
+  // otherwise a soft fallback. Used across participant / sponsor / workspace views.
+  const renderLogo = (className = '') => {
+    if (logoUploadDataUrl) {
+      return <img src={logoUploadDataUrl} alt="logo" className={`object-contain ${className}`} />;
+    }
+    if (selectedLogo) {
+      return <LogoPattern pattern={selectedLogo} colorPalette={selectedColorPalette} />;
+    }
+    return <div className={`bg-gray-100 ${className}`} />;
+  };
+
+  const renderBanner = (className = 'absolute inset-0') => {
+    if (bannerUploadDataUrl) {
+      return (
+        <div className={className}>
+          <img
+            src={bannerUploadDataUrl}
+            alt="banner"
+            className="w-full h-full object-cover"
+          />
+        </div>
+      );
+    }
+    if (selectedBanner) {
+      return (
+        <div className={className}>
+          <BannerPattern pattern={selectedBanner} colorPalette={selectedColorPalette} />
+        </div>
+      );
+    }
+    return (
+      <div
+        className={`${className} bg-gradient-to-br from-purple-800 via-indigo-700 to-blue-600`}
+      />
+    );
   };
 
   return (
@@ -79,7 +288,7 @@ export default function HackathonPreview() {
               </p>
             </div>
             <Link
-              to="/admin/create-hackathon"
+              to={id ? `/admin/create-hackathon/${id}` : '/admin/create-hackathon'}
               className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-all flex items-center gap-2"
             >
               <X className="w-5 h-5" />
@@ -170,19 +379,17 @@ export default function HackathonPreview() {
             {viewMode === 'participant' && (
               <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
                 {/* Hero Section */}
-                <div className="relative h-64 bg-gradient-to-br from-purple-800 via-indigo-700 to-blue-600">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-white text-6xl opacity-20" style={{ fontWeight: 900, lineHeight: 1.2, whiteSpace: 'pre' }}>
-                      AI{'\n'}SUMMIT
-                    </div>
-                  </div>
-                  
+                <div className="relative h-64 overflow-hidden">
+                  {renderBanner()}
+
                   {/* Top Bar */}
                   <div className="absolute top-6 right-6 left-6 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
-                        {hackathonData.type}
-                      </span>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {hackathonData.type && (
+                        <span className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
+                          {hackathonData.type}
+                        </span>
+                      )}
                       {hackathonData.tags.map((tag, idx) => (
                         <span key={idx} className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
                           {tag}
@@ -194,8 +401,8 @@ export default function HackathonPreview() {
                   {/* Bottom Info */}
                   <div className="absolute bottom-0 right-0 left-0 bg-gradient-to-t from-black/60 to-transparent p-8">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-[#e35654]" style={{ fontWeight: 700 }}>
-                        م
+                      <div className="w-12 h-12 rounded-xl bg-white p-1.5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {renderLogo('w-full h-full')}
                       </div>
                       <div>
                         <h1 className="text-white text-2xl mb-1" style={{ fontWeight: 700 }}>
@@ -243,8 +450,8 @@ export default function HackathonPreview() {
                     <div className="flex items-center justify-center mb-2">
                       <Calendar className="w-6 h-6 text-purple-500" />
                     </div>
-                    <div className="text-2xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
-                      {hackathonData.date.split(' ')[0]}
+                    <div className="text-lg text-gray-900 mb-1" style={{ fontWeight: 700 }}>
+                      {hackathonData.date.split(' ').slice(0, 2).join(' ')}
                     </div>
                     <div className="text-sm text-gray-500">تاريخ الانطلاق</div>
                   </div>
@@ -362,19 +569,17 @@ export default function HackathonPreview() {
             {viewMode === 'sponsor' && (
               <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
                 {/* Hero Section */}
-                <div className="relative h-64 bg-gradient-to-br from-purple-800 via-indigo-700 to-blue-600">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-white text-6xl opacity-20" style={{ fontWeight: 900, lineHeight: 1.2, whiteSpace: 'pre' }}>
-                      AI{'\n'}SUMMIT
-                    </div>
-                  </div>
-                  
+                <div className="relative h-64 overflow-hidden">
+                  {renderBanner()}
+
                   {/* Top Bar */}
                   <div className="absolute top-6 right-6 left-6 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
-                        {hackathonData.type}
-                      </span>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {hackathonData.type && (
+                        <span className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
+                          {hackathonData.type}
+                        </span>
+                      )}
                       {hackathonData.tags.map((tag, idx) => (
                         <span key={idx} className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
                           {tag}
@@ -386,8 +591,8 @@ export default function HackathonPreview() {
                   {/* Bottom Info */}
                   <div className="absolute bottom-0 right-0 left-0 bg-gradient-to-t from-black/60 to-transparent p-8">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-[#e35654]" style={{ fontWeight: 700 }}>
-                        م
+                      <div className="w-12 h-12 rounded-xl bg-white p-1.5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {renderLogo('w-full h-full')}
                       </div>
                       <div>
                         <h1 className="text-white text-2xl mb-1" style={{ fontWeight: 700 }}>
@@ -577,64 +782,37 @@ export default function HackathonPreview() {
             {/* Workspace View */}
             {viewMode === 'workspace' && (
               <div className="bg-[#f7f7f6] rounded-2xl overflow-hidden">
-                {/* Hero Section - مثل ParticipantWorkspace */}
-                <div className="relative overflow-hidden" style={{ minHeight: 280 }}>
-                  {/* Background Pattern */}
-                  <div className="absolute inset-0">
-                    <BannerPattern pattern={selectedBanner} colorPalette={selectedColorPalette} />
-                  </div>
+                {/* Hero Section — same shape as participant/sponsor */}
+                <div className="relative h-64 overflow-hidden">
+                  {renderBanner()}
 
-                  {/* Content Overlay */}
-                  <div className="relative max-w-5xl mx-auto px-6 py-6">
-                    {/* Back Button (simulated) */}
-                    <button className="flex items-center gap-2 text-white/80 hover:text-white text-xs mb-4 transition-colors pointer-events-none">
-                      <ArrowRight className="w-3.5 h-3.5" style={{ transform: 'scaleX(-1)' }} />
-                      العودة لمساحات العمل
-                    </button>
-
-                    {/* Tags */}
-                    <div className="flex items-center gap-2 mb-4 flex-wrap">
-                      {['إلكتروني', 'ذكاء اصطناعي', 'تعلم آلي'].map((tag, i) => (
-                        <span
-                          key={tag}
-                          className="px-3 py-1 rounded-full text-xs text-white"
-                          style={{
-                            background: i === 0 ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)',
-                            fontWeight: 600,
-                            backdropFilter: 'blur(10px)',
-                          }}
-                        >
+                  {/* Top Bar — type + tags */}
+                  <div className="absolute top-6 right-6 left-6 flex items-center justify-between">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {hackathonData.type && (
+                        <span className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
+                          {hackathonData.type}
+                        </span>
+                      )}
+                      {hackathonData.tags.map((tag, idx) => (
+                        <span key={idx} className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm" style={{ fontWeight: 600 }}>
                           {tag}
                         </span>
                       ))}
                     </div>
+                  </div>
 
-                    {/* Title & Logo */}
-                    <div className="flex items-start gap-4 mb-4">
-                      {/* Logo */}
-                      <div className="w-16 h-16 bg-white rounded-xl shadow-lg p-2 flex-shrink-0">
-                        <LogoPattern pattern={selectedLogo} colorPalette={selectedColorPalette} />
+                  {/* Bottom Info — logo + title + org */}
+                  <div className="absolute bottom-0 right-0 left-0 bg-gradient-to-t from-black/60 to-transparent p-8">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-12 h-12 rounded-xl bg-white p-1.5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {renderLogo('w-full h-full')}
                       </div>
-
-                      {/* Title */}
-                      <div className="flex-1">
-                        <h1 className="text-white mb-2" style={{ fontWeight: 800, fontSize: '1.75rem', lineHeight: 1.3 }}>
+                      <div>
+                        <h1 className="text-white text-2xl mb-1" style={{ fontWeight: 700 }}>
                           {hackathonData.title}
                         </h1>
-
-                        {/* Info Row */}
-                        <div className="flex items-center gap-3 text-white/80 text-sm flex-wrap">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center text-xs backdrop-blur-sm" style={{ fontWeight: 800 }}>
-                              م
-                            </div>
-                            <span>{hackathonData.org}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="w-4 h-4" />
-                            <span>{hackathonData.location}</span>
-                          </div>
-                        </div>
+                        <p className="text-white/90 text-sm">{hackathonData.org}</p>
                       </div>
                     </div>
                   </div>

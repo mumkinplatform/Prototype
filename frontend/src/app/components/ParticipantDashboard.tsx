@@ -65,7 +65,7 @@ const myHackathons = [
     status: "مقبول",
     statusColor: "#10b981",
     statusBg: "#f0fdf4",
-    note: "تم القبول في فريقك. يمكنك البدء في م����حلة النماذج الأولية.",
+    note: "تم القبول في فريقك. يمكنك البدء في مرحلة النماذج الأولية.",
     progress: 10,
     image: IMG_CYBER,
     track: "الأمن السيبراني",
@@ -1649,7 +1649,7 @@ function ProfileView({ setView }: { setView: (v: View) => void }) {
                       value={achievementTitle}
                       onChange={e => setAchievementTitle(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 focus:outline-none focus:border-[#e35654] transition-colors"
-                      placeholder="م��ال: الفوز بهاكاثون الذكاء الاصطناعي الوطني"
+                      placeholder="مثال: الفوز بهاكاثون الذكاء الاصطناعي الوطني"
                     />
                   </div>
                   {/* Hackathon Name */}

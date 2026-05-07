@@ -1,70 +1,71 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Plus, Calendar, Users, MapPin, ChevronLeft, Clock, FileText, ArrowRight } from 'lucide-react';
+import { Plus, Calendar, Users, MapPin, ChevronLeft, FileText, ArrowRight } from 'lucide-react';
+import { toast } from 'sonner';
 import PublishConfirmModal from './PublishConfirmModal';
 import PublishSuccessModal from './PublishSuccessModal';
+import { apiGet } from '../../lib/api';
+
+type Status = 'draft' | 'published' | 'ongoing' | 'completed';
 
 interface Hackathon {
-  id: string;
+  id: number;
   title: string;
   description: string;
-  status: 'draft' | 'published' | 'ongoing' | 'completed';
-  date: string;
-  location: string;
-  participants: number;
-  image: string;
+  status: Status;
+  startDate: string | null;
+  endDate: string | null;
+  city: string | null;
+}
+
+interface ApiHackathon {
+  hackathon_ID: number;
+  H_title: string | null;
+  H_slug: string | null;
+  H_description: string | null;
+  H_status: Status;
+  H_StartDate: string | null;
+  H_EndDate: string | null;
+  H_city: string | null;
+}
+
+const FALLBACK_IMG =
+  'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&auto=format&fit=crop';
+
+function formatDateRange(start: string | null, end: string | null): string {
+  if (!start && !end) return 'بدون تواريخ';
+  const fmt = (d: string | null) => (d ? d.slice(0, 10) : '');
+  if (start && end) return `${fmt(start)} → ${fmt(end)}`;
+  return fmt(start) || fmt(end);
 }
 
 export default function MyHackathons() {
   const navigate = useNavigate();
-  const [filterStatus, setFilterStatus] = useState<'all' | Hackathon['status']>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | Status>('all');
   const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(false);
-  const [selectedHackathonId, setSelectedHackathonId] = useState<string | null>(null);
+  const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(null);
+  const [hackathons, setHackathons] = useState<Hackathon[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data - سيتم استبدالها ببيانات حقيقية من قاعدة البيانات
-  const hackathons: Hackathon[] = [
-    {
-      id: '1',
-      title: 'هاكاثون الذكاء الاصطناعي 2024',
-      description: 'تطوير حلول مبتكرة باستخدام تقنيات الذكاء الاصطناعي لحل المشكلات المحلية',
-      status: 'draft',
-      date: '15-20 مارس 2024',
-      location: 'الرياض، المملكة العربية السعودية',
-      participants: 0,
-      image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&auto=format&fit=crop'
-    },
-    {
-      id: '2',
-      title: 'هاكاثون التطوير المستدام 2024',
-      description: 'ابتكار حلول تقنية للاستدامة البيئية والاجتماعية',
-      status: 'published',
-      date: '1-5 أبريل 2024',
-      location: 'جدة، المملكة العربية السعودية',
-      participants: 87,
-      image: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=800&auto=format&fit=crop'
-    },
-    {
-      id: '3',
-      title: 'هاكاثون الأمن السيبراني',
-      description: 'حماية البيانات وتطوير حلول أمنية متقدمة',
-      status: 'ongoing',
-      date: '10-15 مايو 2024',
-      location: 'الدمام، المملكة العربية السعودية',
-      participants: 142,
-      image: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&auto=format&fit=crop'
-    },
-    {
-      id: '4',
-      title: 'هاكاثون الصحة الرقمية 2023',
-      description: 'تطوير تطبيقات صحية ذكية',
-      status: 'completed',
-      date: '20-25 ديسمبر 2023',
-      location: 'مكة المكرمة، المملكة العربية السعودية',
-      participants: 203,
-      image: 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&auto=format&fit=crop'
-    }
-  ];
+  useEffect(() => {
+    apiGet<{ hackathons: ApiHackathon[] }>('/hackathons')
+      .then((data) => {
+        setHackathons(
+          data.hackathons.map((h) => ({
+            id: h.hackathon_ID,
+            title: h.H_title ?? '',
+            description: h.H_description ?? '',
+            status: h.H_status,
+            startDate: h.H_StartDate,
+            endDate: h.H_EndDate,
+            city: h.H_city,
+          }))
+        );
+      })
+      .catch(() => toast.error('تعذّر تحميل قائمة الهاكاثونات'))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredHackathons = filterStatus === 'all' 
     ? hackathons 
@@ -86,16 +87,10 @@ export default function MyHackathons() {
     );
   };
 
-  const handlePublishClick = (hackathonId: string) => {
-    setSelectedHackathonId(hackathonId);
-    setShowPublishConfirmModal(true);
-  };
-
   const confirmPublish = () => {
     if (selectedHackathonId) {
-      // نشر الهاكاثون (سيتم ربطها بقاعدة البيانات لاحقاً)
+      // الربط بـ /hackathons/:id/publish يأتي في مرحلة لاحقة
       console.log('Publishing hackathon:', selectedHackathonId);
-      // إعادة تحميل الصفحة أو تحديث الحالة
       setShowPublishConfirmModal(false);
       setShowPublishSuccessModal(true);
     }
@@ -203,7 +198,7 @@ export default function MyHackathons() {
               {/* Image */}
               <div className="relative h-48 overflow-hidden">
                 <img
-                  src={hackathon.image}
+                  src={FALLBACK_IMG}
                   alt={hackathon.title}
                   className="w-full h-full object-cover"
                 />
@@ -215,41 +210,39 @@ export default function MyHackathons() {
               {/* Content */}
               <div className="p-5 flex flex-col min-h-[240px]">
                 <h3 className="text-lg text-gray-900 mb-2 line-clamp-1" style={{ fontWeight: 700 }}>
-                  {hackathon.title}
+                  {hackathon.title || '(بدون عنوان)'}
                 </h3>
                 <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-                  {hackathon.description}
+                  {hackathon.description || '(بدون وصف)'}
                 </p>
 
                 {/* Meta */}
                 <div className="flex flex-col gap-2 mb-3 text-xs text-gray-500 flex-1">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    <span>{hackathon.date}</span>
+                    <span>{formatDateRange(hackathon.startDate, hackathon.endDate)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
-                    <span className="line-clamp-1">{hackathon.location}</span>
+                    <span className="line-clamp-1">{hackathon.city || 'بدون موقع'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4" />
-                    <span>{hackathon.participants} مشارك</span>
+                    <span>0 مشارك</span>
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
                   {hackathon.status === 'draft' ? (
-                    <>
-                      <Link
-                        to={`/admin/create-hackathon/${hackathon.id}`}
-                        className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all text-center flex items-center justify-center gap-2"
-                        style={{ fontWeight: 600 }}
-                      >
-                        <FileText className="w-4 h-4" />
-                        <span>تعديل المسودة</span>
-                      </Link>
-                    </>
+                    <Link
+                      to={`/admin/create-hackathon/${hackathon.id}`}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all text-center flex items-center justify-center gap-2"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>تعديل المسودة</span>
+                    </Link>
                   ) : hackathon.status === 'completed' ? (
                     <Link
                       to={`/admin/hackathon/${hackathon.id}/statistics`}
@@ -260,22 +253,25 @@ export default function MyHackathons() {
                       <ChevronLeft className="w-4 h-4" />
                     </Link>
                   ) : (
-                    <>
-                      <Link
-                        to={`/admin/hackathon/${hackathon.id}`}
-                        className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
-                        style={{ fontWeight: 600 }}
-                      >
-                        <span>إدارة الهاكاثون</span>
-                        <ChevronLeft className="w-4 h-4" />
-                      </Link>
-                    </>
+                    <Link
+                      to={`/admin/hackathon/${hackathon.id}`}
+                      className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <span>إدارة الهاكاثون</span>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Link>
                   )}
                 </div>
               </div>
             </div>
           ))}
         </div>
+
+        {/* Loading state */}
+        {loading && (
+          <div className="text-center py-16 text-gray-400 text-sm">جاري التحميل...</div>
+        )}
 
         {/* Empty State */}
         {filteredHackathons.length === 0 && (

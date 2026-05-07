@@ -43,7 +43,7 @@ const mockTeamMembers: TeamMember[] = [
   },
   {
     id: 3,
-    name: 'عم�� العتيبي',
+    name: 'عمر العتيبي',
     email: 'omar.o@hackathon.com',
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop',
     department: 'قسم الرعاية',

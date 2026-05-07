@@ -39,6 +39,7 @@ import { AdminLayout } from "./components/AdminLayout";
 import { RootLayout } from "./components/RootLayout";
 import { VerifyOTP } from "./components/VerifyOTP";
 import { ForgotPassword } from "./components/ForgotPassword";
+import { PublicHackathonPage } from "./components/PublicHackathonPage";
 
 export const router = createBrowserRouter([
   {
@@ -55,6 +56,8 @@ export const router = createBrowserRouter([
           { path: "forgot-password", Component: ForgotPassword },
         ],
       },
+      /* ── Public hackathon page (no platform layout) ── */
+      { path: "hackathon/:slug", Component: PublicHackathonPage },
       /* ── Admin (independent layout) ── */
       {
         path: "admin",
@@ -65,6 +68,7 @@ export const router = createBrowserRouter([
           { path: "create-hackathon/:id", Component: CreateHackathon },
           { path: "my-hackathons", Component: MyHackathons },
           { path: "hackathon-preview", Component: HackathonPreview },
+          { path: "hackathon-preview/:id", Component: HackathonPreview },
           { path: "hackathon/:id", Component: HackathonManagement },
           { path: "hackathon/:id/projects", Component: HackathonProjects },
           { path: "hackathon/:id/registrations", Component: HackathonRegistrations },

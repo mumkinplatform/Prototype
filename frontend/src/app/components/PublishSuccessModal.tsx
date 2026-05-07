@@ -12,8 +12,9 @@ interface PublishSuccessModalProps {
 export default function PublishSuccessModal({
   isOpen,
   onClose,
+  onViewHackathon,
   onViewDashboard,
-  hackathonUrl = 'https://mumkin.sa/hackathon/ai-2024'
+  hackathonUrl = ''
 }: PublishSuccessModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -87,13 +88,28 @@ export default function PublishSuccessModal({
             </div>
           </div>
 
-          {/* Action */}
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={onViewHackathon}
+              className="flex-1 px-6 py-3.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all text-sm shadow-lg shadow-blue-600/30"
+              style={{ fontWeight: 600 }}
+            >
+              عرض صفحة الهاكاثون
+            </button>
+            <button
+              onClick={onViewDashboard}
+              className="flex-1 px-6 py-3.5 rounded-xl bg-gray-100 text-gray-800 hover:bg-gray-200 transition-all text-sm"
+              style={{ fontWeight: 600 }}
+            >
+              العودة للإحصائيات
+            </button>
+          </div>
           <button
-            onClick={onViewDashboard}
-            className="w-full px-6 py-3.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all text-sm shadow-lg shadow-blue-600/30"
-            style={{ fontWeight: 600 }}
+            onClick={onClose}
+            className="mt-3 text-xs text-gray-500 hover:text-gray-700"
           >
-            العودة للإحصائيات
+            إغلاق
           </button>
         </div>
       </div>
