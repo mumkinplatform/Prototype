@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { apiGet, apiPut, apiDelete, apiPost, apiUpload, API_URL, ApiError } from "../../lib/api";
 import { HackathonCover, BrandingPayload } from "./HackathonCover";
+import { LogoPattern } from "./LogoPatterns";
 import {
   ArrowLeft,
   Calendar,
@@ -671,74 +672,70 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
 
   return (
     <div className="min-h-screen bg-[#f7f7f6]">
-      {/* ═══ Hero Section ═══ */}
-      <div className="relative overflow-hidden" style={{ minHeight: 280 }}>
-        {/* Background */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: "linear-gradient(135deg, #2d1b69 0%, #4c2885 30%, #6b3fa0 60%, #8b5cf6 100%)",
-          }}
-        />
-        {/* Overlay pattern */}
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: `url(${IMG_HERO})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-        />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(45,27,105,0.85) 0%, rgba(76,40,133,0.7) 100%)" }} />
+      {/* ═══ Hero Section — same layout as organizer's preview ═══ */}
+      <div className="relative overflow-hidden h-72">
+        {/* Background — organizer's branding */}
+        <HackathonCover branding={hackathon.branding} id={hackathon.id} />
 
-        {/* Content */}
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Back Button */}
+        {/* Top bar: back button (right in RTL) + type/tags chips */}
+        <div className="absolute top-6 right-4 sm:right-8 left-4 sm:left-8 flex items-start justify-between gap-4 z-10">
           <button
             onClick={() => navigate("/participant/workspace")}
-            className="flex items-center gap-2 text-white/80 hover:text-white text-sm mb-6 transition-colors"
+            className="flex items-center gap-2 text-white/90 hover:text-white text-sm transition-colors px-3 py-1.5 rounded-full bg-black/20 backdrop-blur-md"
             style={{ fontWeight: 500 }}
           >
             <ArrowLeft className="w-4 h-4" style={{ transform: "scaleX(-1)" }} />
             العودة لمساحات العمل
           </button>
-
-          {/* Tags */}
-          <div className="flex items-center gap-2 mb-4 flex-wrap">
-            {hackathon.tags.map((tag, i) => (
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {hackathon.tags.map((tag) => (
               <span
                 key={tag}
-                className="px-4 py-1.5 rounded-full text-xs text-white"
-                style={{
-                  background: i === 0 ? "rgba(139,92,246,0.9)" : "rgba(255,255,255,0.15)",
-                  fontWeight: 600,
-                  backdropFilter: "blur(10px)",
-                }}
+                className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs"
+                style={{ fontWeight: 600 }}
               >
                 {tag}
               </span>
             ))}
           </div>
+        </div>
 
-          {/* Title */}
-          <h1
-            className="text-white mb-3"
-            style={{ fontWeight: 800, fontSize: "clamp(1.5rem, 4vw, 2.2rem)", lineHeight: 1.3 }}
-          >
-            {hackathon.name}
-          </h1>
-
-          {/* Info Row */}
-          <div className="flex items-center gap-4 text-white/80 text-sm mb-6 flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs" style={{ fontWeight: 800 }}>
-                {hackathon.organizer.substring(0, 2)}
+        {/* Bottom info: logo + (title + organizer · location) */}
+        <div className="absolute bottom-0 right-0 left-0 bg-gradient-to-t from-black/70 to-transparent px-4 sm:px-8 py-6 z-10">
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            {(() => {
+              const b = hackathon.branding;
+              if (b?.logoMode === 'upload' && b.logoUploadDataUrl) {
+                return (
+                  <div className="w-14 h-14 rounded-xl bg-white p-1.5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <img src={b.logoUploadDataUrl} alt="" className="w-full h-full object-cover rounded-md" />
+                  </div>
+                );
+              }
+              if (b?.logoMode === 'pattern' && b.logoPattern) {
+                return (
+                  <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <LogoPattern pattern={b.logoPattern} colorPalette={b.colorPalette || 'red'} />
+                  </div>
+                );
+              }
+              return null;
+            })()}
+            <div className="flex-1 min-w-0">
+              <h1
+                className="text-white mb-0.5 truncate"
+                style={{ fontWeight: 700, fontSize: "clamp(1.25rem, 3vw, 1.75rem)", lineHeight: 1.3 }}
+              >
+                {hackathon.name}
+              </h1>
+              <div className="flex items-center gap-3 text-white/85 text-sm flex-wrap">
+                <span>{hackathon.organizer}</span>
+                <span className="text-white/40">·</span>
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5" />
+                  {hackathon.location}
+                </span>
               </div>
-              <span>{hackathon.organizer}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4" />
-              <span>{hackathon.location}</span>
             </div>
           </div>
         </div>

@@ -22,6 +22,7 @@ import {
   Code,
 } from "lucide-react";
 import { apiGet, apiPost, ApiError } from "../../lib/api";
+import { HackathonCover, type BrandingPayload } from "./HackathonCover";
 
 interface ApiPrize {
   rank: string;
@@ -62,6 +63,7 @@ interface ApiHackathonDetail {
   participationType: "solo" | "team" | null;
   hasTeam: boolean;
   skills: string[];
+  branding: BrandingPayload | null;
 }
 
 interface UiPrize {
@@ -93,8 +95,7 @@ interface UiHackathon {
   prize: string;
   viewers: number;
   teams: number;
-  cover: string;
-  coverText: string;
+  branding: BrandingPayload | null;
   featured: boolean;
   location: string;
   duration: string;
@@ -112,15 +113,6 @@ interface UiHackathon {
 
 const TAG_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
 const ORG_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
-
-const COVER_PALETTE = [
-  { gradient: "from-green-800 via-teal-700 to-cyan-600", label: "HACK\n2025" },
-  { gradient: "from-blue-800 via-indigo-700 to-purple-600", label: "TECH\nhackathon" },
-  { gradient: "from-violet-800 via-purple-700 to-indigo-800", label: "INNO\nVATION" },
-  { gradient: "from-amber-700 via-orange-600 to-red-700", label: "CODE\nFEST" },
-  { gradient: "from-emerald-700 via-green-600 to-teal-700", label: "BUILD\n2025" },
-  { gradient: "from-gray-800 via-slate-700 to-gray-900", label: "DEV\nHACK" },
-];
 
 const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
   "حضوري":       { color: "#e35654", bg: "#fef2f2" },
@@ -170,7 +162,6 @@ function formatDuration(start: string | null, end: string | null): string {
 }
 
 function toUiHackathon(h: ApiHackathonDetail): UiHackathon {
-  const cover = COVER_PALETTE[h.id % COVER_PALETTE.length];
   const typeStyle = (h.type && TYPE_STYLES[h.type]) || { color: "#6366f1", bg: "#eef2ff" };
   const orgName = h.org ?? "—";
   const orgInitial = orgName.charAt(0) || "؟";
@@ -207,8 +198,7 @@ function toUiHackathon(h: ApiHackathonDetail): UiHackathon {
     prize: formatPrize(h.prizeTotal),
     viewers: 0,
     teams: h.applicantsCount,
-    cover: cover.gradient,
-    coverText: cover.label,
+    branding: h.branding,
     featured: false,
     location: h.location ?? "—",
     duration: formatDuration(h.hackathonStartDate, h.hackathonEndDate),
@@ -613,15 +603,11 @@ export function ParticipantHackathonDetails() {
 
   return (
     <>
-      {/* ── Hero Cover ── */}
-      <div className={`bg-gradient-to-br ${hackathon.cover} relative overflow-hidden`}>
+      {/* ── Hero Cover (uses organizer's branding — uploaded image / pattern / fallback) ── */}
+      <div className="relative overflow-hidden">
+        <HackathonCover branding={hackathon.branding} id={hackathon.id} />
+        {/* Dark overlay so the title/buttons stay legible over any branding choice */}
         <div className="absolute inset-0 bg-black/30" />
-        <div
-          className="absolute inset-0 opacity-10 select-none pointer-events-none flex items-center justify-center"
-          style={{ fontFamily: "monospace", fontWeight: 900, fontSize: "10rem", color: "white", letterSpacing: "-0.05em" }}
-        >
-          {hackathon.coverText.split("\n")[0]}
-        </div>
  
         {/* Back Button */}
         <div className="relative max-w-6xl mx-auto px-4 sm:px-8 pt-5">

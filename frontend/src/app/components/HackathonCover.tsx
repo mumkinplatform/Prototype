@@ -15,6 +15,9 @@ export interface BrandingPayload {
   bannerMode?: "upload" | "pattern" | null;
   bannerUploadDataUrl?: string | null;
   bannerPattern?: string | null;
+  logoMode?: "upload" | "pattern" | null;
+  logoUploadDataUrl?: string | null;
+  logoPattern?: string | null;
   colorPalette?: string | null;
 }
 

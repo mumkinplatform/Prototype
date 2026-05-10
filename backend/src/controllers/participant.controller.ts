@@ -52,11 +52,14 @@ interface HackathonListRow extends RowDataPacket {
   brandingRaw: string | null;
 }
 
-/** Extracts only banner fields from H_Branding to keep response payload small. */
+/** Extracts banner + logo fields from H_Branding to keep response payload small. */
 function extractBranding(raw: string | null): {
   bannerMode: 'upload' | 'pattern' | null;
   bannerUploadDataUrl: string | null;
   bannerPattern: string | null;
+  logoMode: 'upload' | 'pattern' | null;
+  logoUploadDataUrl: string | null;
+  logoPattern: string | null;
   colorPalette: string | null;
 } | null {
   if (!raw) return null;
@@ -64,11 +67,15 @@ function extractBranding(raw: string | null): {
     const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (!obj || typeof obj !== 'object') return null;
     const b = obj as Record<string, unknown>;
-    const mode = b.bannerMode === 'upload' || b.bannerMode === 'pattern' ? b.bannerMode : null;
+    const bMode = b.bannerMode === 'upload' || b.bannerMode === 'pattern' ? b.bannerMode : null;
+    const lMode = b.logoMode === 'upload' || b.logoMode === 'pattern' ? b.logoMode : null;
     return {
-      bannerMode: mode,
-      bannerUploadDataUrl: mode === 'upload' && typeof b.bannerUploadDataUrl === 'string' ? b.bannerUploadDataUrl : null,
-      bannerPattern: mode === 'pattern' && typeof b.bannerPattern === 'string' ? b.bannerPattern : null,
+      bannerMode: bMode,
+      bannerUploadDataUrl: bMode === 'upload' && typeof b.bannerUploadDataUrl === 'string' ? b.bannerUploadDataUrl : null,
+      bannerPattern: bMode === 'pattern' && typeof b.bannerPattern === 'string' ? b.bannerPattern : null,
+      logoMode: lMode,
+      logoUploadDataUrl: lMode === 'upload' && typeof b.logoUploadDataUrl === 'string' ? b.logoUploadDataUrl : null,
+      logoPattern: lMode === 'pattern' && typeof b.logoPattern === 'string' ? b.logoPattern : null,
       colorPalette: typeof b.colorPalette === 'string' ? b.colorPalette : null,
     };
   } catch {
@@ -452,6 +459,10 @@ export const changePassword = async (req: Request, res: Response) => {
 export const listHackathons = async (req: Request, res: Response) => {
   if (!ensureParticipant(req, res)) return;
 
+  // Two-step query — H_Branding can hold a base64 banner up to several MB. Including
+  // it in the same SELECT as ORDER BY blows MySQL's sort_buffer (256KB default) and
+  // crashes with ER_OUT_OF_SORTMEMORY. Sort the small columns first, then fetch
+  // branding by ID and merge in JS.
   const [rows] = await pool.query<HackathonListRow[]>(
     `SELECT
        h.hackathon_ID            AS id,
@@ -472,14 +483,28 @@ export const listHackathons = async (req: Request, res: Response) => {
           FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw,
        (SELECT GROUP_CONCAT(skill_name SEPARATOR '|||')
           FROM hackathon_skill WHERE hackathon_ID = h.hackathon_ID) AS skillsRaw,
-       (SELECT COUNT(*) FROM applies_hackathon WHERE hackathon_ID = h.hackathon_ID) AS applicantsCount,
-       h.H_Branding             AS brandingRaw
+       (SELECT COUNT(*) FROM applies_hackathon WHERE hackathon_ID = h.hackathon_ID) AS applicantsCount
        FROM hackathon h
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE h.H_status IN ('published', 'ongoing')
         AND h.H_visibility = 'public'
       ORDER BY h.H_created_at DESC`
   );
+
+  // Fetch branding for the listed hackathons in a separate query (no ORDER BY,
+  // so sort_buffer doesn't matter even with multi-MB images).
+  const brandingById = new Map<number, string | null>();
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const [brandingRows] = await pool.query<RowDataPacket[]>(
+      `SELECT hackathon_ID, H_Branding FROM hackathon WHERE hackathon_ID IN (${placeholders})`,
+      ids,
+    );
+    for (const b of brandingRows as Array<{ hackathon_ID: number; H_Branding: string | null }>) {
+      brandingById.set(b.hackathon_ID, b.H_Branding ?? null);
+    }
+  }
 
   const now = Date.now();
 
@@ -489,7 +514,11 @@ export const listHackathons = async (req: Request, res: Response) => {
       && deadlineMs !== null
       && deadlineMs > now;
 
-    const location = [r.city, r.fullAddress].filter((s) => s && s.trim()).join('، ') || null;
+    // Online hackathons: surface a friendly "عن بعد" instead of showing a dash when
+    // the organizer didn't fill a city — they don't need one.
+    const location = r.type === 'عبر الإنترنت'
+      ? 'عن بعد'
+      : ([r.city, r.fullAddress].filter((s) => s && s.trim()).join('، ') || null);
 
     return {
       id: r.id,
@@ -507,7 +536,7 @@ export const listHackathons = async (req: Request, res: Response) => {
       teamMax: r.teamMax,
       applicantsCount: r.applicantsCount,
       registrationOpen,
-      branding: extractBranding(r.brandingRaw),
+      branding: extractBranding(brandingById.get(r.id) ?? null),
     };
   });
 
@@ -524,6 +553,7 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
 
   const memberId = req.user!.memberId;
 
+  // Single-row query is safe to include H_Branding (no ORDER BY → no sort buffer issue).
   const [rows] = await pool.query<HackathonDetailRow[]>(
     `SELECT
        h.hackathon_ID            AS id,
@@ -545,6 +575,7 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
        h.H_Team_Min              AS teamMin,
        h.H_Team_Max              AS teamMax,
        h.H_Participation_Mode    AS participationMode,
+       h.H_Branding              AS brandingRaw,
        op.ORG_Name               AS org,
        h.HAM_ID                  AS organizerId
        FROM hackathon h
@@ -598,7 +629,9 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
     && regEndMs !== null
     && regEndMs > now;
 
-  const location = [h.city, h.fullAddress].filter((s) => s && s.trim()).join('، ') || null;
+  const location = h.type === 'عبر الإنترنت'
+    ? 'عن بعد'
+    : ([h.city, h.fullAddress].filter((s) => s && s.trim()).join('، ') || null);
 
   const prizes = prizeRows.map((p) => ({
     rank: p.HP_Position,
@@ -648,6 +681,7 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
     prizes,
     prizeTotal,
     timeline,
+    branding: extractBranding((h as { brandingRaw?: string | null }).brandingRaw ?? null),
     applicantsCount: applicantsRows[0]?.count ?? 0,
     registrationOpen,
     isRegistered: myReg !== null,
@@ -733,6 +767,8 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
 
   const memberId = req.user!.memberId;
 
+  // Two-step query — same reason as listHackathons: H_Branding with ORDER BY
+  // would blow MySQL's sort_buffer when an organizer uploads a large banner.
   const [rows] = await pool.query<MyHackathonRow[]>(
     `SELECT
        h.hackathon_ID            AS id,
@@ -755,8 +791,7 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
        a.T_ID                    AS myTeamId,
        a.participation_type      AS participationType,
        (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
-          FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw,
-       h.H_Branding              AS brandingRaw
+          FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw
        FROM applies_hackathon a
        JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
@@ -765,8 +800,23 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
     [memberId]
   );
 
+  const brandingById = new Map<number, string | null>();
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const [brandingRows] = await pool.query<RowDataPacket[]>(
+      `SELECT hackathon_ID, H_Branding FROM hackathon WHERE hackathon_ID IN (${placeholders})`,
+      ids,
+    );
+    for (const b of brandingRows as Array<{ hackathon_ID: number; H_Branding: string | null }>) {
+      brandingById.set(b.hackathon_ID, b.H_Branding ?? null);
+    }
+  }
+
   const items = rows.map((r) => {
-    const location = [r.city, r.fullAddress].filter((s) => s && s.trim()).join('، ') || null;
+    const location = r.type === 'عبر الإنترنت'
+      ? 'عن بعد'
+      : ([r.city, r.fullAddress].filter((s) => s && s.trim()).join('، ') || null);
     return {
       id: r.id,
       title: r.title,
@@ -787,7 +837,7 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
       myTeamId: r.myTeamId,
       participationType: r.participationType,
       tags: r.tagsRaw ? r.tagsRaw.split('|||') : [],
-      branding: extractBranding(r.brandingRaw),
+      branding: extractBranding(brandingById.get(r.id) ?? null),
     };
   });
 

@@ -376,18 +376,13 @@ export function ParticipantHackathons() {
 
                   {/* Footer */}
                   <div className="border-t border-gray-100 pt-3 mt-auto">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-gray-400 text-xs">
-                        <Eye className="w-3.5 h-3.5" />
-                        {h.viewers} مشاهدة
-                      </span>
+                    <div className="flex items-center justify-end">
                       <button
                         onClick={() => navigate(`/participant/hackathon/${h.id}`)}
-                        disabled={!h.registrationOpen}
                         className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs transition-all group-hover:shadow-md ${
                           h.registrationOpen
                             ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            : "bg-white border border-gray-200 text-gray-700 hover:border-[#e35654] hover:text-[#e35654]"
                         }`}
                         style={{ fontWeight: 600 }}
                       >
