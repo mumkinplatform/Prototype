@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Search,
@@ -14,144 +14,99 @@ import {
   Sparkles,
   MapPin,
 } from "lucide-react";
+import { apiGet, ApiError } from "../../lib/api";
+import { HackathonCover, BrandingPayload } from "./HackathonCover";
 
+interface ApiHackathon {
+  id: number;
+  title: string;
+  slug: string | null;
+  type: string | null;
+  location: string | null;
+  org: string | null;
+  startDate: string | null;
+  registrationDeadline: string | null;
+  prizeTotal: number;
+  tags: string[];
+  skills: string[];
+  teamMin: number;
+  teamMax: number;
+  applicantsCount: number;
+  registrationOpen: boolean;
+  branding: BrandingPayload | null;
+}
 
-const hackathons = [
-  {
-    id: 1,
-    title: "هاكاثون شفاء التقني",
-    org: "وزارة الصحة",
-    tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#e35654", "#6366f1"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "01 يونيو 2025",
-    deadline: "15 مايو 2025",
-    prize: "75,000 ر.س",
-    viewers: 124,
-    teams: 48,
-    cover: "bg-gradient-to-br from-green-800 via-teal-700 to-cyan-600",
-    coverText: "HEALTH\nhackathon",
-    featured: true,
-    location: "الرياض",
-    skills: ["Python", "React", "Data Analysis"],
-    maxTeam: 5,
-    registrationOpen: true,
-  },
-  {
-    id: 2,
-    title: "هاكاثون مستقبل المال 2.0",
-    org: "ساب تك",
-    tags: ["التقنية المالية", "بلوكشين"],
-    tagColors: ["#10b981", "#f59e0b"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "12 يونيو 2025",
-    deadline: "28 مايو 2025",
-    prize: "100,000 ر.س",
-    viewers: 98,
-    teams: 62,
-    cover: "bg-gradient-to-br from-blue-800 via-indigo-700 to-purple-600",
-    coverText: "FINTECH\nhackathon",
-    featured: true,
-    location: "جدة + إلكتروني",
-    skills: ["Blockchain", "Node.js", "Solidity"],
-    maxTeam: 4,
-    registrationOpen: true,
-  },
-  {
-    id: 3,
-    title: "هاكاثون الدرع التقني 2025",
-    org: "مؤسسة ريادة",
-    tags: ["الأمن السيبراني", "تطبيقات الويب"],
-    tagColors: ["#06b6d4", "#8b5cf6"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "25 مايو 2025",
-    deadline: "10 مايو 2025",
-    prize: "16,000 ر.س",
-    viewers: 76,
-    teams: 31,
-    cover: "bg-gradient-to-br from-gray-800 via-slate-700 to-gray-900",
-    coverText: "CYBER\nSECURITY",
-    featured: false,
-    location: "إلكتروني",
-    skills: ["Pentesting", "CTF", "Network Security"],
-    maxTeam: 3,
-    registrationOpen: false,
-  },
-  {
-    id: 4,
-    title: "هاكاثون NEOM للابتكار",
-    org: "مؤسسة نيوم",
-    tags: ["المدن الذكية", "الاستدامة"],
-    tagColors: ["#f59e0b", "#10b981"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "20 يوليو 2025",
-    deadline: "5 يوليو 2025",
-    prize: "200,000 ر.س",
-    viewers: 310,
-    teams: 85,
-    cover: "bg-gradient-to-br from-amber-700 via-orange-600 to-[#a93b39]",
-    coverText: "NEOM\n2025",
-    featured: true,
-    location: "نيوم، تبوك",
-    skills: ["IoT", "AI", "Smart Systems"],
-    maxTeam: 6,
-    registrationOpen: true,
-  },
-  {
-    id: 5,
-    title: "هاكاثون الطاقة المتجددة",
-    org: "أرامكو السعودية",
-    tags: ["الطاقة", "الاستدامة", "IoT"],
-    tagColors: ["#10b981", "#06b6d4", "#8b5cf6"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "10 أغسطس 2025",
-    deadline: "25 يوليو 2025",
-    prize: "150,000 ر.س",
-    viewers: 189,
-    teams: 54,
-    cover: "bg-gradient-to-br from-emerald-700 via-green-600 to-teal-700",
-    coverText: "ENERGY\nHACK",
-    featured: false,
-    location: "الظهران + إلكتروني",
-    skills: ["Embedded Systems", "Data Science", "Cloud"],
-    maxTeam: 5,
-    registrationOpen: true,
-  },
-  {
-    id: 6,
-    title: "قمة الذكاء الاصطناعي العالمية",
-    org: "STC",
-    tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#e35654"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "5 سبتمبر 2025",
-    deadline: "20 أغسطس 2025",
-    prize: "120,000 ر.س",
-    viewers: 241,
-    teams: 70,
-    cover: "bg-gradient-to-br from-violet-800 via-purple-700 to-indigo-800",
-    coverText: "AI\nSUMMIT",
-    featured: false,
-    location: "إلكتروني",
-    skills: ["Python", "TensorFlow", "LLMs"],
-    maxTeam: 4,
-    registrationOpen: true,
-  },
-];
+interface HackathonCard {
+  id: number;
+  title: string;
+  org: string;
+  tags: string[];
+  tagColors: string[];
+  type: string;
+  typeColor: string;
+  typeBg: string;
+  date: string;
+  deadline: string;
+  prize: string;
+  viewers: number;
+  teams: number;
+  branding: BrandingPayload | null;
+  featured: boolean;
+  location: string;
+  skills: string[];
+  maxTeam: number;
+  registrationOpen: boolean;
+}
 
-const typeOptions = ["الكل", "حضوري", "إلكتروني", "هجين"];
+const TAG_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
+
+const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
+  "حضوري":       { color: "#e35654", bg: "#fef2f2" },
+  "عبر الإنترنت": { color: "#10b981", bg: "#f0fdf4" },
+};
+
+function formatDateAr(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+}
+
+function formatPrize(amount: number): string {
+  if (!amount) return "0 ر.س";
+  return `${new Intl.NumberFormat("en-US").format(amount)} ر.س`;
+}
+
+function toCard(h: ApiHackathon): HackathonCard {
+  const typeStyle = (h.type && TYPE_STYLES[h.type]) || { color: "#6366f1", bg: "#eef2ff" };
+  return {
+    id: h.id,
+    title: h.title,
+    org: h.org ?? "—",
+    tags: h.tags,
+    tagColors: h.tags.map((_, i) => TAG_PALETTE[i % TAG_PALETTE.length]),
+    type: h.type ?? "—",
+    typeColor: typeStyle.color,
+    typeBg: typeStyle.bg,
+    date: formatDateAr(h.startDate),
+    deadline: formatDateAr(h.registrationDeadline),
+    prize: formatPrize(h.prizeTotal),
+    viewers: 0,
+    teams: h.applicantsCount,
+    branding: h.branding,
+    featured: false,
+    location: h.location ?? "—",
+    skills: h.skills ?? [],
+    maxTeam: h.teamMax,
+    registrationOpen: h.registrationOpen,
+  };
+}
+
+const typeOptions = ["الكل", "حضوري", "عبر الإنترنت"];
 const sortOptions = ["الأحدث", "الجائزة الأكبر", "الأكثر مشاهدة"];
 
 export function ParticipantHackathons() {
@@ -161,6 +116,28 @@ export function ParticipantHackathons() {
   const [sort, setSort] = useState("الأحدث");
   const [onlyFeatured, setOnlyFeatured] = useState(false);
   const [onlyOpen, setOnlyOpen] = useState(false);
+  const [hackathons, setHackathons] = useState<HackathonCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ items: ApiHackathon[] }>("/participants/hackathons")
+      .then((data) => {
+        if (cancelled) return;
+        setHackathons(data.items.map(toCard));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل الهاكاثونات");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = hackathons
     .filter((h) => {
@@ -280,7 +257,11 @@ export function ParticipantHackathons() {
 
       {/* Cards Grid */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-20 text-gray-500 text-sm">جاري تحميل الهاكاثونات...</div>
+        ) : error ? (
+          <div className="text-center py-20 text-red-500 text-sm">{error}</div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-gray-300" />
@@ -298,9 +279,10 @@ export function ParticipantHackathons() {
                 className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-200 group flex flex-col"
               >
                 {/* Cover */}
-                <div className={`h-44 ${h.cover} relative flex items-end p-4`}>
+                <div className="h-44 relative overflow-hidden">
+                  <HackathonCover branding={h.branding} id={h.id} />
                   {h.featured && (
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 right-3 z-10">
                       <span
                         className="flex items-center gap-1 bg-[#e35654] text-white text-xs px-2.5 py-1 rounded-full"
                         style={{ fontWeight: 600 }}
@@ -311,7 +293,7 @@ export function ParticipantHackathons() {
                     </div>
                   )}
                   {/* Registration status */}
-                  <div className="absolute top-3 left-3">
+                  <div className="absolute top-3 left-3 z-10">
                     <span
                       className="text-xs px-2.5 py-1 rounded-full"
                       style={{
@@ -324,7 +306,7 @@ export function ParticipantHackathons() {
                     </span>
                   </div>
                   {/* Type */}
-                  <div className="absolute bottom-3 left-3">
+                  <div className="absolute bottom-3 left-3 z-10">
                     <span
                       className="text-xs px-2 py-0.5 rounded-full backdrop-blur-sm"
                       style={{ background: h.typeBg + "dd", color: h.typeColor, fontWeight: 600 }}
@@ -332,12 +314,6 @@ export function ParticipantHackathons() {
                       {h.type}
                     </span>
                   </div>
-                  <p
-                    className="text-white/25 select-none whitespace-pre-line leading-tight"
-                    style={{ fontFamily: "monospace", fontWeight: 800, fontSize: "0.8rem" }}
-                  >
-                    {h.coverText}
-                  </p>
                 </div>
 
                 {/* Body */}
