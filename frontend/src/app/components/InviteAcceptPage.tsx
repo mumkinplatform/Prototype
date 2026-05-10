@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Sparkles, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
-import { ApiError } from '../../lib/api';
+import { toast } from 'sonner';
+import { ApiError, apiPost } from '../../lib/api';
+import { getToken } from '../../lib/auth';
 import { SECTION_LABELS, type Section } from '../../lib/permissions';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -26,6 +28,7 @@ interface Invitation {
 export function InviteAcceptPage() {
   const { token } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [data, setData] = useState<Invitation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<'not_found' | 'network' | null>(null);
@@ -48,18 +51,18 @@ export function InviteAcceptPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  // Single accept flow: figure out whether the email already has an account, then
-  // route to login (existing) or signup (new) — both with email + role pre-filled
-  // and locked. The invitation is auto-claimed by email match after OTP.
   const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
-  const acceptInvitation = async () => {
-    if (!data) return;
-    setAccepting(true);
+  // Two-step accept by design — matches the user's mental model:
+  //   1. Always route to /auth on click "Accept", even if already logged in.
+  //      This makes the signup/login step feel like part of the acceptance.
+  //   2. After OTP, AuthPage redirects back here with ?action=accept. Detect that
+  //      and call the API automatically so the user doesn't click "Accept" twice.
+  const startAccept = async () => {
+    if (!data || !token) return;
+    setAcceptError(null);
     try {
-      // Probe whether an account already exists for this email under the organizer role.
-      // We piggy-back on the login endpoint with a known-bad password — if we get 404,
-      // there's no account; 401 means the account exists.
       const probe = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,22 +73,45 @@ export function InviteAcceptPage() {
         email: data.invitee.email,
         role: 'admin',
         mode: accountExists ? 'login' : 'signup',
-        next: '/admin/my-hackathons',
+        next: `/invite/${encodeURIComponent(token)}?action=accept`,
       });
       navigate(`/auth?${params.toString()}`);
     } catch {
-      // Network failure — fall back to signup (new users path).
       const params = new URLSearchParams({
         email: data.invitee.email,
         role: 'admin',
         mode: 'signup',
-        next: '/admin/my-hackathons',
+        next: `/invite/${encodeURIComponent(token)}?action=accept`,
       });
       navigate(`/auth?${params.toString()}`);
+    }
+  };
+
+  const finalizeAccept = async () => {
+    if (!token) return;
+    setAccepting(true);
+    setAcceptError(null);
+    try {
+      await apiPost(`/invitations/${encodeURIComponent(token)}/accept`, {});
+      toast.success('تم قبول الدعوة وإضافتك إلى الهاكاثون', { duration: 4000 });
+      navigate('/admin/my-hackathons');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'تعذّر قبول الدعوة';
+      setAcceptError(msg);
     } finally {
       setAccepting(false);
     }
   };
+
+  // Auto-finalize if returning from /auth with action=accept and a token in storage.
+  useEffect(() => {
+    if (!data || !token) return;
+    if (searchParams.get('action') !== 'accept') return;
+    if (!getToken()) return;
+    if (data.alreadyAccepted) return;
+    finalizeAccept();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, token]);
 
   if (loading) {
     return (
@@ -220,26 +246,35 @@ export function InviteAcceptPage() {
             </div>
           </div>
 
+          {/* Accept error banner */}
+          {acceptError && (
+            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{acceptError}</span>
+            </div>
+          )}
+
           {/* Single accept button */}
           <button
-            onClick={acceptInvitation}
+            onClick={startAccept}
             disabled={accepting}
             className="w-full px-6 py-3 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#e35654]/30 disabled:opacity-60"
             style={{ fontWeight: 600 }}
           >
             {accepting ? (
-              <>جارٍ المتابعة...</>
+              <>جارٍ إضافتك للهاكاثون...</>
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />
-                أقبل الدعوة وأتابع
+                أقبل الدعوة وأتابع التسجيل
               </>
             )}
           </button>
 
           <p className="text-xs text-gray-500 mt-6 leading-relaxed">
-            ستنتقل لإكمال تسجيل الدخول أو إنشاء حسابك بإيميلك <span className="font-mono" dir="ltr">{data.invitee.email}</span>
-            {' '}— الدعوة ستتربط تلقائياً وستظهر لك الهاكاثون في لوحة التنظيم.
+            ستنتقل لإكمال تسجيل الدخول أو إنشاء حسابك بإيميلك{' '}
+            <span className="font-mono" dir="ltr">{data.invitee.email}</span>،
+            ثم تتم إضافتك للهاكاثون تلقائياً.
           </p>
         </div>
       </motion.div>

@@ -25,26 +25,6 @@ interface MemberRow extends RowDataPacket {
   password_reset_expires_at: Date | null;
 }
 
-// Claim any pending co-manager invitations addressed to this member's email.
-// Called after a successful OTP verification (signup OR login). The link is
-// implicit: same email = same person. No tokens, no separate accept page.
-async function claimPendingInvitesByEmail(
-  memberId: number,
-  email: string,
-): Promise<number> {
-  const [result] = await pool.execute<ResultSetHeader>(
-    `UPDATE hackathon_co_manager
-        SET M_ID = ?,
-            HCM_InviteStatus = 'accepted',
-            HCM_AcceptedAt = NOW()
-      WHERE LOWER(HCM_Email) = LOWER(?)
-        AND M_ID IS NULL
-        AND HCM_InviteStatus = 'pending'`,
-    [memberId, email],
-  );
-  return result.affectedRows;
-}
-
 function isExpired(at: Date | null | undefined): boolean {
   if (!at) return true;
   return new Date(at).getTime() < Date.now();
@@ -259,16 +239,6 @@ export const verifyOtp = async (req: Request, res: Response) => {
       [member.M_ID]
     );
 
-    // Auto-claim any pending co-manager invitations addressed to this email.
-    // This is the entry point for the invitation flow — no tokens, no separate
-    // accept page. Whoever logs in with the invited email becomes the co-manager.
-    let claimedInvites = 0;
-    try {
-      claimedInvites = await claimPendingInvitesByEmail(member.M_ID, member.M_Email);
-    } catch (claimErr) {
-      console.error('[invites] failed to auto-claim:', claimErr);
-    }
-
     const token = signJwt({ memberId: member.M_ID, role: dbRole });
 
     return res.json({
@@ -279,7 +249,6 @@ export const verifyOtp = async (req: Request, res: Response) => {
         email: member.M_Email,
         role: toFrontendRole(dbRole),
       },
-      claimedInvites,
     });
   } catch (err) {
     console.error('verify-otp error:', err);

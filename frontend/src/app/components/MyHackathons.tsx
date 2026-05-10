@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Plus, Calendar, Users, MapPin, ChevronLeft, FileText, ArrowRight } from 'lucide-react';
+import { Plus, Calendar, Users, MapPin, ChevronLeft, FileText, ArrowRight, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import PublishConfirmModal from './PublishConfirmModal';
 import PublishSuccessModal from './PublishSuccessModal';
-import { apiGet } from '../../lib/api';
+import { apiGet, apiDelete, ApiError } from '../../lib/api';
 import { SECTION_LABELS, type Section } from '../../lib/permissions';
+import { HackathonCover, parseBranding, type BrandingPayload } from './HackathonCover';
 
 type Status = 'draft' | 'published' | 'ongoing' | 'completed';
 
@@ -20,6 +21,7 @@ interface Hackathon {
   myRole: 'owner' | 'co_manager';
   myCoRole?: 'manager' | 'staff' | null;
   mySection?: Section | null;
+  branding: BrandingPayload | null;
 }
 
 interface ApiHackathon {
@@ -31,13 +33,11 @@ interface ApiHackathon {
   H_StartDate: string | null;
   H_EndDate: string | null;
   H_city: string | null;
+  H_Branding: string | null;
   my_role: 'owner' | 'co_manager';
   my_co_role: 'manager' | 'staff' | null;
   my_section: Section | null;
 }
-
-const FALLBACK_IMG =
-  'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&auto=format&fit=crop';
 
 function formatDateRange(start: string | null, end: string | null): string {
   if (!start && !end) return 'بدون تواريخ';
@@ -49,11 +49,45 @@ function formatDateRange(start: string | null, end: string | null): string {
 export default function MyHackathons() {
   const navigate = useNavigate();
   const [filterStatus, setFilterStatus] = useState<'all' | Status>('all');
+  const [filterRole, setFilterRole] = useState<'all' | 'owner' | 'manager' | 'staff'>('all');
   const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(false);
   const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(null);
   const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteCandidate, setDeleteCandidate] = useState<Hackathon | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const matchesRole = (h: Hackathon, r: typeof filterRole): boolean => {
+    if (r === 'all') return true;
+    if (r === 'owner') return h.myRole === 'owner';
+    if (r === 'manager') return h.myRole === 'co_manager' && h.myCoRole === 'manager';
+    if (r === 'staff') return h.myRole === 'co_manager' && h.myCoRole === 'staff';
+    return true;
+  };
+
+  const roleCounts = {
+    all: hackathons.length,
+    owner: hackathons.filter((h) => h.myRole === 'owner').length,
+    manager: hackathons.filter((h) => h.myRole === 'co_manager' && h.myCoRole === 'manager').length,
+    staff: hackathons.filter((h) => h.myRole === 'co_manager' && h.myCoRole === 'staff').length,
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteCandidate) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/hackathons/${deleteCandidate.id}`);
+      setHackathons((prev) => prev.filter((h) => h.id !== deleteCandidate.id));
+      toast.success('تم حذف الهاكاثون');
+      setDeleteCandidate(null);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'فشل الحذف';
+      toast.error(msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     apiGet<{ hackathons: ApiHackathon[] }>('/hackathons')
@@ -70,6 +104,7 @@ export default function MyHackathons() {
             myRole: h.my_role,
             myCoRole: h.my_co_role,
             mySection: h.my_section,
+            branding: parseBranding(h.H_Branding),
           }))
         );
       })
@@ -77,9 +112,10 @@ export default function MyHackathons() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filteredHackathons = filterStatus === 'all' 
-    ? hackathons 
-    : hackathons.filter(h => h.status === filterStatus);
+  const filteredHackathons = hackathons.filter((h) => {
+    const statusOk = filterStatus === 'all' || h.status === filterStatus;
+    return statusOk && matchesRole(h, filterRole);
+  });
 
   const getStatusBadge = (status: Hackathon['status']) => {
     const statusConfig = {
@@ -201,21 +237,59 @@ export default function MyHackathons() {
           </button>
         </div>
 
+        {/* Role Filter — separates owned from co-managed hackathons */}
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <span className="text-xs text-gray-500 ml-1" style={{ fontWeight: 600 }}>تصفية حسب دوري:</span>
+          {([
+            { id: 'all', label: 'الكل', count: roleCounts.all },
+            { id: 'owner', label: 'منشئ الهاكاثون', count: roleCounts.owner },
+            { id: 'manager', label: 'مدير قسم', count: roleCounts.manager },
+            { id: 'staff', label: 'موظف', count: roleCounts.staff },
+          ] as const).map((opt) => {
+            const active = filterRole === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setFilterRole(opt.id)}
+                className={`px-3 py-1.5 rounded-full text-xs border transition-all ${
+                  active
+                    ? 'bg-[#e35654] border-[#e35654] text-white'
+                    : 'bg-white border-gray-200 text-gray-600 hover:border-[#e35654] hover:text-[#e35654]'
+                }`}
+                style={{ fontWeight: 600 }}
+              >
+                {opt.label} ({opt.count})
+              </button>
+            );
+          })}
+        </div>
+
         {/* Hackathons Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredHackathons.map((hackathon) => (
             <div key={hackathon.id} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden hover:border-[#e35654] hover:shadow-lg transition-all flex flex-col">
-              {/* Image */}
-              <div className="relative h-48 overflow-hidden">
-                <img
-                  src={FALLBACK_IMG}
-                  alt={hackathon.title}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-3 right-3">
+              {/* Cover — uses organizer's branding (uploaded image, pattern, or gray pattern placeholder) */}
+              <div className="relative h-48 overflow-hidden bg-gray-200">
+                {(() => {
+                  const b = hackathon.branding;
+                  const hasUpload = b?.bannerMode === 'upload' && !!b.bannerUploadDataUrl;
+                  const hasPattern = b?.bannerMode === 'pattern' && !!b.bannerPattern;
+                  if (hasUpload || hasPattern) {
+                    return <HackathonCover branding={b} id={hackathon.id} />;
+                  }
+                  // Draft / not-yet-customized: solid dark gray placeholder.
+                  return (
+                    <div className="absolute inset-0 bg-gray-600 flex items-center justify-center">
+                      <span className="px-3 py-1 rounded-full bg-black/30 text-white text-[11px]" style={{ fontWeight: 600 }}>
+                        لم يُختر التصميم بعد
+                      </span>
+                    </div>
+                  );
+                })()}
+                <div className="absolute top-3 right-3 z-10">
                   {getStatusBadge(hackathon.status)}
                 </div>
-                <div className="absolute top-3 left-3">
+                <div className="absolute top-3 left-3 z-10">
                   {hackathon.myRole === 'owner' ? (
                     <span className="px-3 py-1 rounded-full text-xs bg-[#e35654] text-white shadow-md" style={{ fontWeight: 600 }}>
                       أنت المنظّم
@@ -257,14 +331,23 @@ export default function MyHackathons() {
                 {/* Actions */}
                 <div className="flex items-center gap-2">
                   {hackathon.status === 'draft' && hackathon.myRole === 'owner' ? (
-                    <Link
-                      to={`/admin/create-hackathon/${hackathon.id}`}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all text-center flex items-center justify-center gap-2"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <FileText className="w-4 h-4" />
-                      <span>تعديل المسودة</span>
-                    </Link>
+                    <>
+                      <Link
+                        to={`/admin/create-hackathon/${hackathon.id}`}
+                        className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all text-center flex items-center justify-center gap-2"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>تعديل المسودة</span>
+                      </Link>
+                      <button
+                        onClick={() => setDeleteCandidate(hackathon)}
+                        className="px-3 py-2 rounded-lg border border-red-200 text-red-500 text-sm hover:bg-red-50 transition-all flex items-center justify-center"
+                        title="حذف المسودة"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
                   ) : hackathon.status === 'completed' ? (
                     <Link
                       to={`/admin/hackathon/${hackathon.id}/statistics`}
@@ -336,6 +419,47 @@ export default function MyHackathons() {
           navigate('/admin/my-hackathons');
         }}
       />
+
+      {/* Delete Confirmation Modal */}
+      {deleteCandidate && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 pt-6 pb-4 text-center">
+              <div className="w-14 h-14 mx-auto rounded-full bg-red-50 flex items-center justify-center mb-4">
+                <AlertTriangle className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className="text-lg text-gray-900 mb-2" style={{ fontWeight: 700 }}>
+                حذف الهاكاثون نهائياً؟
+              </h3>
+              <p className="text-sm text-gray-600 mb-1">
+                "<span style={{ fontWeight: 600 }}>{deleteCandidate.title || '(بدون عنوان)'}</span>"
+              </p>
+              <p className="text-xs text-gray-500 mt-3 leading-relaxed">
+                سيتم حذف الهاكاثون وكل بياناته (المسارات، الجوائز، أعضاء التنظيم، الحكام، باقات الرعاية). لا يمكن التراجع عن هذا الإجراء.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-6 pb-6">
+              <button
+                onClick={() => setDeleteCandidate(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+                style={{ fontWeight: 600 }}
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ fontWeight: 600 }}
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleting ? 'جاري الحذف...' : 'حذف'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

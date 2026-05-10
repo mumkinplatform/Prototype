@@ -7,7 +7,8 @@ import authRoutes from './routes/auth.routes';
 import hackathonRoutes from './routes/hackathon.routes';
 import sponsorRoutes from './routes/sponsor.routes';
 import participantRoutes from './routes/participant.routes';
-import { getInvitationByToken } from './controllers/hackathon.controller';
+import { getInvitationByToken, acceptInvitation } from './controllers/hackathon.controller';
+import { requireAuth } from './middleware/auth.middleware';
 
 const app = express();
 
@@ -30,6 +31,8 @@ app.use('/sponsors', sponsorRoutes);
 app.use('/participants', participantRoutes);
 // Public invitation lookup — no auth, used by /invite/:token landing page.
 app.get('/invitations/:token', getInvitationByToken);
+// Accept an invitation — requires the logged-in user's email to match the invite email.
+app.post('/invitations/:token/accept', requireAuth, acceptInvitation);
 
 app.listen(env.port, () => {
   console.log(`Server on http://localhost:${env.port}`);

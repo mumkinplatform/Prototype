@@ -10,6 +10,8 @@ const colorPalettes = {
   purple: { primary: '#8b5cf6', secondary: '#6d28d9', light: '#a78bfa' },
   red: { primary: '#a41b42', secondary: '#8a1537', light: '#c42255' },
   orange: { primary: '#f97316', secondary: '#c2410c', light: '#fb923c' },
+  // Used as a "not yet customized" placeholder for drafts.
+  gray: { primary: '#6b7280', secondary: '#374151', light: '#9ca3af' },
 };
 
 export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {

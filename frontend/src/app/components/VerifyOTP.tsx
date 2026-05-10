@@ -66,28 +66,12 @@ export function VerifyOTP() {
     }
     setIsVerifying(true);
     try {
-      const data = await apiPost<{ token: string; user: AuthUser; claimedInvites?: number }>(
+      const data = await apiPost<{ token: string; user: AuthUser }>(
         "/auth/verify-otp",
         { role, email, code }
       );
       saveAuth(data.token, data.user);
       toast.success("تم التحقق بنجاح! 🎉");
-
-      // If the user had pending co-manager invites linked to their email, they
-      // were auto-claimed server-side. Surface a friendly notification.
-      if (data.claimedInvites && data.claimedInvites > 0) {
-        setTimeout(() => {
-          toast.success(
-            data.claimedInvites === 1
-              ? "تمت إضافتك لهاكاثون جديد كمنظّم مساعد"
-              : `تمت إضافتك لـ ${data.claimedInvites} هاكاثونات كمنظّم مساعد`,
-            {
-              description: "ستجدها في صفحة هاكاثوناتي.",
-              duration: 6000,
-            },
-          );
-        }, 1200);
-      }
 
       const roleMap: Record<Role, string> = {
         admin: "/admin",

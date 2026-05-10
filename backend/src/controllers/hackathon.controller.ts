@@ -228,6 +228,10 @@ export const listMyHackathons = async (req: Request, res: Response) => {
     // Return hackathons where the user is either:
     //  a) the creator (HAM_ID = me)  → my_role = 'owner'
     //  b) an accepted co-manager     → my_role = 'co_manager' with their section/role
+    // Two-step query — H_Branding can hold a base64 banner up to ~5MB. Including it
+    // in a SELECT with ORDER BY blows up MySQL's sort_buffer (256KB by default) and
+    // crashes with ER_OUT_OF_SORTMEMORY. Sort the small columns first, then fetch
+    // the heavy branding column by ID and merge in JS.
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT h.hackathon_ID, h.H_title, h.H_slug, h.H_description, h.H_status,
               h.H_StartDate, h.H_EndDate, h.H_city, h.H_visibility, h.H_created_at, h.HAM_ID,
@@ -241,11 +245,26 @@ export const listMyHackathons = async (req: Request, res: Response) => {
           AND hcm.M_ID = ?
           AND hcm.HCM_InviteStatus = 'accepted'
         WHERE (h.HAM_ID = ? OR hcm.HCM_ID IS NOT NULL)
-          AND h.H_title IS NOT NULL
-          AND h.H_title <> ''
         ORDER BY h.H_created_at DESC`,
       [req.user.memberId, req.user.memberId, req.user.memberId],
     );
+
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.hackathon_ID);
+      const placeholders = ids.map(() => '?').join(',');
+      const [brandingRows] = await pool.query<RowDataPacket[]>(
+        `SELECT hackathon_ID, H_Branding FROM hackathon WHERE hackathon_ID IN (${placeholders})`,
+        ids,
+      );
+      const brandingById = new Map<number, unknown>();
+      for (const b of brandingRows) {
+        brandingById.set(b.hackathon_ID, b.H_Branding);
+      }
+      for (const r of rows) {
+        r.H_Branding = brandingById.get(r.hackathon_ID) ?? null;
+      }
+    }
+
     return res.json({ hackathons: rows });
   } catch (err) {
     console.error('listMyHackathons error:', err);
@@ -1297,6 +1316,72 @@ export const getInvitationByToken = async (req: Request, res: Response) => {
   }
 };
 
+// Accept a co-manager invitation. Called from /invite/:token after the invitee
+// has logged in. Requires the logged-in user's email to match the invite email
+// to prevent strangers from claiming someone else's invite via leaked token.
+export const acceptInvitation = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const token = typeof req.params.token === 'string' ? req.params.token.trim() : '';
+  if (!token) return res.status(400).json({ error: 'invalid_token' });
+
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT HCM_ID, HCM_Email, HCM_InviteStatus, HCM_InviteExpiresAt, M_ID
+         FROM hackathon_co_manager WHERE HCM_InviteToken = ? LIMIT 1`,
+      [token],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'not_found' });
+    const r = rows[0] as {
+      HCM_ID: number;
+      HCM_Email: string;
+      HCM_InviteStatus: 'pending' | 'accepted' | 'declined';
+      HCM_InviteExpiresAt: string | null;
+      M_ID: number | null;
+    };
+
+    if (r.HCM_InviteStatus === 'accepted' && r.M_ID === req.user.memberId) {
+      return res.json({ status: 'accepted', alreadyAccepted: true });
+    }
+    if (r.HCM_InviteStatus !== 'pending') {
+      return res.status(400).json({ error: 'invalid_status', detail: 'الدعوة غير قابلة للقبول' });
+    }
+
+    const expired = r.HCM_InviteExpiresAt
+      ? new Date(r.HCM_InviteExpiresAt.replace(' ', 'T')).getTime() < Date.now()
+      : false;
+    if (expired) return res.status(400).json({ error: 'expired', detail: 'انتهت صلاحية الدعوة' });
+
+    // Match by email — prevents anyone with the token URL from claiming an invite
+    // addressed to someone else.
+    const [memberRows] = await pool.query<RowDataPacket[]>(
+      'SELECT M_Email FROM member WHERE M_ID = ? LIMIT 1',
+      [req.user.memberId],
+    );
+    const myEmail = (memberRows[0] as { M_Email?: string } | undefined)?.M_Email ?? '';
+    if (myEmail.toLowerCase() !== r.HCM_Email.toLowerCase()) {
+      return res.status(403).json({
+        error: 'email_mismatch',
+        detail: 'هذه الدعوة موجّهة لإيميل آخر — سجّل دخول بالإيميل المدعو',
+      });
+    }
+
+    await pool.execute(
+      `UPDATE hackathon_co_manager
+          SET M_ID = ?, HCM_InviteStatus = 'accepted', HCM_AcceptedAt = NOW()
+        WHERE HCM_ID = ?`,
+      [req.user.memberId, r.HCM_ID],
+    );
+
+    return res.json({ status: 'accepted' });
+  } catch (err) {
+    console.error('acceptInvitation error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
 export const replaceJudges = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
@@ -1559,12 +1644,52 @@ export const publishHackathon = async (req: Request, res: Response) => {
       });
     }
 
+    const wasDraft = h.H_status === 'draft';
+
     await pool.query('UPDATE hackathon SET H_status = ? WHERE hackathon_ID = ?', [
       'published',
       id,
     ]);
 
-    return res.json({ status: 'published' });
+    // First-publish hook: send invite emails to all pending co-managers added during
+    // the create flow. We only fire on a draft→published transition so re-publish (after
+    // unpublish) doesn't spam existing invitees. Email failures are swallowed inside the
+    // helper so a flaky SMTP can't roll back the publish.
+    let invitesSent = 0;
+    if (wasDraft) {
+      const ctx = await getHackathonInviteContext(id);
+      if (ctx) {
+        const [pendingInvites] = await pool.query<RowDataPacket[]>(
+          `SELECT HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_InviteToken
+             FROM hackathon_co_manager
+            WHERE hackathon_ID = ?
+              AND HCM_InviteStatus = 'pending'
+              AND M_ID IS NULL
+              AND HCM_InviteToken IS NOT NULL`,
+          [id],
+        );
+        for (const r of pendingInvites as Array<{
+          HCM_FullName: string;
+          HCM_Email: string;
+          HCM_Role: 'manager' | 'staff';
+          HCM_Section: Section;
+          HCM_InviteToken: string;
+        }>) {
+          void sendInviteEmailSafe({
+            to: r.HCM_Email,
+            inviteeName: r.HCM_FullName,
+            organizerName: ctx.organizerName,
+            hackathonTitle: ctx.title,
+            role: r.HCM_Role,
+            section: r.HCM_Section,
+            token: r.HCM_InviteToken,
+          });
+          invitesSent++;
+        }
+      }
+    }
+
+    return res.json({ status: 'published', invitesSent });
   } catch (err) {
     console.error('publishHackathon error:', err);
     return res.status(500).json({
@@ -1593,6 +1718,59 @@ export const unpublishHackathon = async (req: Request, res: Response) => {
     return res.json({ status: 'draft' });
   } catch (err) {
     console.error('unpublishHackathon error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// Delete a hackathon and all its dependent rows. Restricted to:
+//   • the owner (HAM_ID = me)
+//   • drafts only (published hackathons must be unpublished first to make data
+//     loss explicit and prevent surprising co-managers / sponsors / participants).
+// Most child tables CASCADE on hackathon delete; the two NO ACTION ones
+// (applies_hackathon, hackathon_organizer_team) are cleared explicitly inside
+// the same transaction so the row goes away atomically or not at all.
+export const deleteHackathon = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+
+  try {
+    const [rows] = await pool.query<HackathonRow[]>(
+      'SELECT H_status FROM hackathon WHERE hackathon_ID = ?',
+      [id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'not found' });
+    if (rows[0].H_status !== 'draft') {
+      return res.status(400).json({
+        error: 'must_unpublish_first',
+        detail: 'لا يمكن حذف هاكاثون منشور — يجب إلغاء النشر أولاً',
+      });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      // Tables without ON DELETE CASCADE — clear explicitly.
+      await conn.execute('DELETE FROM applies_hackathon WHERE hackathon_ID = ?', [id]);
+      await conn.execute('DELETE FROM hackathon_organizer_team WHERE hackathon_ID = ?', [id]);
+      // The rest (track, prize, co_manager, judge, skill, sponsor_package, team,
+      // session, evaluation, certificate, team_submission) cascade automatically.
+      await conn.execute('DELETE FROM hackathon WHERE hackathon_ID = ?', [id]);
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+
+    return res.json({ status: 'deleted' });
+  } catch (err) {
+    console.error('deleteHackathon error:', err);
     return res.status(500).json({
       error: 'internal server error',
       detail: err instanceof Error ? err.message : String(err),

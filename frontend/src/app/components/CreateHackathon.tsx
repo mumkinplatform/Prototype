@@ -434,7 +434,8 @@ export function CreateHackathon() {
     form.submissionStart !== '' &&
     form.submissionEnd !== '' &&
     form.projectDescription.trim() !== '' &&
-    form.projectRequirements.trim() !== '';
+    form.projectRequirements.trim() !== '' &&
+    submissionFields.length > 0;
 
   const isEvaluationComplete =
     form.judgingCriteria.trim() !== '' &&
@@ -443,7 +444,7 @@ export function CreateHackathon() {
 
   const isPrizesComplete =
     prizes.length > 0 &&
-    prizes.every((p) => p.position.trim() !== '');
+    prizes.every((p) => p.position.trim() !== '' && p.amount.trim() !== '');
 
   // Section 8: sponsor packages — optional. The section is "complete" if either no
   // package was added, OR every added package is fully filled (name + type + offer).
@@ -973,8 +974,8 @@ export function CreateHackathon() {
   const endTs = tsLocal(form.endDate);
   let startDateError: string | undefined;
   let endDateError: string | undefined;
-  if (startTs != null && endTs != null && endTs < startTs) {
-    endDateError = 'يجب أن يكون بعد "تاريخ البدء"';
+  if (startTs != null && endTs != null && endTs <= startTs) {
+    endDateError = 'يجب أن يكون بعد "تاريخ البدء" (لا يجوز أن يطابقه)';
   }
 
   // Range check first (out-of-window is the primary violation), then chain order.
@@ -1072,7 +1073,9 @@ export function CreateHackathon() {
   };
  
   const addTrack = () => {
-    setTracks([...tracks, { id: Date.now().toString(), name: '', description: '' }]);
+    // Single-track policy: prevent adding a second track from the UI or stale state.
+    if (tracks.length >= 1) return;
+    setTracks([{ id: Date.now().toString(), name: '', description: '' }]);
   };
  
   const removeTrack = (id: string) => {
@@ -1417,25 +1420,27 @@ export function CreateHackathon() {
                       />
                     </div>
  
-                    {/* Tracks (المسارات) */}
+                    {/* Track (المسار) — single track only */}
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <label className="text-sm text-gray-700" style={{ fontWeight: 600 }}>
-                          مسارات الهاكاثون <span className="text-red-500">*</span>
+                          مسار الهاكاثون <span className="text-red-500">*</span>
                         </label>
-                        <button
-                          onClick={addTrack}
-                          className="px-3 py-1.5 rounded-lg bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] transition-all flex items-center gap-1"
-                          style={{ fontWeight: 600 }}
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          إضافة مسار
-                        </button>
+                        {tracks.length === 0 && (
+                          <button
+                            onClick={addTrack}
+                            className="px-3 py-1.5 rounded-lg bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] transition-all flex items-center gap-1"
+                            style={{ fontWeight: 600 }}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            إضافة المسار
+                          </button>
+                        )}
                       </div>
                       <div className="space-y-3">
                         {tracks.length === 0 && (
                           <div className="text-center py-8 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-                            لم تتم إضافة أي مسارات بعد
+                            لم تتم إضافة المسار بعد
                           </div>
                         )}
                         {tracks.map((track) => (
@@ -1457,12 +1462,28 @@ export function CreateHackathon() {
                                   className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 resize-none"
                                 />
                               </div>
-                              <button
-                                onClick={() => removeTrack(track.id)}
-                                className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex flex-col gap-2">
+                                <button
+                                  onClick={() => {
+                                    if (!track.name.trim()) {
+                                      toast.error('اسم المسار مطلوب');
+                                      return;
+                                    }
+                                    toast.success('تم حفظ المسار', { duration: 2000 });
+                                  }}
+                                  className="w-8 h-8 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 flex items-center justify-center transition-all"
+                                  title="حفظ"
+                                >
+                                  <Save className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => removeTrack(track.id)}
+                                  className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center transition-all"
+                                  title="حذف"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1567,6 +1588,9 @@ export function CreateHackathon() {
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           تاريخ البدء <span className="text-red-500">*</span>
                         </label>
+                        {startDateError && (
+                          <p className="text-xs text-red-600 mb-1.5">{startDateError}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.startDate}
@@ -1577,14 +1601,14 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {startDateError && (
-                          <p className="text-xs text-red-600 mt-1.5">{startDateError}</p>
-                        )}
                       </div>
                       <div>
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           تاريخ الانتهاء <span className="text-red-500">*</span>
                         </label>
+                        {endDateError && (
+                          <p className="text-xs text-red-600 mb-1.5">{endDateError}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.endDate}
@@ -1595,9 +1619,6 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {endDateError && (
-                          <p className="text-xs text-red-600 mt-1.5">{endDateError}</p>
-                        )}
                       </div>
                     </div>
  
@@ -1633,6 +1654,9 @@ export function CreateHackathon() {
                                 {m.label}
                               </span>
                               <div className="flex flex-col items-end">
+                                {err && (
+                                  <p className="text-xs text-red-600 mb-1.5 max-w-56 text-right">{err}</p>
+                                )}
                                 <input
                                   type="datetime-local"
                                   value={form[m.key]}
@@ -1641,9 +1665,6 @@ export function CreateHackathon() {
                                     err ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-[#e35654]'
                                   }`}
                                 />
-                                {err && (
-                                  <p className="text-xs text-red-600 mt-1.5 max-w-56 text-right">{err}</p>
-                                )}
                               </div>
                             </div>
                           );
@@ -1966,6 +1987,9 @@ export function CreateHackathon() {
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           فتح التسجيل <span className="text-red-500">*</span>
                         </label>
+                        {dateErrors.registrationStart && (
+                          <p className="text-xs text-red-600 mb-1.5">{dateErrors.registrationStart}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.registrationStart}
@@ -1976,14 +2000,14 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {dateErrors.registrationStart && (
-                          <p className="text-xs text-red-600 mt-1.5">{dateErrors.registrationStart}</p>
-                        )}
                       </div>
                       <div>
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           إغلاق التسجيل <span className="text-red-500">*</span>
                         </label>
+                        {dateErrors.registrationEnd && (
+                          <p className="text-xs text-red-600 mb-1.5">{dateErrors.registrationEnd}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.registrationEnd}
@@ -1994,9 +2018,6 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {dateErrors.registrationEnd && (
-                          <p className="text-xs text-red-600 mt-1.5">{dateErrors.registrationEnd}</p>
-                        )}
                       </div>
                     </div>
 
@@ -2373,6 +2394,9 @@ export function CreateHackathon() {
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           بداية تسليم المشاريع <span className="text-red-500">*</span>
                         </label>
+                        {dateErrors.submissionStart && (
+                          <p className="text-xs text-red-600 mb-1.5">{dateErrors.submissionStart}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.submissionStart}
@@ -2383,14 +2407,14 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {dateErrors.submissionStart && (
-                          <p className="text-xs text-red-600 mt-1.5">{dateErrors.submissionStart}</p>
-                        )}
                       </div>
                       <div>
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           نهاية تسليم المشاريع <span className="text-red-500">*</span>
                         </label>
+                        {dateErrors.submissionEnd && (
+                          <p className="text-xs text-red-600 mb-1.5">{dateErrors.submissionEnd}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.submissionEnd}
@@ -2401,9 +2425,6 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {dateErrors.submissionEnd && (
-                          <p className="text-xs text-red-600 mt-1.5">{dateErrors.submissionEnd}</p>
-                        )}
                       </div>
                     </div>
 
@@ -2438,8 +2459,9 @@ export function CreateHackathon() {
                     {/* Required Fields */}
                     <div>
                       <label className="block text-sm text-gray-700 mb-3" style={{ fontWeight: 600 }}>
-                        الحقول المطلوبة في التسليم
+                        الحقول المطلوبة في التسليم <span className="text-red-500">*</span>
                       </label>
+                      <p className="text-xs text-gray-500 mb-3">اختر حقلاً واحداً على الأقل</p>
                       <div className="space-y-2">
                         {([
                           { id: 'title', label: 'عنوان المشروع' },
@@ -2481,21 +2503,7 @@ export function CreateHackathon() {
                       />
                     </div>
 
-                    {/* Allow Late Submissions */}
-                    <div>
-                      <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={form.allowLateSubmission}
-                          onChange={(e) => updateForm('allowLateSubmission', e.target.checked)}
-                        />
-                        <div>
-                          <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>السماح بالتسليم المتأخر</div>
-                          <div className="text-xs text-gray-500 mt-1">يمكن للفرق التسليم بعد الموعد النهائي مع علامة "تأخير"</div>
-                        </div>
-                      </label>
-                    </div>
+                    {/* "Allow Late Submission" toggle moved to post-publish management section. */}
                   </div>
                 </div>
               )}
@@ -2529,6 +2537,9 @@ export function CreateHackathon() {
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           بداية التحكيم <span className="text-red-500">*</span>
                         </label>
+                        {dateErrors.judgingStart && (
+                          <p className="text-xs text-red-600 mb-1.5">{dateErrors.judgingStart}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.judgingStart}
@@ -2539,14 +2550,14 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {dateErrors.judgingStart && (
-                          <p className="text-xs text-red-600 mt-1.5">{dateErrors.judgingStart}</p>
-                        )}
                       </div>
                       <div>
                         <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                           نهاية التحكيم <span className="text-red-500">*</span>
                         </label>
+                        {dateErrors.judgingEnd && (
+                          <p className="text-xs text-red-600 mb-1.5">{dateErrors.judgingEnd}</p>
+                        )}
                         <input
                           type="datetime-local"
                           value={form.judgingEnd}
@@ -2557,9 +2568,6 @@ export function CreateHackathon() {
                               : 'border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10'
                           }`}
                         />
-                        {dateErrors.judgingEnd && (
-                          <p className="text-xs text-red-600 mt-1.5">{dateErrors.judgingEnd}</p>
-                        )}
                       </div>
                     </div>
 
@@ -2618,14 +2626,30 @@ export function CreateHackathon() {
                             </div>
                             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                               <p className="text-xs text-gray-500">سيدخل المنصة عند تسجيله بنفس الإيميل</p>
-                              <button
-                                onClick={() => removeJudge(judge.id)}
-                                className="px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 text-xs flex items-center gap-1"
-                                style={{ fontWeight: 600 }}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                حذف
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    if (!judge.name.trim() || !judge.email.trim()) {
+                                      toast.error('الاسم والإيميل مطلوبان');
+                                      return;
+                                    }
+                                    toast.success('تم حفظ الحكم', { duration: 2000 });
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 text-xs flex items-center gap-1"
+                                  style={{ fontWeight: 600 }}
+                                >
+                                  <Save className="w-3.5 h-3.5" />
+                                  حفظ
+                                </button>
+                                <button
+                                  onClick={() => removeJudge(judge.id)}
+                                  className="px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 text-xs flex items-center gap-1"
+                                  style={{ fontWeight: 600 }}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  حذف
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -2659,7 +2683,12 @@ export function CreateHackathon() {
                   <div className="space-y-6">
                     {/* Add Prize Button */}
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm text-gray-900" style={{ fontWeight: 700 }}>جوائز الهاكاثون</h3>
+                      <div>
+                        <h3 className="text-sm text-gray-900" style={{ fontWeight: 700 }}>
+                          جوائز الهاكاثون <span className="text-red-500">*</span>
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-1">أضف جائزة واحدة على الأقل (المركز وقيمة الجائزة مطلوبان)</p>
+                      </div>
                       <button
                         onClick={addPrize}
                         className="px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all flex items-center gap-2"
@@ -2686,7 +2715,9 @@ export function CreateHackathon() {
                             <div className="flex-1 space-y-4">
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>المركز</label>
+                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>
+                                    المركز <span className="text-red-500">*</span>
+                                  </label>
                                   <input
                                     type="text"
                                     placeholder="المركز الأول"
@@ -2696,7 +2727,9 @@ export function CreateHackathon() {
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>قيمة الجائزة</label>
+                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>
+                                    قيمة الجائزة <span className="text-red-500">*</span>
+                                  </label>
                                   <input
                                     type="text"
                                     placeholder="50,000 ريال"
@@ -2717,12 +2750,28 @@ export function CreateHackathon() {
                                 />
                               </div>
                             </div>
-                            <button
-                              onClick={() => removePrize(prize.id)}
-                              className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center flex-shrink-0"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex flex-col gap-2 flex-shrink-0">
+                              <button
+                                onClick={() => {
+                                  if (!prize.position.trim() || !prize.amount.trim()) {
+                                    toast.error('المركز وقيمة الجائزة مطلوبان');
+                                    return;
+                                  }
+                                  toast.success('تم حفظ الجائزة', { duration: 2000 });
+                                }}
+                                className="w-8 h-8 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 flex items-center justify-center"
+                                title="حفظ"
+                              >
+                                <Save className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => removePrize(prize.id)}
+                                className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -2944,12 +2993,32 @@ export function CreateHackathon() {
                                   </div>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => removeSponsorPackage(pkg.id)}
-                                className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center flex-shrink-0"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex flex-col gap-2 flex-shrink-0">
+                                <button
+                                  onClick={() => {
+                                    if (!pkg.name.trim() || !pkg.type) {
+                                      toast.error('اسم الباقة ونوعها مطلوبان');
+                                      return;
+                                    }
+                                    if (!pkg.sponsorOffer.trim()) {
+                                      toast.error('عرض الراعي مطلوب');
+                                      return;
+                                    }
+                                    toast.success('تم حفظ الباقة', { duration: 2000 });
+                                  }}
+                                  className="w-8 h-8 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 flex items-center justify-center"
+                                  title="حفظ"
+                                >
+                                  <Save className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => removeSponsorPackage(pkg.id)}
+                                  className="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center"
+                                  title="حذف"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );

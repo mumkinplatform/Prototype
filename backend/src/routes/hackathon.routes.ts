@@ -9,6 +9,7 @@ import {
   updateHackathon,
   publishHackathon,
   unpublishHackathon,
+  deleteHackathon,
   replaceTracks,
   replaceCoManagers,
   addCoManager,
@@ -32,6 +33,7 @@ router.get('/:id', requireAuth, getHackathon);
 router.put('/:id', requireAuth, updateHackathon);
 router.post('/:id/publish', requireAuth, publishHackathon);
 router.post('/:id/unpublish', requireAuth, unpublishHackathon);
+router.delete('/:id', requireAuth, deleteHackathon);
 router.put('/:id/tracks', requireAuth, replaceTracks);
 router.put('/:id/co-managers', requireAuth, replaceCoManagers);
 router.post('/:id/co-managers', requireAuth, addCoManager);
