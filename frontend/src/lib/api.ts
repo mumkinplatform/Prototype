@@ -1,6 +1,6 @@
 import { getToken } from "./auth";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 export class ApiError extends Error {
   constructor(
@@ -67,4 +67,21 @@ export function apiPut<T>(path: string, body?: unknown): Promise<T> {
 
 export function apiDelete<T>(path: string): Promise<T> {
   return request<T>("DELETE", path);
+}
+
+/** Uploads a single file via multipart/form-data, preserving the Authorization header. */
+export async function apiUpload<T>(path: string, file: File, fieldName = "file"): Promise<T> {
+  const form = new FormData();
+  form.append(fieldName, file);
+  const res = await fetch(API_URL + path, {
+    method: "POST",
+    headers: { ...authHeader() }, // Don't set Content-Type — the browser adds it with the boundary
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const body = data as { error?: string };
+    throw new ApiError(res.status, body.error ?? `HTTP ${res.status}`, data);
+  }
+  return data as T;
 }
