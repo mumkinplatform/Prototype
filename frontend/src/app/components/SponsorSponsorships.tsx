@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import {
   ArrowRight,
   FileText,
@@ -22,90 +23,135 @@ import {
   Upload,
   ExternalLink,
   ChevronLeft,
+  Loader2,
+  X,
+  Trash2,
 } from "lucide-react";
+import { apiGet, apiDelete, ApiError } from "../../lib/api";
 
-const sponsorships = [
-  {
-    id: 1,
-    name: "هاكاثون الذكاء الاصطناعي العالمي 2024",
-    package: "ماسي",
-    packageColor: "#06b6d4",
-    packageBg: "#ecfeff",
-    status: "نشط",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    payDate: "15 - 18 أكتوبر 2024",
-    financialDate: "12 مايو 2024",
-    deliveryStatus: "مدفوع بالكامل",
-    deliveryColor: "#10b981",
-    progress: 75,
-    note: "تقرير ترويجي رُفع لكانون الأول، تجدد رابط التسجيل",
-    actionPrimary: "فتح الصفحة",
-    actionSecondary: "عرض الخطة",
+// ── API Types ────────────────────────────────────────────────
+
+interface ApiApplication {
+  id: number;
+  status: "pending" | "accepted" | "rejected";
+  appliedAt: string;
+  package: {
+    id: number;
+    name: string;
+    type: string;
+    price: number | null;
+  };
+  hackathon: {
+    id: number;
+    title: string;
+    status: string;
+    startDate: string | null;
+  };
+}
+
+interface ApplicationsResponse {
+  items: ApiApplication[];
+}
+
+// ── Display shape (matches existing UI) ──────────────────────
+
+interface DisplaySponsorship {
+  id: number;
+  hackathonId: number;
+  name: string;
+  package: string;
+  packageColor: string;
+  packageBg: string;
+  status: string;
+  statusColor: string;
+  statusBg: string;
+  payDate: string;
+  financialDate: string;
+  deliveryStatus: string;
+  deliveryColor: string;
+  progress: number;
+  note: string;
+  actionPrimary: string;
+  actionSecondary: string;
+  urgent: boolean;
+  contractSigned: boolean;
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<
+  ApiApplication["status"],
+  { label: string; color: string; bg: string; deliveryStatus: string; note: string }
+> = {
+  pending: {
+    label: "قيد التقديم",
+    color: "#f59e0b",
+    bg: "#fffbeb",
+    deliveryStatus: "بانتظار الموافقة",
+    note: "تم استلام طلبك. سيراجعه المنظم قريباً.",
+  },
+  accepted: {
+    label: "نشط",
+    color: "#10b981",
+    bg: "#f0fdf4",
+    deliveryStatus: "تم القبول",
+    note: "تم قبول طلبك. تابع تفاصيل الهاكاثون.",
+  },
+  rejected: {
+    label: "مرفوض",
+    color: "#ef4444",
+    bg: "#fef2f2",
+    deliveryStatus: "تم الرفض",
+    note: "للأسف، لم يتم قبول طلبك على هذه الباقة.",
+  },
+};
+
+const PACKAGE_TYPE_VISUALS: Record<string, { color: string; bg: string }> = {
+  financial: { color: "#6366f1", bg: "#eef2ff" },
+  technical: { color: "#f59e0b", bg: "#fffbeb" },
+  logistic: { color: "#10b981", bg: "#f0fdf4" },
+  hospitality: { color: "#06b6d4", bg: "#ecfeff" },
+  media: { color: "#e35654", bg: "#fef2f2" },
+  other: { color: "#64748b", bg: "#f8fafc" },
+};
+
+function formatLongDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ar-SA", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function mapApplicationToDisplay(app: ApiApplication): DisplaySponsorship {
+  const status = STATUS_LABELS[app.status];
+  const packageVisual =
+    PACKAGE_TYPE_VISUALS[app.package.type] ?? PACKAGE_TYPE_VISUALS.other;
+
+  return {
+    id: app.id,
+    hackathonId: app.hackathon.id,
+    name: app.hackathon.title,
+    package: app.package.name,
+    packageColor: packageVisual.color,
+    packageBg: packageVisual.bg,
+    status: status.label,
+    statusColor: status.color,
+    statusBg: status.bg,
+    payDate: formatLongDate(app.hackathon.startDate),
+    financialDate: formatLongDate(app.appliedAt),
+    deliveryStatus: status.deliveryStatus,
+    deliveryColor: status.color,
+    progress: app.status === "accepted" ? 50 : 0,
+    note: status.note,
+    actionPrimary: "عرض الهاكاثون",
+    actionSecondary: "تفاصيل الباقة",
     urgent: false,
-    contractSigned: true,
-  },
-  {
-    id: 2,
-    name: "تحدي الأمن السيبراني الإقليمي",
-    package: "ذهبي",
-    packageColor: "#f59e0b",
-    packageBg: "#fffbeb",
-    status: "قيد التقديم",
-    statusColor: "#f59e0b",
-    statusBg: "#fffbeb",
-    payDate: "5 - 7 ديسمبر 2024",
-    financialDate: "30 أكتوبر 2024",
-    deliveryStatus: "في انتظار الفاتورة",
-    deliveryColor: "#f59e0b",
-    progress: 15,
-    note: "تأكيد تحويل مبلغ 40,000 ريال — يُرجى إتمام الدفع",
-    actionPrimary: "فتح الصفحة",
-    actionSecondary: "دفع الفاتورة",
-    urgent: true,
-    contractSigned: false,
-  },
-  {
-    id: 3,
-    name: "هاكاثون الجامعات الناشئة",
-    package: "فضي",
-    packageColor: "#6b7280",
-    packageBg: "#f9fafb",
-    status: "نشط",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    payDate: "20 - 22 نوفمبر 2024",
-    financialDate: "22 يوليو 2024",
-    deliveryStatus: "تأخر السداد",
-    deliveryColor: "#e35654",
-    progress: 40,
-    note: "يُرجى تسوية الأقساط المتبقية وإرسال تأكيد الدفع",
-    actionPrimary: "عرض الفاتورة",
-    actionSecondary: "ادفع الآن",
-    urgent: true,
-    contractSigned: true,
-  },
-  {
-    id: 4,
-    name: "هاكاثون التقنية المالية 2024",
-    package: "شريك إستراتيجي",
-    packageColor: "#8b5cf6",
-    packageBg: "#f5f3ff",
-    status: "نشط",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    payDate: "10 - 12 سبتمبر 2024",
-    financialDate: "13 مارس 2024",
-    deliveryStatus: "مدفوع بالكامل",
-    deliveryColor: "#10b981",
-    progress: 90,
-    note: "تحليل أداء الرعاية جاهز — ريادي جديد في عائد الاستثمار المالية",
-    actionPrimary: "فتح الصفحة",
-    actionSecondary: "عرض الخطة",
-    urgent: false,
-    contractSigned: true,
-  },
-];
+    contractSigned: app.status === "accepted",
+  };
+}
 
 const tabs = ["الكل", "نشط", "قيد التقديم", "مكتمل"];
 
@@ -192,24 +238,82 @@ export function SponsorSponsorships() {
   const [mainView, setMainView] = useState<"sponsorships" | "contracts">("sponsorships");
   const [contractFilter, setContractFilter] = useState("الكل");
 
-  const filtered = sponsorships.filter((s) => {
-    const matchTab = activeTab === "الكل" || s.status === activeTab;
-    const matchSearch = s.name.includes(search);
-    return matchTab && matchSearch;
-  });
+  const [sponsorships, setSponsorships] = useState<DisplaySponsorship[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<ApplicationsResponse>("/sponsors/applications")
+      .then((res) => {
+        if (cancelled) return;
+        setSponsorships(res.items.map(mapApplicationToDisplay));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          err instanceof ApiError ? err.message : "تعذّر تحميل رعاياتك"
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = useMemo(
+    () =>
+      sponsorships.filter((s) => {
+        const matchTab = activeTab === "الكل" || s.status === activeTab;
+        const matchSearch = s.name.includes(search);
+        return matchTab && matchSearch;
+      }),
+    [sponsorships, activeTab, search]
+  );
+
+  const cancelTarget = cancellingId
+    ? sponsorships.find((s) => s.id === cancellingId)
+    : null;
+
+  const handleConfirmCancel = async () => {
+    if (cancellingId === null) return;
+    setCancelling(true);
+    try {
+      await apiDelete<{ id: number; cancelled: boolean }>(
+        `/sponsors/applications/${cancellingId}`
+      );
+      toast.success("تم إلغاء التقديم بنجاح", {
+        description: "تقدرين تتقدمين على باقة أخرى الآن.",
+      });
+      setSponsorships((prev) => prev.filter((s) => s.id !== cancellingId));
+      setCancellingId(null);
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError ? err.message : "تعذّر إلغاء التقديم";
+      toast.error(message);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   // Smart action config based on sponsorship status
-  const getActionConfig = (sp: typeof sponsorships[0]) => {
-    if (sp.deliveryStatus === "مدفوع بالكامل") {
-      return { label: "عرض التفاصيل", Icon: Eye, action: () => navigate("/sponsor/opportunities") };
+  const getActionConfig = (sp: DisplaySponsorship) => {
+    if (sp.contractSigned) {
+      return {
+        label: "عرض الهاكاثون",
+        Icon: Eye,
+        action: () => navigate(`/sponsor/hackathon/${sp.hackathonId}`),
+      };
     }
-    if (!sp.contractSigned) {
-      return { label: "استمر في التفاوض", Icon: MessageCircle, action: () => navigate("/sponsor/negotiation") };
-    }
-    if (sp.deliveryStatus === "تأخر السداد" || sp.deliveryStatus === "في انتظار الفاتورة") {
-      return { label: "رفع المصاريف", Icon: CreditCard, action: () => navigate("/sponsor/messages", { state: { financial: true } }) };
-    }
-    return { label: sp.actionPrimary, Icon: FileText, action: () => navigate("/sponsor/negotiation") };
+    return {
+      label: sp.actionPrimary,
+      Icon: FileText,
+      action: () => navigate(`/sponsor/hackathon/${sp.hackathonId}`),
+    };
   };
 
   return (
@@ -339,9 +443,39 @@ export function SponsorSponsorships() {
           </details>
         </div>
 
+        {/* Loading / Error / Empty states */}
+        {loading && (
+          <div className="text-center py-16 text-gray-500 text-sm flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            جاري تحميل رعاياتك...
+          </div>
+        )}
+        {!loading && loadError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-sm">
+            تعذّر تحميل البيانات: {loadError}
+          </div>
+        )}
+        {!loading && !loadError && sponsorships.length === 0 && (
+          <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center">
+            <p className="text-gray-700 mb-2" style={{ fontWeight: 600 }}>
+              ما عندك رعايات حالياً
+            </p>
+            <p className="text-gray-500 text-sm mb-4">
+              تصفّح فرص الرعاية المتاحة وقدّم على باقة تناسبك.
+            </p>
+            <button
+              onClick={() => navigate("/sponsor/opportunities")}
+              className="px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48]"
+              style={{ fontWeight: 600 }}
+            >
+              تصفّح الفرص
+            </button>
+          </div>
+        )}
+
         {/* Sponsorship Cards Grid */}
         <div className="grid sm:grid-cols-2 gap-5">
-          {filtered.map((sp) => (
+          {!loading && !loadError && filtered.map((sp) => (
             <div
               key={sp.id}
               className={`bg-white rounded-2xl border overflow-hidden transition-all hover:shadow-md ${
@@ -435,7 +569,7 @@ export function SponsorSponsorships() {
 
                 {/* Actions */}
                 <div className="flex gap-2 mt-4">
-                  {sp.deliveryStatus !== "مدفوع بالكامل" && (() => {
+                  {(() => {
                     const { label, Icon, action } = getActionConfig(sp);
                     return (
                       <button
@@ -448,6 +582,16 @@ export function SponsorSponsorships() {
                       </button>
                     );
                   })()}
+                  {sp.status === "قيد التقديم" && (
+                    <button
+                      onClick={() => setCancellingId(sp.id)}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-600 text-xs hover:bg-red-50 hover:border-red-300 transition-colors"
+                      title="إلغاء التقديم"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      إلغاء
+                    </button>
+                  )}
                   <button
                     onClick={() => navigate("/sponsor/messages")}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-gray-500 text-xs hover:bg-gray-50 hover:border-gray-300 transition-colors"
@@ -461,8 +605,8 @@ export function SponsorSponsorships() {
           ))}
         </div>
 
-        {/* Empty State */}
-        {filtered.length === 0 && (
+        {/* Empty State (filter mismatch) */}
+        {!loading && !loadError && sponsorships.length > 0 && filtered.length === 0 && (
           <div className="text-center py-16">
             <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
               <LayoutGrid className="w-8 h-8 text-gray-300" />
@@ -654,6 +798,58 @@ export function SponsorSponsorships() {
           )}
         </div>
       </div>
+
+      {/* Cancel Confirmation Dialog */}
+      {cancelTarget && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => !cancelling && setCancellingId(null)}
+        >
+          <div
+            dir="rtl"
+            className="bg-white rounded-2xl p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              className="text-gray-900 mb-2"
+              style={{ fontWeight: 700, fontSize: "1.1rem" }}
+            >
+              تأكيد الإلغاء
+            </h3>
+            <p className="text-sm text-gray-600 mb-1">
+              هل أنت متأكدة من إلغاء التقديم على:
+            </p>
+            <p
+              className="text-base mb-1"
+              style={{ fontWeight: 700, color: "#e35654" }}
+            >
+              {cancelTarget.name}
+            </p>
+            <p className="text-xs text-gray-500 mb-6">
+              بعد الإلغاء، يمكنك التقديم على باقة أخرى من نفس الهاكاثون.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCancellingId(null)}
+                disabled={cancelling}
+                className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                style={{ fontWeight: 600 }}
+              >
+                تراجع
+              </button>
+              <button
+                onClick={handleConfirmCancel}
+                disabled={cancelling}
+                className="flex-1 py-2.5 rounded-xl text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ fontWeight: 600 }}
+              >
+                {cancelling && <Loader2 className="w-4 h-4 animate-spin" />}
+                {cancelling ? "جاري الإلغاء..." : "تأكيد الإلغاء"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
