@@ -1,6 +1,15 @@
 import { Request, Response } from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import { randomBytes } from 'crypto';
 import { pool } from '../db/pool';
+import {
+  isValidSection,
+  isValidPermissionForSection,
+  SECTION_LABELS,
+  type Section,
+} from '../lib/permissions';
+import { sendCoManagerInviteEmail } from '../lib/mail';
+import { env } from '../config/env';
 
 interface HackathonRow extends RowDataPacket {
   hackathon_ID: number;
@@ -54,9 +63,16 @@ interface CoManagerRow extends RowDataPacket {
   hackathon_ID: number;
   HCM_FullName: string;
   HCM_Email: string;
-  HCM_Role: string;
+  HCM_Role: 'manager' | 'staff';
+  HCM_Section: Section | null;
+  HCM_ParentID: number | null;
   HCM_Permissions: unknown;
-  HCM_InviteStatus: string;
+  HCM_InviteStatus: 'pending' | 'accepted' | 'declined';
+  HCM_InviteToken: string | null;
+  HCM_InvitedAt: string | null;
+  HCM_InviteExpiresAt: string | null;
+  HCM_AcceptedAt: string | null;
+  M_ID: number | null;
 }
 
 interface JudgeRow extends RowDataPacket {
@@ -128,7 +144,8 @@ function jsonOrNull(v: unknown): string | null {
 const PARTICIPATION_MODES = ['teams_only', 'individuals_and_teams', 'individuals_only'];
 const ALLOWED_COUNTRIES = ['all', 'gulf', 'saudi_only', 'arab', 'custom'];
 const SPONSOR_TYPES = ['financial', 'technical', 'logistic', 'hospitality', 'media', 'other'];
-const CO_MANAGER_ROLES = ['manager', 'staff', 'coordinator'];
+const CO_MANAGER_ROLES = ['manager', 'staff'] as const;
+type CoManagerRole = (typeof CO_MANAGER_ROLES)[number];
 
 async function ensureOwner(hackathonId: number, memberId: number): Promise<boolean> {
   const [rows] = await pool.query<HackathonRow[]>(
@@ -208,15 +225,26 @@ export const listMyHackathons = async (req: Request, res: Response) => {
   }
 
   try {
-    const [rows] = await pool.query<HackathonRow[]>(
-      `SELECT hackathon_ID, H_title, H_slug, H_description, H_status,
-              H_StartDate, H_EndDate, H_city, H_visibility, H_created_at, HAM_ID
-         FROM hackathon
-        WHERE HAM_ID = ?
-          AND H_title IS NOT NULL
-          AND H_title <> ''
-        ORDER BY H_created_at DESC`,
-      [req.user.memberId]
+    // Return hackathons where the user is either:
+    //  a) the creator (HAM_ID = me)  → my_role = 'owner'
+    //  b) an accepted co-manager     → my_role = 'co_manager' with their section/role
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT h.hackathon_ID, h.H_title, h.H_slug, h.H_description, h.H_status,
+              h.H_StartDate, h.H_EndDate, h.H_city, h.H_visibility, h.H_created_at, h.HAM_ID,
+              CASE WHEN h.HAM_ID = ? THEN 'owner' ELSE 'co_manager' END AS my_role,
+              hcm.HCM_Role AS my_co_role,
+              hcm.HCM_Section AS my_section,
+              hcm.HCM_Permissions AS my_permissions
+         FROM hackathon h
+         LEFT JOIN hackathon_co_manager hcm
+           ON hcm.hackathon_ID = h.hackathon_ID
+          AND hcm.M_ID = ?
+          AND hcm.HCM_InviteStatus = 'accepted'
+        WHERE (h.HAM_ID = ? OR hcm.HCM_ID IS NOT NULL)
+          AND h.H_title IS NOT NULL
+          AND h.H_title <> ''
+        ORDER BY h.H_created_at DESC`,
+      [req.user.memberId, req.user.memberId, req.user.memberId],
     );
     return res.json({ hackathons: rows });
   } catch (err) {
@@ -305,9 +333,21 @@ export const getHackathon = async (req: Request, res: Response) => {
 
     const h = rows[0];
 
+    // Drafts are visible to the owner OR any accepted co-manager. Published
+    // hackathons are visible to anyone authenticated.
     if (h.H_status === 'draft') {
-      if (!req.user || req.user.memberId !== h.HAM_ID) {
+      if (!req.user) {
         return res.status(403).json({ error: 'forbidden' });
+      }
+      if (req.user.memberId !== h.HAM_ID) {
+        const [myRows] = await pool.query<RowDataPacket[]>(
+          `SELECT HCM_ID FROM hackathon_co_manager
+            WHERE hackathon_ID = ? AND M_ID = ? AND HCM_InviteStatus = 'accepted' LIMIT 1`,
+          [id, req.user.memberId],
+        );
+        if (myRows.length === 0) {
+          return res.status(403).json({ error: 'forbidden' });
+        }
       }
     }
 
@@ -316,8 +356,10 @@ export const getHackathon = async (req: Request, res: Response) => {
       [id]
     );
     const [coManagers] = await pool.query<CoManagerRow[]>(
-      'SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Permissions, HCM_InviteStatus FROM hackathon_co_manager WHERE hackathon_ID = ? ORDER BY HCM_ID',
-      [id]
+      `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
+              HCM_InviteStatus, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_AcceptedAt, M_ID
+         FROM hackathon_co_manager WHERE hackathon_ID = ? ORDER BY HCM_ID`,
+      [id],
     );
     const [judges] = await pool.query<JudgeRow[]>(
       'SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteStatus FROM hackathon_judge WHERE hackathon_ID = ? ORDER BY HJ_ID',
@@ -332,6 +374,36 @@ export const getHackathon = async (req: Request, res: Response) => {
       [id]
     );
 
+    // Compute the current user's access for this hackathon. The frontend uses
+    // myAccess to filter management cards and disable actions per permission.
+    let myAccess: {
+      role: 'owner' | 'co_manager';
+      coManagerRole?: 'manager' | 'staff';
+      section?: Section | null;
+      permissions: string[];
+    } | null = null;
+    if (req.user && req.user.memberId === h.HAM_ID) {
+      myAccess = { role: 'owner', permissions: [] }; // owner has implicit full access
+    } else if (req.user) {
+      const myRow = (coManagers as CoManagerRow[]).find(
+        (c) => c.M_ID === req.user!.memberId && c.HCM_InviteStatus === 'accepted',
+      );
+      if (myRow) {
+        let perms: string[] = [];
+        try {
+          const raw = myRow.HCM_Permissions;
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (Array.isArray(parsed)) perms = parsed.filter((p): p is string => typeof p === 'string');
+        } catch { /* keep empty */ }
+        myAccess = {
+          role: 'co_manager',
+          coManagerRole: myRow.HCM_Role,
+          section: myRow.HCM_Section,
+          permissions: perms,
+        };
+      }
+    }
+
     return res.json({
       hackathon: h,
       tracks,
@@ -339,6 +411,7 @@ export const getHackathon = async (req: Request, res: Response) => {
       judges,
       prizes,
       sponsorPackages,
+      myAccess,
     });
   } catch (err) {
     console.error('getHackathon error:', err);
@@ -543,6 +616,91 @@ export const replaceTracks = async (req: Request, res: Response) => {
   }
 };
 
+// Email regex covering common cases. Strict enough to catch typos, lenient
+// enough to accept valid international addresses.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const INVITE_TTL_DAYS = 7;
+
+// Opaque URL-safe token for invitation links.
+function newInviteToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+// MySQL DATETIME string (YYYY-MM-DD HH:MM:SS) for now + INVITE_TTL_DAYS days.
+function inviteExpiry(): string {
+  const d = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+// Look up hackathon title + organizer name for invite emails.
+async function getHackathonInviteContext(
+  hackathonId: number,
+): Promise<{ title: string; organizerName: string } | null> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT h.H_title, h.H_public_name, m.M_FName, m.M_LName
+       FROM hackathon h
+       JOIN member m ON m.M_ID = h.HAM_ID
+      WHERE h.hackathon_ID = ? LIMIT 1`,
+    [hackathonId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0] as { H_title: string | null; H_public_name: string | null; M_FName: string; M_LName: string };
+  return {
+    title: r.H_title || 'هاكاثون بدون عنوان',
+    organizerName: r.H_public_name || `${r.M_FName} ${r.M_LName}`.trim() || 'منظّم الهاكاثون',
+  };
+}
+
+// Fire-and-forget invite email. We don't want a failed SMTP to fail the whole
+// request — the row is already saved with a token, the admin can resend later.
+async function sendInviteEmailSafe(args: {
+  to: string;
+  inviteeName: string;
+  organizerName: string;
+  hackathonTitle: string;
+  role: 'manager' | 'staff';
+  section: Section;
+  token: string;
+}): Promise<void> {
+  try {
+    await sendCoManagerInviteEmail({
+      to: args.to,
+      inviteeName: args.inviteeName,
+      organizerName: args.organizerName,
+      hackathonTitle: args.hackathonTitle,
+      roleLabel: args.role === 'manager' ? 'مدير قسم' : 'موظف',
+      sectionLabel: SECTION_LABELS[args.section],
+      inviteUrl: `${env.frontendUrl}/invite/${args.token}`,
+      expiryDays: INVITE_TTL_DAYS,
+    });
+  } catch (err) {
+    console.error('[invite] failed to send email to', args.to, err);
+  }
+}
+
+interface CoManagerInput {
+  fullName: string;
+  email: string;
+  role: CoManagerRole;
+  section: Section;
+  parentClientId?: string | null; // client-side correlation key for staff→manager link
+  clientId?: string;              // optional unique key the client sends for cross-references
+  permissions: string[];
+}
+
+// Extract the organizer's email so we can prevent self-invites.
+async function getOrganizerEmail(hackathonId: number): Promise<string | null> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT m.M_Email FROM hackathon h
+       JOIN member m ON m.M_ID = h.HAM_ID
+      WHERE h.hackathon_ID = ?`,
+    [hackathonId],
+  );
+  const r = rows[0] as { M_Email?: string } | undefined;
+  return r?.M_Email ?? null;
+}
+
 export const replaceCoManagers = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
@@ -552,22 +710,173 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
   const items = Array.isArray(req.body?.coManagers) ? req.body.coManagers : null;
   if (!items) return res.status(400).json({ error: 'coManagers must be an array' });
 
+  // Stage 1 — validate every item up front. We only persist if all pass.
+  const cleaned: CoManagerInput[] = [];
+  const errors: string[] = [];
+
+  const organizerEmail = await getOrganizerEmail(id);
+  const seenEmails = new Set<string>();
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const m = items[idx];
+    const fullName = strOrNull(m?.fullName);
+    const email = strOrNull(m?.email);
+    if (!fullName || !email) continue; // skip empty rows, same as before
+
+    const emailLower = email.toLowerCase();
+
+    if (!EMAIL_RE.test(email)) {
+      errors.push(`صف ${idx + 1}: صيغة الإيميل غير صحيحة (${email})`);
+      continue;
+    }
+    if (organizerEmail && organizerEmail.toLowerCase() === emailLower) {
+      errors.push(`صف ${idx + 1}: لا يمكن دعوة منشئ الهاكاثون كمنظّم مساعد`);
+      continue;
+    }
+    if (seenEmails.has(emailLower)) {
+      errors.push(`صف ${idx + 1}: الإيميل ${email} مكرّر داخل القائمة`);
+      continue;
+    }
+    seenEmails.add(emailLower);
+
+    const role: CoManagerRole =
+      typeof m?.role === 'string' && (CO_MANAGER_ROLES as readonly string[]).includes(m.role)
+        ? (m.role as CoManagerRole)
+        : 'staff';
+
+    if (!isValidSection(m?.section)) {
+      errors.push(`صف ${idx + 1}: قسم غير صالح`);
+      continue;
+    }
+    const section = m.section as Section;
+
+    // Accept the exact permission set the admin chose for this person.
+    // Filter out any invalid keys for the section.
+    const supplied: unknown[] = Array.isArray(m?.permissions) ? m.permissions : [];
+    const permissions = supplied.filter(
+      (k: unknown): k is string =>
+        typeof k === 'string' && isValidPermissionForSection(section, k),
+    );
+
+    cleaned.push({
+      fullName,
+      email,
+      role,
+      section,
+      parentClientId: typeof m?.parentClientId === 'string' ? m.parentClientId : null,
+      clientId: typeof m?.clientId === 'string' ? m.clientId : undefined,
+      permissions,
+    });
+  }
+
+  // Cross-role conflict: same email already assigned to a different role
+  // (judge or participant) in this hackathon.
+  if (cleaned.length > 0) {
+    const emails = cleaned.map((c) => c.email);
+    const placeholders = emails.map(() => '?').join(', ');
+
+    const [judgeConflicts] = await pool.query<RowDataPacket[]>(
+      `SELECT HJ_Email FROM hackathon_judge
+        WHERE hackathon_ID = ? AND HJ_Email IN (${placeholders})`,
+      [id, ...emails],
+    );
+    for (const r of judgeConflicts as { HJ_Email: string }[]) {
+      errors.push(`الإيميل ${r.HJ_Email} مرتبط أصلاً بدور حكم في هذا الهاكاثون`);
+    }
+
+    const [participantConflicts] = await pool.query<RowDataPacket[]>(
+      `SELECT m.M_Email FROM applies_hackathon ah
+         JOIN member m ON m.M_ID = ah.PM_ID
+        WHERE ah.hackathon_ID = ? AND m.M_Email IN (${placeholders})`,
+      [id, ...emails],
+    );
+    for (const r of participantConflicts as { M_Email: string }[]) {
+      errors.push(`الإيميل ${r.M_Email} مرتبط أصلاً كمشارك في هذا الهاكاثون`);
+    }
+  }
+
+  // Enforce: at most one manager per section.
+  const mgrCountBySection = new Map<Section, number>();
+  for (const c of cleaned) {
+    if (c.role !== 'manager') continue;
+    mgrCountBySection.set(c.section, (mgrCountBySection.get(c.section) ?? 0) + 1);
+  }
+  for (const [sec, count] of mgrCountBySection) {
+    if (count > 1) {
+      errors.push(`قسم "${sec}" به ${count} مديرين — يُسمح بمدير واحد فقط لكل قسم`);
+    }
+  }
+  // Enforce: every staff must have a manager in their section (in the same payload).
+  const sectionsWithManager = new Set<Section>(
+    cleaned.filter((c) => c.role === 'manager').map((c) => c.section),
+  );
+  for (const c of cleaned) {
+    if (c.role === 'staff' && !sectionsWithManager.has(c.section)) {
+      errors.push(`الموظف ${c.fullName} في قسم بدون مدير — أضف مديراً للقسم أولاً`);
+    }
+  }
+
+  if (errors.length > 0) {
+    return res.status(409).json({
+      error: 'role_conflict',
+      conflicts: errors,
+      message: 'تعارض في الأدوار',
+    });
+  }
+
+  // Stage 2 — persist. We do parent linking in a second pass after IDs are known.
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     try {
       await conn.execute('DELETE FROM hackathon_co_manager WHERE hackathon_ID = ?', [id]);
-      for (const m of items) {
-        const fullName = strOrNull(m?.fullName);
-        const email = strOrNull(m?.email);
-        if (!fullName || !email) continue;
-        const role = typeof m?.role === 'string' && CO_MANAGER_ROLES.includes(m.role) ? m.role : 'staff';
-        const permissions = jsonOrNull(m?.permissions ?? []);
+
+      // First pass: insert managers, capture section → HCM_ID for staff auto-link.
+      const sectionToManagerHCM = new Map<Section, number>();
+      for (const c of cleaned) {
+        if (c.role !== 'manager') continue;
+        const [result] = await conn.execute<ResultSetHeader>(
+          `INSERT INTO hackathon_co_manager
+             (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_Permissions,
+              HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+          [
+            id,
+            c.fullName,
+            c.email,
+            c.role,
+            c.section,
+            JSON.stringify(c.permissions),
+            newInviteToken(),
+            inviteExpiry(),
+          ],
+        );
+        sectionToManagerHCM.set(c.section, result.insertId);
+      }
+
+      // Second pass: insert staff, auto-linking each to their section's manager.
+      for (const c of cleaned) {
+        if (c.role !== 'staff') continue;
+        const parentId = sectionToManagerHCM.get(c.section) ?? null;
         await conn.execute(
-          'INSERT INTO hackathon_co_manager (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Permissions, HCM_InviteStatus) VALUES (?, ?, ?, ?, ?, ?)',
-          [id, fullName, email, role, permissions, 'pending']
+          `INSERT INTO hackathon_co_manager
+             (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
+              HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+          [
+            id,
+            c.fullName,
+            c.email,
+            c.role,
+            c.section,
+            parentId,
+            JSON.stringify(c.permissions),
+            newInviteToken(),
+            inviteExpiry(),
+          ],
         );
       }
+
       await conn.commit();
     } catch (err) {
       await conn.rollback();
@@ -575,8 +884,10 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
     }
 
     const [rows] = await pool.query<CoManagerRow[]>(
-      'SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Permissions, HCM_InviteStatus FROM hackathon_co_manager WHERE hackathon_ID = ? ORDER BY HCM_ID',
-      [id]
+      `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
+              HCM_InviteStatus, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_AcceptedAt, M_ID
+         FROM hackathon_co_manager WHERE hackathon_ID = ? ORDER BY HCM_ID`,
+      [id],
     );
     return res.json({ coManagers: rows });
   } catch (err) {
@@ -587,6 +898,402 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
     });
   } finally {
     conn.release();
+  }
+};
+
+// Find the existing manager (HCM_ID) for a given section. Returns null if none.
+// excludeHcmId is used when updating (so a manager can keep their role).
+async function findSectionManager(
+  hackathonId: number,
+  section: Section,
+  excludeHcmId?: number,
+): Promise<number | null> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT HCM_ID FROM hackathon_co_manager
+      WHERE hackathon_ID = ? AND HCM_Section = ? AND HCM_Role = 'manager'${
+        excludeHcmId ? ' AND HCM_ID <> ?' : ''
+      }
+      LIMIT 1`,
+    excludeHcmId ? [hackathonId, section, excludeHcmId] : [hackathonId, section],
+  );
+  return rows.length > 0 ? (rows[0] as { HCM_ID: number }).HCM_ID : null;
+}
+
+// Check whether `email` already plays another role in the hackathon.
+// excludeHcmId: when updating, the current row's email should not count as a conflict.
+async function findRoleConflicts(
+  hackathonId: number,
+  email: string,
+  excludeHcmId?: number,
+): Promise<string[]> {
+  const conflicts: string[] = [];
+  const orgEmail = await getOrganizerEmail(hackathonId);
+  if (orgEmail && orgEmail.toLowerCase() === email.toLowerCase()) {
+    conflicts.push('لا يمكن دعوة منشئ الهاكاثون كمنظّم مساعد');
+  }
+
+  const [coRows] = await pool.query<RowDataPacket[]>(
+    `SELECT HCM_ID FROM hackathon_co_manager
+      WHERE hackathon_ID = ? AND LOWER(HCM_Email) = LOWER(?)${
+        excludeHcmId ? ' AND HCM_ID <> ?' : ''
+      }`,
+    excludeHcmId ? [hackathonId, email, excludeHcmId] : [hackathonId, email],
+  );
+  if (coRows.length > 0) {
+    conflicts.push('هذا الإيميل مضاف أصلاً كمنظّم مساعد في هذا الهاكاثون');
+  }
+
+  const [judgeRows] = await pool.query<RowDataPacket[]>(
+    'SELECT HJ_ID FROM hackathon_judge WHERE hackathon_ID = ? AND LOWER(HJ_Email) = LOWER(?)',
+    [hackathonId, email],
+  );
+  if (judgeRows.length > 0) {
+    conflicts.push('هذا الإيميل مرتبط بدور حكم في هذا الهاكاثون');
+  }
+
+  const [appRows] = await pool.query<RowDataPacket[]>(
+    `SELECT ah.PM_ID FROM applies_hackathon ah
+       JOIN member m ON m.M_ID = ah.PM_ID
+      WHERE ah.hackathon_ID = ? AND LOWER(m.M_Email) = LOWER(?)`,
+    [hackathonId, email],
+  );
+  if (appRows.length > 0) {
+    conflicts.push('هذا الإيميل مرتبط كمشارك في هذا الهاكاثون');
+  }
+
+  return conflicts;
+}
+
+// Validate an incoming co-manager payload (used by add and update endpoints).
+// Returns the cleaned values OR an array of error messages.
+function validateCoManagerInput(body: unknown):
+  | { ok: true; data: { fullName: string; email: string; role: CoManagerRole; section: Section; parentId: number | null; permissions: string[] } }
+  | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  const b = (body ?? {}) as Record<string, unknown>;
+
+  const fullName = strOrNull(b.fullName);
+  const email = strOrNull(b.email);
+  if (!fullName) errors.push('الاسم مطلوب');
+  if (!email) errors.push('الإيميل مطلوب');
+  if (email && !EMAIL_RE.test(email)) errors.push('صيغة الإيميل غير صحيحة');
+
+  const role: CoManagerRole =
+    typeof b.role === 'string' && (CO_MANAGER_ROLES as readonly string[]).includes(b.role)
+      ? (b.role as CoManagerRole)
+      : 'staff';
+
+  if (!isValidSection(b.section)) {
+    errors.push('قسم غير صالح');
+  }
+  const section = b.section as Section;
+
+  let parentId: number | null = null;
+  if (role === 'staff' && b.parentId != null) {
+    const n = Number(b.parentId);
+    parentId = Number.isInteger(n) && n > 0 ? n : null;
+  }
+
+  // Accept the permission subset the admin set, filtered to valid keys.
+  let permissions: string[] = [];
+  if (errors.length === 0) {
+    const supplied: unknown[] = Array.isArray(b.permissions) ? b.permissions : [];
+    permissions = supplied.filter(
+      (k: unknown): k is string =>
+        typeof k === 'string' && isValidPermissionForSection(section, k),
+    );
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return {
+    ok: true,
+    data: { fullName: fullName!, email: email!, role, section, parentId, permissions },
+  };
+}
+
+// POST /hackathons/:id/co-managers — add a single new co-manager.
+export const addCoManager = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+
+  const validation = validateCoManagerInput(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ error: 'validation', errors: validation.errors });
+  }
+  const { fullName, email, role, section, parentId, permissions } = validation.data;
+
+  const conflicts = await findRoleConflicts(id, email);
+  if (conflicts.length > 0) {
+    return res.status(409).json({ error: 'role_conflict', conflicts, message: 'تعارض في الأدوار' });
+  }
+
+  // Enforce one-manager-per-section rule + auto-link staff to that manager.
+  let resolvedParentId: number | null = null;
+  if (role === 'manager') {
+    const existing = await findSectionManager(id, section);
+    if (existing != null) {
+      return res.status(409).json({
+        error: 'duplicate_manager',
+        message: 'يوجد مدير آخر لهذا القسم. لكل قسم مدير واحد فقط.',
+      });
+    }
+  } else {
+    // staff
+    const sectionManager = await findSectionManager(id, section);
+    if (sectionManager == null) {
+      return res.status(400).json({
+        error: 'no_section_manager',
+        message: 'يجب إضافة مدير لهذا القسم قبل إضافة موظفين فيه.',
+      });
+    }
+    resolvedParentId = sectionManager;
+  }
+
+  try {
+    const token = newInviteToken();
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO hackathon_co_manager
+         (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
+          HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+      [id, fullName, email, role, section, resolvedParentId, JSON.stringify(permissions), token, inviteExpiry()],
+    );
+    const [rows] = await pool.query<CoManagerRow[]>(
+      `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
+              HCM_InviteStatus, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_AcceptedAt, M_ID
+         FROM hackathon_co_manager WHERE HCM_ID = ?`,
+      [result.insertId],
+    );
+
+    // Send invitation email (fire-and-forget — won't block the response).
+    const ctx = await getHackathonInviteContext(id);
+    if (ctx) {
+      void sendInviteEmailSafe({
+        to: email,
+        inviteeName: fullName,
+        organizerName: ctx.organizerName,
+        hackathonTitle: ctx.title,
+        role,
+        section,
+        token,
+      });
+    }
+
+    return res.status(201).json({ coManager: rows[0] });
+  } catch (err) {
+    console.error('addCoManager error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// PUT /hackathons/:id/co-managers/:hcmId — update an existing co-manager.
+export const updateCoManager = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const hcmId = Number(req.params.hcmId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(hcmId) || hcmId <= 0) return res.status(400).json({ error: 'invalid hcmId' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+
+  const [existing] = await pool.query<CoManagerRow[]>(
+    'SELECT HCM_ID FROM hackathon_co_manager WHERE HCM_ID = ? AND hackathon_ID = ?',
+    [hcmId, id],
+  );
+  if (existing.length === 0) return res.status(404).json({ error: 'not_found' });
+
+  const validation = validateCoManagerInput(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ error: 'validation', errors: validation.errors });
+  }
+  const { fullName, email, role, section, parentId, permissions } = validation.data;
+
+  const conflicts = await findRoleConflicts(id, email, hcmId);
+  if (conflicts.length > 0) {
+    return res.status(409).json({ error: 'role_conflict', conflicts, message: 'تعارض في الأدوار' });
+  }
+
+  // Same one-manager-per-section enforcement and auto-link rules as add.
+  let resolvedParentId: number | null = null;
+  if (role === 'manager') {
+    const existing = await findSectionManager(id, section, hcmId);
+    if (existing != null) {
+      return res.status(409).json({
+        error: 'duplicate_manager',
+        message: 'يوجد مدير آخر لهذا القسم. لكل قسم مدير واحد فقط.',
+      });
+    }
+  } else {
+    const sectionManager = await findSectionManager(id, section, hcmId);
+    if (sectionManager == null) {
+      return res.status(400).json({
+        error: 'no_section_manager',
+        message: 'يجب وجود مدير لهذا القسم قبل تعيين موظفين فيه.',
+      });
+    }
+    resolvedParentId = sectionManager;
+  }
+
+  try {
+    await pool.execute(
+      `UPDATE hackathon_co_manager
+          SET HCM_FullName = ?, HCM_Email = ?, HCM_Role = ?, HCM_Section = ?,
+              HCM_ParentID = ?, HCM_Permissions = ?
+        WHERE HCM_ID = ? AND hackathon_ID = ?`,
+      [fullName, email, role, section, resolvedParentId, JSON.stringify(permissions), hcmId, id],
+    );
+
+    // If we just added or replaced a manager, fix any orphan staff in the same section
+    // (their HCM_ParentID may have been NULL or pointing elsewhere).
+    if (role === 'manager') {
+      await pool.execute(
+        `UPDATE hackathon_co_manager
+            SET HCM_ParentID = ?
+          WHERE hackathon_ID = ? AND HCM_Section = ? AND HCM_Role = 'staff'`,
+        [hcmId, id, section],
+      );
+    }
+    const [rows] = await pool.query<CoManagerRow[]>(
+      `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
+              HCM_InviteStatus, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_AcceptedAt, M_ID
+         FROM hackathon_co_manager WHERE HCM_ID = ?`,
+      [hcmId],
+    );
+    return res.json({ coManager: rows[0] });
+  } catch (err) {
+    console.error('updateCoManager error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// DELETE /hackathons/:id/co-managers/:hcmId — remove a co-manager.
+// FK ON DELETE SET NULL ensures any staff under this manager have their parent cleared.
+export const removeCoManager = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const hcmId = Number(req.params.hcmId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(hcmId) || hcmId <= 0) return res.status(400).json({ error: 'invalid hcmId' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+
+  try {
+    const [result] = await pool.execute<ResultSetHeader>(
+      'DELETE FROM hackathon_co_manager WHERE HCM_ID = ? AND hackathon_ID = ?',
+      [hcmId, id],
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('removeCoManager error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/co-managers/:hcmId/resend-invite — regenerate token + resend email.
+export const resendCoManagerInvite = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const hcmId = Number(req.params.hcmId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(hcmId) || hcmId <= 0) return res.status(400).json({ error: 'invalid hcmId' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+
+  try {
+    const [existing] = await pool.query<CoManagerRow[]>(
+      `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_InviteStatus
+         FROM hackathon_co_manager
+        WHERE HCM_ID = ? AND hackathon_ID = ?`,
+      [hcmId, id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'not_found' });
+    const row = existing[0];
+    if (row.HCM_InviteStatus === 'accepted') {
+      return res.status(400).json({ error: 'already_accepted', message: 'العضو قبل الدعوة بالفعل' });
+    }
+    if (!row.HCM_Section) {
+      return res.status(400).json({ error: 'no_section', message: 'العضو ليس له قسم' });
+    }
+
+    const token = newInviteToken();
+    await pool.execute(
+      `UPDATE hackathon_co_manager
+          SET HCM_InviteToken = ?, HCM_InvitedAt = NOW(), HCM_InviteExpiresAt = ?, HCM_InviteStatus = 'pending'
+        WHERE HCM_ID = ? AND hackathon_ID = ?`,
+      [token, inviteExpiry(), hcmId, id],
+    );
+
+    const ctx = await getHackathonInviteContext(id);
+    if (ctx) {
+      void sendInviteEmailSafe({
+        to: row.HCM_Email,
+        inviteeName: row.HCM_FullName,
+        organizerName: ctx.organizerName,
+        hackathonTitle: ctx.title,
+        role: row.HCM_Role,
+        section: row.HCM_Section,
+        token,
+      });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('resendCoManagerInvite error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// GET /invitations/:token — public endpoint, returns invitation details so the
+// invite landing page can display "you were invited to X as Y" before login.
+export const getInvitationByToken = async (req: Request, res: Response) => {
+  const token = typeof req.params.token === 'string' ? req.params.token.trim() : '';
+  if (!token) return res.status(400).json({ error: 'invalid_token' });
+
+  try {
+    const [rows] = await pool.query<CoManagerRow[]>(
+      `SELECT HCM_ID, hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section,
+              HCM_InviteStatus, HCM_InviteExpiresAt, HCM_AcceptedAt, M_ID
+         FROM hackathon_co_manager WHERE HCM_InviteToken = ? LIMIT 1`,
+      [token],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'not_found' });
+    const r = rows[0];
+
+    const expired = r.HCM_InviteExpiresAt
+      ? new Date(r.HCM_InviteExpiresAt.replace(' ', 'T')).getTime() < Date.now()
+      : false;
+
+    const ctx = await getHackathonInviteContext(r.hackathon_ID);
+
+    return res.json({
+      invitee: {
+        fullName: r.HCM_FullName,
+        email: r.HCM_Email,
+        role: r.HCM_Role,
+        section: r.HCM_Section,
+      },
+      hackathon: ctx,
+      status: r.HCM_InviteStatus,
+      expired,
+      alreadyAccepted: r.HCM_InviteStatus === 'accepted',
+    });
+  } catch (err) {
+    console.error('getInvitationByToken error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 };
 
@@ -723,9 +1430,9 @@ export const publishHackathon = async (req: Request, res: Response) => {
     );
     if (tracks.length === 0) missing.push('basic:tracks');
 
-    // Section 2 — organizers (≥1 fully filled)
+    // Section 2 — organizers (≥1 fully filled with section + at least one permission)
     const [orgRows] = await pool.query<CoManagerRow[]>(
-      'SELECT HCM_FullName, HCM_Email, HCM_Role, HCM_Permissions FROM hackathon_co_manager WHERE hackathon_ID = ?',
+      'SELECT HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_Permissions FROM hackathon_co_manager WHERE hackathon_ID = ?',
       [id]
     );
     const validOrgs = orgRows.filter((o) => {
@@ -737,7 +1444,7 @@ export const publishHackathon = async (req: Request, res: Response) => {
       } catch {
         perms = [];
       }
-      return o.HCM_FullName && o.HCM_Email && o.HCM_Role && perms.length > 0;
+      return o.HCM_FullName && o.HCM_Email && o.HCM_Role && o.HCM_Section && perms.length > 0;
     });
     if (validOrgs.length === 0) missing.push('organizers:atLeastOne');
 
@@ -791,15 +1498,9 @@ export const publishHackathon = async (req: Request, res: Response) => {
     );
     if (prizeRows.length === 0) missing.push('prizes:atLeastOne');
 
-    // Section 8 — sponsor packages (≥1 fully filled)
-    const [spRows] = await pool.query<SponsorPackageRow[]>(
-      'SELECT SP_Name, SP_Type, SP_Sponsor_Offer FROM sponsor_package WHERE hackathon_ID = ?',
-      [id]
-    );
-    const validSp = spRows.filter(
-      (s) => s.SP_Name && s.SP_Type && s.SP_Sponsor_Offer
-    );
-    if (validSp.length === 0) missing.push('sponsors:atLeastOne');
+    // Section 8 — sponsor packages: optional. Skipped entirely if the organizer
+    // didn't add any. (Partially-filled rows are filtered out by the replace endpoint
+    // before they reach the DB, so anything stored here is already valid.)
 
     if (missing.length > 0) {
       return res.status(400).json({

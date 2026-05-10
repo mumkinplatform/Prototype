@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import PublishConfirmModal from './PublishConfirmModal';
 import PublishSuccessModal from './PublishSuccessModal';
 import { apiGet } from '../../lib/api';
+import { SECTION_LABELS, type Section } from '../../lib/permissions';
 
 type Status = 'draft' | 'published' | 'ongoing' | 'completed';
 
@@ -16,6 +17,9 @@ interface Hackathon {
   startDate: string | null;
   endDate: string | null;
   city: string | null;
+  myRole: 'owner' | 'co_manager';
+  myCoRole?: 'manager' | 'staff' | null;
+  mySection?: Section | null;
 }
 
 interface ApiHackathon {
@@ -27,6 +31,9 @@ interface ApiHackathon {
   H_StartDate: string | null;
   H_EndDate: string | null;
   H_city: string | null;
+  my_role: 'owner' | 'co_manager';
+  my_co_role: 'manager' | 'staff' | null;
+  my_section: Section | null;
 }
 
 const FALLBACK_IMG =
@@ -60,6 +67,9 @@ export default function MyHackathons() {
             startDate: h.H_StartDate,
             endDate: h.H_EndDate,
             city: h.H_city,
+            myRole: h.my_role,
+            myCoRole: h.my_co_role,
+            mySection: h.my_section,
           }))
         );
       })
@@ -205,6 +215,18 @@ export default function MyHackathons() {
                 <div className="absolute top-3 right-3">
                   {getStatusBadge(hackathon.status)}
                 </div>
+                <div className="absolute top-3 left-3">
+                  {hackathon.myRole === 'owner' ? (
+                    <span className="px-3 py-1 rounded-full text-xs bg-[#e35654] text-white shadow-md" style={{ fontWeight: 600 }}>
+                      أنت المنظّم
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full text-xs bg-blue-600 text-white shadow-md" style={{ fontWeight: 600 }}>
+                      {hackathon.myCoRole === 'manager' ? 'مدير قسم' : 'موظف'}
+                      {hackathon.mySection ? ` · ${SECTION_LABELS[hackathon.mySection]}` : ''}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Content */}
@@ -234,7 +256,7 @@ export default function MyHackathons() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
-                  {hackathon.status === 'draft' ? (
+                  {hackathon.status === 'draft' && hackathon.myRole === 'owner' ? (
                     <Link
                       to={`/admin/create-hackathon/${hackathon.id}`}
                       className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all text-center flex items-center justify-center gap-2"

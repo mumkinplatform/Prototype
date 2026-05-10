@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
@@ -48,12 +48,21 @@ const roles = [
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const [isLogin, setIsLogin] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+
+  // Pre-fill from invitation flow: /auth?email=X&mode=signup&next=/admin/...&role=admin
+  const prefillEmail = searchParams.get('email') ?? '';
+  const prefillMode = searchParams.get('mode'); // 'login' | 'signup'
+  const nextUrl = searchParams.get('next');
+  const lockedRole = searchParams.get('role'); // when set, the role chooser is bypassed
+  const fromInvite = !!prefillEmail && !!lockedRole;
+
+  const [isLogin, setIsLogin] = useState(prefillMode !== 'signup');
+  const [selectedRole, setSelectedRole] = useState<string | null>(lockedRole);
   const [showPass, setShowPass] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2>(fromInvite && prefillMode === 'signup' ? 2 : 1);
   const [crFile, setCrFile] = useState<File | null>(null);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
@@ -62,6 +71,11 @@ export function AuthPage() {
   const [crNumber, setCrNumber] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If the user navigates back to /auth without invite params (e.g., new tab), reset state.
+  useEffect(() => {
+    if (prefillEmail && !email) setEmail(prefillEmail);
+  }, [prefillEmail, email]);
 
   const handleApiError = (err: unknown) => {
     if (err instanceof ApiError) {
@@ -105,7 +119,7 @@ export function AuthPage() {
         email,
         password,
       });
-      navigate("/verify-otp", { state: { email, role: selectedRole } });
+      navigate("/verify-otp", { state: { email, role: selectedRole, next: nextUrl } });
     } catch (err) {
       handleApiError(err);
     } finally {
@@ -176,7 +190,7 @@ export function AuthPage() {
         crNumber,
         skills,
       });
-      navigate("/verify-otp", { state: { email, role: selectedRole } });
+      navigate("/verify-otp", { state: { email, role: selectedRole, next: nextUrl } });
     } catch (err) {
       handleApiError(err);
     } finally {
@@ -233,52 +247,70 @@ export function AuthPage() {
           </div>
 
           <div className="px-8 pb-8 pt-6">
-            {/* Step 1 - Role Selection */}
+            {/* Step 1 - Role Selection (hidden when arriving from an invite link) */}
             {step === 1 && (
               <div>
-                <p className="text-gray-700 text-sm mb-4" style={{ fontWeight: 500 }}>
-                  اختر دورك
-                </p>
-                <div className="space-y-3 mb-6">
-                  {roles.map((role) => {
-                    const active = selectedRole === role.id;
-                    return (
-                      <button
-                        key={role.id}
-                        onClick={() => setSelectedRole(role.id)}
-                        className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 text-right ${
-                          active
-                            ? "border-[#e35654] bg-[#e35654]/5"
-                            : "border-gray-100 hover:border-gray-200 bg-gray-50"
-                        }`}
-                      >
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{
-                            background: active ? role.color : role.bg,
-                          }}
-                        >
-                          <role.icon
-                            className="w-5 h-5"
-                            style={{ color: active ? "white" : role.color }}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <p
-                            className="text-gray-900 text-sm"
-                            style={{ fontWeight: 600 }}
+                {!fromInvite && (
+                  <>
+                    <p className="text-gray-700 text-sm mb-4" style={{ fontWeight: 500 }}>
+                      اختر دورك
+                    </p>
+                    <div className="space-y-3 mb-6">
+                      {roles.map((role) => {
+                        const active = selectedRole === role.id;
+                        return (
+                          <button
+                            key={role.id}
+                            onClick={() => setSelectedRole(role.id)}
+                            className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 text-right ${
+                              active
+                                ? "border-[#e35654] bg-[#e35654]/5"
+                                : "border-gray-100 hover:border-gray-200 bg-gray-50"
+                            }`}
                           >
-                            {role.label}
-                          </p>
-                          <p className="text-gray-400 text-xs">{role.desc}</p>
-                        </div>
-                        {active && (
-                          <CheckCircle2 className="w-5 h-5 text-[#e35654]" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                              style={{
+                                background: active ? role.color : role.bg,
+                              }}
+                            >
+                              <role.icon
+                                className="w-5 h-5"
+                                style={{ color: active ? "white" : role.color }}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <p
+                                className="text-gray-900 text-sm"
+                                style={{ fontWeight: 600 }}
+                              >
+                                {role.label}
+                              </p>
+                              <p className="text-gray-400 text-xs">{role.desc}</p>
+                            </div>
+                            {active && (
+                              <CheckCircle2 className="w-5 h-5 text-[#e35654]" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {fromInvite && (
+                  <div className="mb-5 p-4 rounded-2xl bg-[#e35654]/5 border border-[#e35654]/20 flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-[#e35654] flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 text-sm">
+                      <p className="text-gray-900" style={{ fontWeight: 600 }}>قبول دعوة الانضمام لفريق التنظيم</p>
+                      <p className="text-gray-500 text-xs mt-1">
+                        {prefillMode === 'signup'
+                          ? 'أنشئ حسابك بالإيميل المدعو لإكمال القبول.'
+                          : 'سجّل دخولك بحسابك لإكمال القبول.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Email for login */}
                 {isLogin && (
@@ -293,7 +325,8 @@ export function AuthPage() {
                         dir="ltr"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
+                        readOnly={fromInvite}
+                        className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all ${fromInvite ? 'cursor-not-allowed opacity-80' : ''}`}
                       />
                     </div>
                     <div>
@@ -385,7 +418,8 @@ export function AuthPage() {
                       dir="ltr"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
+                      readOnly={fromInvite}
+                      className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all ${fromInvite ? 'cursor-not-allowed opacity-80' : ''}`}
                     />
                   </div>
                   <div>

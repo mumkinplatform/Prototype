@@ -23,7 +23,6 @@ import { AdminAnalytics } from "./components/AdminAnalytics";
 import { HackathonProjects } from "./components/HackathonProjects";
 import { HackathonRegistrations } from "./components/HackathonRegistrations";
 import { HackathonTeams } from "./components/HackathonTeams";
-import { HackathonAnalytics } from "./components/HackathonAnalytics";
 import { HackathonSponsors } from "./components/HackathonSponsors";
 import { HackathonWinners } from "./components/HackathonWinners";
 import { HackathonStatistics } from "./components/HackathonStatistics";
@@ -40,6 +39,7 @@ import { RootLayout } from "./components/RootLayout";
 import { VerifyOTP } from "./components/VerifyOTP";
 import { ForgotPassword } from "./components/ForgotPassword";
 import { PublicHackathonPage } from "./components/PublicHackathonPage";
+import { InviteAcceptPage } from "./components/InviteAcceptPage";
 
 export const router = createBrowserRouter([
   {
@@ -58,6 +58,8 @@ export const router = createBrowserRouter([
       },
       /* ── Public hackathon page (no platform layout) ── */
       { path: "hackathon/:slug", Component: PublicHackathonPage },
+      /* ── Invitation acceptance landing (public) ── */
+      { path: "invite/:token", Component: InviteAcceptPage },
       /* ── Admin (independent layout) ── */
       {
         path: "admin",
@@ -73,7 +75,6 @@ export const router = createBrowserRouter([
           { path: "hackathon/:id/projects", Component: HackathonProjects },
           { path: "hackathon/:id/registrations", Component: HackathonRegistrations },
           { path: "hackathon/:id/teams", Component: HackathonTeams },
-          { path: "hackathon/:id/analytics", Component: HackathonAnalytics },
           { path: "hackathon/:id/statistics", Component: HackathonStatistics },
           { path: "hackathon/:id/sponsors", Component: HackathonSponsors },
           { path: "hackathon/:id/winners", Component: HackathonWinners },

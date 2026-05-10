@@ -6,6 +6,12 @@ import { BannerPattern } from './BannerPatterns';
 import { LogoPattern } from './LogoPatterns';
 import { toast } from 'sonner';
 import { apiGet, apiPost, apiPut, ApiError } from '../../lib/api';
+import {
+  PERMISSIONS_BY_SECTION,
+  SECTION_LABELS,
+  SECTIONS,
+  type Section as PermissionSection,
+} from '../../lib/permissions';
 import { 
   ArrowRight,
   Info,
@@ -43,10 +49,12 @@ interface Judge {
 }
  
 interface Organizer {
-  id: string;
+  id: string;            // local client id (used to wire staff → manager before backend insert)
   name: string;
   email: string;
-  role: string;
+  role: 'manager' | 'staff';
+  section: PermissionSection | '';
+  parentId: string;      // for staff: the local id of the manager (within this form)
   permissions: string[];
 }
  
@@ -204,6 +212,7 @@ export function CreateHackathon() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [judges, setJudges] = useState<Judge[]>([]);
   const [organizers, setOrganizers] = useState<Organizer[]>([]);
+  const [expandedOrgIds, setExpandedOrgIds] = useState<Set<string>>(new Set());
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [sponsorPackages, setSponsorPackages] = useState<SponsorPackage[]>([]);
   const [submissionFields, setSubmissionFields] = useState<SubmissionFieldKey[]>([]);
@@ -390,7 +399,7 @@ export function CreateHackathon() {
     tracks.every((t) => t.name.trim() !== '');
 
   // Section 2: organizers — completed when at least one organizer is fully filled
-  // (name + email + role + at least one permission).
+  // (name + email + role + section + at least one permission).
   const isOrganizersComplete =
     organizers.length > 0 &&
     organizers.every(
@@ -398,6 +407,7 @@ export function CreateHackathon() {
         o.name.trim() !== '' &&
         o.email.trim() !== '' &&
         o.role !== '' &&
+        o.section !== '' &&
         o.permissions.length > 0
     );
 
@@ -435,10 +445,11 @@ export function CreateHackathon() {
     prizes.length > 0 &&
     prizes.every((p) => p.position.trim() !== '');
 
-  // Section 8: sponsor packages — completed when at least one package is fully filled
-  // (name + type + sponsor offer).
+  // Section 8: sponsor packages — optional. The section is "complete" if either no
+  // package was added, OR every added package is fully filled (name + type + offer).
+  // Partially-filled packages still block completion to prevent half-saved data.
   const isSponsorsComplete =
-    sponsorPackages.length > 0 &&
+    sponsorPackages.length === 0 ||
     sponsorPackages.every(
       (s) => s.name.trim() !== '' && s.type !== '' && s.sponsorOffer.trim() !== ''
     );
@@ -518,9 +529,18 @@ export function CreateHackathon() {
     sponsors: isSponsorsComplete ? 1 : 0,
   };
 
-  const sectionWeight = 100 / sections.length; // 12.5%
+  // Optional sections that are empty are *skipped* — neither counted toward
+  // the progress denominator nor flagged as incomplete. They block publish only
+  // when partially filled.
+  const isSectionSkipped = (s: Section): boolean => {
+    if (s === 'sponsors' && sponsorPackages.length === 0) return true;
+    return false;
+  };
+
+  const activeSections = sections.filter((s) => !isSectionSkipped(s.id));
+  const sectionWeight = activeSections.length > 0 ? 100 / activeSections.length : 0;
   const progress = Math.round(
-    sections.reduce((sum, s) => sum + sectionRatios[s.id] * sectionWeight, 0)
+    activeSections.reduce((sum, s) => sum + sectionRatios[s.id] * sectionWeight, 0)
   );
 
   const hasAnyContent =
@@ -577,7 +597,9 @@ export function CreateHackathon() {
         HCM_ID: number;
         HCM_FullName: string;
         HCM_Email: string;
-        HCM_Role: string;
+        HCM_Role: 'manager' | 'staff';
+        HCM_Section: PermissionSection | null;
+        HCM_ParentID: number | null;
         HCM_Permissions: unknown;
       }[];
       judges: { HJ_ID: number; HJ_FullName: string; HJ_Email: string; HJ_Specialty: string | null }[];
@@ -703,28 +725,31 @@ export function CreateHackathon() {
             description: t.HT_Description ?? '',
           }))
         );
-        setOrganizers(
-          data.coManagers.map((m) => {
-            let perms: string[] = [];
-            try {
-              const raw = m.HCM_Permissions;
-              const parsed =
-                typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
-              if (Array.isArray(parsed)) {
-                perms = parsed.filter((x): x is string => typeof x === 'string');
-              }
-            } catch {
-              perms = [];
+        const loadedOrgs = data.coManagers.map((m) => {
+          let perms: string[] = [];
+          try {
+            const raw = m.HCM_Permissions;
+            const parsed =
+              typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+            if (Array.isArray(parsed)) {
+              perms = parsed.filter((x): x is string => typeof x === 'string');
             }
-            return {
-              id: String(m.HCM_ID),
-              name: m.HCM_FullName,
-              email: m.HCM_Email,
-              role: m.HCM_Role,
-              permissions: perms,
-            };
-          })
-        );
+          } catch {
+            perms = [];
+          }
+          return {
+            id: String(m.HCM_ID),
+            name: m.HCM_FullName,
+            email: m.HCM_Email,
+            role: m.HCM_Role,
+            section: (m.HCM_Section ?? '') as PermissionSection | '',
+            parentId: m.HCM_ParentID != null ? String(m.HCM_ParentID) : '',
+            permissions: perms,
+          };
+        });
+        setOrganizers(loadedOrgs);
+        // Existing rows are already saved — start collapsed.
+        setExpandedOrgIds(new Set());
         setJudges(
           data.judges.map((j) => ({
             id: String(j.HJ_ID),
@@ -785,9 +810,10 @@ export function CreateHackathon() {
   }, [id, navigate]);
 
   const saveDraft = async (): Promise<boolean> => {
-    // Don't create a draft for a fully empty form — only save when there's actual content,
-    // or when we're updating an existing draft.
-    if (!hasAnyContent && !hackathonId) {
+    // Skip saving an empty form entirely — whether the draft exists in DB or not.
+    // This avoids creating empty rows AND avoids nulling-out a row when the user
+    // clears every field (the DB keeps the previously saved state instead).
+    if (!hasAnyContent) {
       return true;
     }
 
@@ -824,9 +850,12 @@ export function CreateHackathon() {
       });
       await apiPut(`/hackathons/${currentId}/co-managers`, {
         coManagers: organizers.map((o) => ({
+          clientId: o.id,
+          parentClientId: o.role === 'staff' && o.parentId ? o.parentId : null,
           fullName: o.name,
           email: o.email,
           role: o.role,
+          section: o.section || null,
           permissions: o.permissions,
         })),
       });
@@ -899,7 +928,9 @@ export function CreateHackathon() {
     }, 1000);
   };
  
-  const incompleteSections = sections.filter((s) => !isSectionComplete(s.id));
+  const incompleteSections = sections.filter(
+    (s) => !isSectionSkipped(s.id) && !isSectionComplete(s.id),
+  );
 
   // ────────────────────────────────────────────────────────────────────────
   // Inline date-sequence validation. Each filled milestone is compared to the
@@ -1049,35 +1080,105 @@ export function CreateHackathon() {
   };
  
   const addOrganizer = () => {
+    const newId = Date.now().toString();
     setOrganizers((prev) => [
       ...prev,
-      { id: Date.now().toString(), name: '', email: '', role: '', permissions: [] },
+      { id: newId, name: '', email: '', role: 'staff', section: '', parentId: '', permissions: [] },
     ]);
+    setExpandedOrgIds((prev) => new Set(prev).add(newId));
   };
- 
-  const removeOrganizer = (id: string) => {
-    setOrganizers(organizers.filter(o => o.id !== id));
-  };
- 
-  const updateOrganizer = (id: string, field: keyof Organizer, value: string) => {
-    setOrganizers(organizers.map(o => o.id === id ? { ...o, [field]: value } : o));
-  };
- 
-  const toggleOrganizerPermission = (organizerId: string, permission: string) => {
-    setOrganizers(organizers.map(org => {
-      if (org.id === organizerId) {
-        const hasPermission = org.permissions.includes(permission);
-        return {
-          ...org,
-          permissions: hasPermission 
-            ? org.permissions.filter(p => p !== permission)
-            : [...org.permissions, permission]
-        };
+
+  const saveOrganizerRow = (orgId: string) => {
+    const org = organizers.find((o) => o.id === orgId);
+    if (!org) return;
+    if (!org.name.trim() || !org.email.trim()) {
+      toast.error('أكمل الاسم والإيميل قبل الحفظ');
+      return;
+    }
+    if (!org.section) {
+      toast.error('اختر القسم قبل الحفظ');
+      return;
+    }
+    // Staff must have a manager already added for the same section.
+    if (org.role === 'staff') {
+      const hasManager = organizers.some(
+        (o) => o.role === 'manager' && o.section === org.section && o.id !== org.id,
+      );
+      if (!hasManager) {
+        toast.error('لا يوجد مدير لهذا القسم', {
+          description: 'أضف مدير القسم أولاً ثم أضف الموظف.',
+          duration: 5000,
+        });
+        return;
       }
-      return org;
-    }));
+    }
+    // Manager: only one allowed per section.
+    if (org.role === 'manager') {
+      const dup = organizers.some(
+        (o) => o.role === 'manager' && o.section === org.section && o.id !== org.id,
+      );
+      if (dup) {
+        toast.error('يوجد مدير آخر لهذا القسم', {
+          description: 'كل قسم له مدير واحد فقط — احذف المدير الموجود أو غيّر القسم.',
+          duration: 5000,
+        });
+        return;
+      }
+    }
+    if (org.permissions.length === 0) {
+      toast.error('اختر صلاحية واحدة على الأقل');
+      return;
+    }
+    // Mark as collapsed (saved). Real backend save happens in saveDraft / Next click.
+    setExpandedOrgIds((prev) => {
+      const next = new Set(prev);
+      next.delete(orgId);
+      return next;
+    });
+    toast.success('تم حفظ بيانات العضو', { duration: 2000 });
   };
- 
+
+  const toggleOrganizerExpanded = (orgId: string) => {
+    setExpandedOrgIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orgId)) next.delete(orgId);
+      else next.add(orgId);
+      return next;
+    });
+  };
+
+  const removeOrganizer = (id: string) => {
+    // If a manager is removed, any staff that pointed to them get reset to no parent.
+    setOrganizers((prev) =>
+      prev
+        .filter((o) => o.id !== id)
+        .map((o) => (o.parentId === id ? { ...o, parentId: '' } : o)),
+    );
+  };
+
+  const updateOrganizer = (id: string, field: keyof Organizer, value: string) => {
+    setOrganizers((prev) =>
+      prev.map((o) => {
+        if (o.id !== id) return o;
+        const next = { ...o, [field]: value } as Organizer;
+
+        // When role flips to manager, drop the parent (managers don't report to anyone).
+        if (field === 'role' && value === 'manager') {
+          next.parentId = '';
+        }
+
+        // When section changes: clear permissions so admin selects them manually,
+        // and reset parent (must match new section's manager).
+        if (field === 'section') {
+          next.permissions = [];
+          next.parentId = '';
+        }
+
+        return next;
+      }),
+    );
+  };
+
   const addJudge = () => {
     setJudges([...judges, { id: Date.now().toString(), name: '', email: '', specialty: '' }]);
   };
@@ -1641,100 +1742,200 @@ export function CreateHackathon() {
                         <h3 className="text-sm text-gray-900" style={{ fontWeight: 700 }}>قائمة المنظمين ({organizers.length})</h3>
                         
                         <div className="space-y-4">
-                          {organizers.map((organizer) => (
-                            <div key={organizer.id} className="border-2 border-gray-200 rounded-xl p-6 bg-white hover:border-[#e35654] transition-all">
-                              {/* Basic Info */}
-                              <div className="grid grid-cols-3 gap-4 mb-4">
-                                <div>
-                                  <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>الاسم الكامل</label>
-                                  <input
-                                    type="text"
-                                    value={organizer.name}
-                                    onChange={(e) => updateOrganizer(organizer.id, 'name', e.target.value)}
-                                    placeholder="محمد أحمد"
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>البريد الإلكتروني</label>
-                                  <input
-                                    type="email"
-                                    value={organizer.email}
-                                    onChange={(e) => updateOrganizer(organizer.id, 'email', e.target.value)}
-                                    placeholder="email@example.com"
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>الدور الوظيفي</label>
-                                  <select
-                                    value={organizer.role}
-                                    onChange={(e) => updateOrganizer(organizer.id, 'role', e.target.value)}
-                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
-                                  >
-                                    <option value="">اختر الدور</option>
-                                    <option value="manager">مدير</option>
-                                    <option value="staff">موظف</option>
-                                    <option value="coordinator">منسق</option>
-                                  </select>
-                                </div>
-                              </div>
- 
-                              {/* Permissions */}
-                              <div className="mb-4">
-                                <label className="block text-xs text-gray-900 mb-3" style={{ fontWeight: 700 }}>
-                                  الصلاحيات ({organizer.permissions.length} محددة)
-                                </label>
-                                <div className="grid grid-cols-3 gap-3">
-                                  {[
-                                    { id: 'manage_participants', label: 'إدارة المشاركين', icon: '👥' },
-                                    { id: 'manage_projects', label: 'إدارة المشاريع', icon: '📁' },
-                                    { id: 'manage_sponsors', label: 'إدارة الرعايات', icon: '🤝' },
-                                    { id: 'manage_content', label: 'إدارة المحتوى', icon: '📝' },
-                                    { id: 'view_analytics', label: 'عرض الإحصائيات', icon: '📊' },
-                                    { id: 'full_access', label: 'إدارة كاملة', icon: '⭐' },
-                                  ].map((perm) => {
-                                    const isSelected = organizer.permissions.includes(perm.id);
-                                    return (
-                                      <label 
-                                        key={perm.id} 
-                                        className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                                          isSelected 
-                                            ? 'border-[#e35654] bg-red-50' 
-                                            : 'border-gray-200 hover:bg-gray-50'
-                                        }`}
-                                      >
-                                        <input 
-                                          type="checkbox" 
-                                          checked={isSelected}
-                                          onChange={() => toggleOrganizerPermission(organizer.id, perm.id)}
-                                          className="w-4 h-4 text-[#e35654] border-gray-300 rounded focus:ring-[#e35654]"
-                                        />
-                                        <span className="text-lg">{perm.icon}</span>
-                                        <span className={`text-sm flex-1 ${isSelected ? 'text-[#e35654]' : 'text-gray-700'}`} style={{ fontWeight: isSelected ? 600 : 500 }}>
-                                          {perm.label}
+                          {organizers.map((organizer) => {
+                            const sectionPerms = organizer.section
+                              ? PERMISSIONS_BY_SECTION[organizer.section as PermissionSection]
+                              : [];
+                            const managersInSameSection = organizers.filter(
+                              (o) => o.role === 'manager' && o.section === organizer.section && o.id !== organizer.id,
+                            );
+                            const isManager = organizer.role === 'manager';
+                            const isExpanded = expandedOrgIds.has(organizer.id);
+                            const parent = !isManager && organizer.parentId
+                              ? organizers.find((o) => o.id === organizer.parentId)
+                              : null;
+
+                            // Collapsed (saved) summary view
+                            if (!isExpanded) {
+                              return (
+                                <div key={organizer.id} className="border-2 border-gray-200 rounded-xl p-4 bg-white flex items-center gap-4 hover:border-[#e35654] transition-all">
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#e35654] to-[#cc4a48] text-white flex items-center justify-center text-sm flex-shrink-0" style={{ fontWeight: 700 }}>
+                                    {(organizer.name || '?').charAt(0)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{organizer.name}</span>
+                                      <span className={`px-2 py-0.5 rounded text-[10px] ${isManager ? 'bg-[#e35654]/10 text-[#e35654]' : 'bg-gray-100 text-gray-600'}`} style={{ fontWeight: 600 }}>
+                                        {isManager ? 'مدير' : 'موظف'}
+                                      </span>
+                                      {organizer.section && (
+                                        <span className="px-2 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700" style={{ fontWeight: 600 }}>
+                                          {SECTION_LABELS[organizer.section as PermissionSection]}
                                         </span>
-                                      </label>
-                                    );
-                                  })}
+                                      )}
+                                      {parent && (
+                                        <span className="text-[11px] text-gray-500">تابع لـ {parent.name}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5" dir="ltr">{organizer.email}</div>
+                                  </div>
+                                  <span className="text-xs text-gray-400">{organizer.permissions.length} صلاحية</span>
+                                  <button
+                                    onClick={() => toggleOrganizerExpanded(organizer.id)}
+                                    className="px-3 py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all inline-flex items-center gap-1.5 text-sm"
+                                    style={{ fontWeight: 600 }}
+                                  >
+                                    تعديل
+                                  </button>
+                                  <button
+                                    onClick={() => removeOrganizer(organizer.id)}
+                                    className="w-9 h-9 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all inline-flex items-center justify-center"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={organizer.id} className="border-2 border-gray-200 rounded-xl p-6 bg-white hover:border-[#e35654] transition-all">
+                                {/* Identity row */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                  <div>
+                                    <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>الاسم الكامل</label>
+                                    <input
+                                      type="text"
+                                      value={organizer.name}
+                                      onChange={(e) => updateOrganizer(organizer.id, 'name', e.target.value)}
+                                      placeholder="محمد أحمد"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>البريد الإلكتروني</label>
+                                    <input
+                                      type="email"
+                                      value={organizer.email}
+                                      onChange={(e) => updateOrganizer(organizer.id, 'email', e.target.value)}
+                                      placeholder="email@example.com"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
+                                      dir="ltr"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Role + Section (manager auto-linked from section) */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                  <div>
+                                    <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>الدور</label>
+                                    <select
+                                      value={organizer.role}
+                                      onChange={(e) => updateOrganizer(organizer.id, 'role', e.target.value)}
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
+                                    >
+                                      <option value="manager">مدير قسم</option>
+                                      <option value="staff">موظف</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-600 mb-2" style={{ fontWeight: 600 }}>القسم</label>
+                                    <select
+                                      value={organizer.section}
+                                      onChange={(e) => updateOrganizer(organizer.id, 'section', e.target.value)}
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
+                                    >
+                                      <option value="">اختر القسم</option>
+                                      {SECTIONS.map((s) => (
+                                        <option key={s} value={s}>{SECTION_LABELS[s]}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Warning when staff has no section manager yet */}
+                                {!isManager && organizer.section && managersInSameSection.length === 0 && (
+                                  <div className="mb-4 text-xs bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800">
+                                    ⚠️ لا يوجد مدير لهذا القسم بعد — أضف مديراً قبل حفظ الموظف
+                                  </div>
+                                )}
+
+                                {/* Permissions — checked by default when section is set, admin can untick */}
+                                {organizer.section ? (
+                                  <div className="mb-4">
+                                    <label className="block text-xs text-gray-900 mb-3" style={{ fontWeight: 700 }}>
+                                      صلاحيات قسم "{SECTION_LABELS[organizer.section as PermissionSection]}"
+                                      {' '}({organizer.permissions.length}/{sectionPerms.length})
+                                    </label>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      {sectionPerms.map((perm) => {
+                                        const isSelected = organizer.permissions.includes(perm.key);
+                                        return (
+                                          <label
+                                            key={perm.key}
+                                            className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                              isSelected
+                                                ? 'border-[#e35654] bg-red-50'
+                                                : 'border-gray-200 hover:bg-gray-50'
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={() => {
+                                                setOrganizers((prev) =>
+                                                  prev.map((o) => {
+                                                    if (o.id !== organizer.id) return o;
+                                                    const has = o.permissions.includes(perm.key);
+                                                    return {
+                                                      ...o,
+                                                      permissions: has
+                                                        ? o.permissions.filter((p) => p !== perm.key)
+                                                        : [...o.permissions, perm.key],
+                                                    };
+                                                  }),
+                                                );
+                                              }}
+                                              className="w-4 h-4 text-[#e35654] border-gray-300 rounded focus:ring-[#e35654]"
+                                            />
+                                            <span className={`text-sm flex-1 ${isSelected ? 'text-[#e35654]' : 'text-gray-700'}`} style={{ fontWeight: isSelected ? 600 : 500 }}>
+                                              {perm.label}
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mb-4 text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                    اختر القسم لعرض صلاحياته القابلة للتخصيص.
+                                  </div>
+                                )}
+
+                                {/* Actions */}
+                                <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                                  <div className="text-xs text-gray-500">
+                                    ستُرسل دعوة بالبريد الإلكتروني تحوي رابطاً صالحاً لمدة 7 أيام عند نشر الهاكاثون
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => removeOrganizer(organizer.id)}
+                                      className="px-4 py-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all inline-flex items-center gap-2"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      <span className="text-sm" style={{ fontWeight: 600 }}>حذف</span>
+                                    </button>
+                                    <button
+                                      onClick={() => saveOrganizerRow(organizer.id)}
+                                      className="px-4 py-2 rounded-lg bg-[#e35654] text-white hover:bg-[#cc4a48] transition-all inline-flex items-center gap-2 shadow-sm shadow-[#e35654]/30"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4" />
+                                      <span className="text-sm" style={{ fontWeight: 600 }}>حفظ</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
- 
-                              {/* Actions */}
-                              <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                                <div className="text-xs text-gray-500">
-                                  سيتم إرسال دعوة بالبريد الإلكتروني عند الحفظ
-                                </div>
-                                <button
-                                  onClick={() => removeOrganizer(organizer.id)}
-                                  className="px-4 py-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all inline-flex items-center gap-2"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                  <span className="text-sm" style={{ fontWeight: 600 }}>حذف المنظم</span>
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -2416,7 +2617,7 @@ export function CreateHackathon() {
                               </div>
                             </div>
                             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                              <p className="text-xs text-gray-500">سيتم إرسال دعوة بالبريد الإلكتروني عند الحفظ</p>
+                              <p className="text-xs text-gray-500">سيدخل المنصة عند تسجيله بنفس الإيميل</p>
                               <button
                                 onClick={() => removeJudge(judge.id)}
                                 className="px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 text-xs flex items-center gap-1"
@@ -2548,8 +2749,11 @@ export function CreateHackathon() {
               {activeSection === 'sponsors' && (
                 <div>
                   <div className="mb-8">
-                    <h2 className="text-2xl text-gray-900 mb-2" style={{ fontWeight: 700 }}>الرعاة والباقات</h2>
-                    <p className="text-gray-500">أنشئ باقات الرعاية التي سيراها الرعاة المحتملون</p>
+                    <h2 className="text-2xl text-gray-900 mb-2" style={{ fontWeight: 700 }}>
+                      الرعاة والباقات
+                      <span className="text-sm text-gray-400 mr-2" style={{ fontWeight: 500 }}>(اختياري)</span>
+                    </h2>
+                    <p className="text-gray-500">أنشئ باقات الرعاية التي سيراها الرعاة المحتملون. يمكنك تخطّي هذا القسم إذا لم تكن بحاجة لرعاة.</p>
                   </div>
  
                   <div className="space-y-6">

@@ -18,4 +18,7 @@ export const env = {
     user: process.env.GMAIL_USER || '',
     appPassword: process.env.GMAIL_APP_PASSWORD || '',
   },
+  // Public frontend base URL — used to build invitation links.
+  // Override with FRONTEND_URL env var in production.
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173/Prototype',
 };

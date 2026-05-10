@@ -56,3 +56,73 @@ export async function sendPasswordResetEmail(to: string, code: string, expiryMin
     ),
   });
 }
+
+interface CoManagerInviteEmailParams {
+  to: string;
+  inviteeName: string;
+  organizerName: string;
+  hackathonTitle: string;
+  roleLabel: string;       // "مدير قسم" أو "موظف"
+  sectionLabel: string;    // اسم القسم بالعربي
+  inviteUrl: string;       // رابط /invite/:token
+  expiryDays: number;
+}
+
+function renderInviteEmail(p: CoManagerInviteEmailParams): string {
+  return `
+    <div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;background:#fafaf9;padding:40px;text-align:center">
+      <div style="background:white;padding:36px;border-radius:16px;max-width:520px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+        <div style="display:inline-block;background:#e35654;color:white;width:56px;height:56px;border-radius:14px;line-height:56px;font-size:28px;margin-bottom:18px">✨</div>
+        <h2 style="color:#111;margin:0 0 8px;font-size:22px">دعوة للانضمام كفريق تنظيم</h2>
+        <p style="color:#666;margin:0 0 20px;font-size:14px">منصة مُمكّن</p>
+
+        <div style="background:#fef2f4;border-radius:12px;padding:20px;margin-bottom:24px;text-align:right">
+          <p style="color:#111;margin:0 0 14px;line-height:1.7">
+            مرحباً ${p.inviteeName}،<br/>
+            دعاك <strong>${p.organizerName}</strong> للانضمام إلى فريق تنظيم هاكاثون
+            <strong>"${p.hackathonTitle}"</strong>.
+          </p>
+          <table style="width:100%;font-size:14px;color:#333">
+            <tr>
+              <td style="padding:6px 0;color:#888;width:80px">الدور</td>
+              <td style="padding:6px 0"><strong>${p.roleLabel}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#888">القسم</td>
+              <td style="padding:6px 0"><strong>${p.sectionLabel}</strong></td>
+            </tr>
+          </table>
+        </div>
+
+        <a href="${p.inviteUrl}" style="display:inline-block;background:#e35654;color:white;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:15px;box-shadow:0 4px 12px rgba(227,86,84,0.3)">
+          فتح صفحة الدعوة
+        </a>
+
+        <p style="color:#999;font-size:12px;margin:28px 0 0;line-height:1.7">
+          هذه الدعوة صالحة لمدة <strong>${p.expiryDays} أيام</strong>. اضغط الرابط أعلاه لقبولها.
+          <br/>
+          إذا لم تكن تتوقع هذه الدعوة، يمكنك تجاهل الرسالة.
+        </p>
+        <p style="color:#bbb;font-size:11px;margin:18px 0 0;direction:ltr">
+          ${p.inviteUrl}
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendCoManagerInviteEmail(params: CoManagerInviteEmailParams): Promise<void> {
+  if (!transporter) {
+    console.log(
+      `[invite fallback — Gmail not configured]  to=${params.to}  url=${params.inviteUrl}  ` +
+        `role=${params.roleLabel}  section=${params.sectionLabel}  hackathon="${params.hackathonTitle}"`,
+    );
+    return;
+  }
+  await transporter.sendMail({
+    from: `"Mumkin" <${env.mail.user}>`,
+    to: params.to,
+    subject: `دعوة للانضمام كـ ${params.roleLabel} في هاكاثون "${params.hackathonTitle}"`,
+    html: renderInviteEmail(params),
+  });
+}

@@ -4,6 +4,7 @@ import { env } from './config/env';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
 import hackathonRoutes from './routes/hackathon.routes';
+import { getInvitationByToken } from './controllers/hackathon.controller';
 
 const app = express();
 
@@ -19,6 +20,8 @@ app.get('/', (_req, res) => {
 app.use('/health', healthRoutes);
 app.use('/auth', authRoutes);
 app.use('/hackathons', hackathonRoutes);
+// Public invitation lookup — no auth, used by /invite/:token landing page.
+app.get('/invitations/:token', getInvitationByToken);
 
 app.listen(env.port, () => {
   console.log(`Server on http://localhost:${env.port}`);

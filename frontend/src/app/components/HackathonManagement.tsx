@@ -11,11 +11,13 @@ import {
   ExternalLink,
   Undo2,
   Loader2,
+  Lock,
 } from 'lucide-react';
 import { apiGet, apiPost, ApiError } from '../../lib/api';
+import { type Section } from '../../lib/permissions';
 
 interface ManagementCard {
-  id: string;
+  id: 'team' | 'projects' | 'registrations' | 'analytics' | 'sponsors' | 'winners';
   title: string;
   description: string;
   icon: React.ElementType;
@@ -28,9 +30,17 @@ interface ManagementCard {
   badge?: string;
 }
 
+interface MyAccess {
+  role: 'owner' | 'co_manager';
+  coManagerRole?: 'manager' | 'staff';
+  section?: Section | null;
+  permissions: string[];
+}
+
 export default function HackathonManagement() {
   const { id } = useParams();
   const [status, setStatus] = useState<string | null>(null);
+  const [myAccess, setMyAccess] = useState<MyAccess | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -40,11 +50,17 @@ export default function HackathonManagement() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await apiGet<{ hackathon: { H_status: string } }>(`/hackathons/${id}`);
-        if (!cancelled) setStatus(data.hackathon.H_status);
+        const data = await apiGet<{
+          hackathon: { H_status: string };
+          myAccess: MyAccess | null;
+        }>(`/hackathons/${id}`);
+        if (!cancelled) {
+          setStatus(data.hackathon.H_status);
+          setMyAccess(data.myAccess);
+        }
       } catch (err) {
         if (!cancelled) setStatus(null);
-        console.error('failed to load hackathon status', err);
+        console.error('failed to load hackathon', err);
       }
     })();
     return () => {
@@ -95,7 +111,7 @@ export default function HackathonManagement() {
       badge: '12 طلب جديد'
     },
     {
-      id: 'teams',
+      id: 'team',
       title: 'إدارة فرق التنظيم',
       description: 'تحكم كامل في الأدوار الفريق، تعيين الصلاحيات، ومتابعة سجلات الدخول والنشاطات لضمان أمن التنسيق.',
       icon: Users,
@@ -196,7 +212,7 @@ export default function HackathonManagement() {
                 </div>
               </div>
             </div>
-            {status === 'published' && (
+            {status === 'published' && myAccess?.role === 'owner' && (
               <div className="flex items-center gap-2">
                 {!confirming ? (
                   <button
@@ -241,7 +257,7 @@ export default function HackathonManagement() {
                 )}
               </div>
             )}
-            {status === 'draft' && (
+            {status === 'draft' && myAccess?.role === 'owner' && (
               <Link
                 to={`/admin/create-hackathon/${id}`}
                 className="px-4 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm flex items-center gap-2 transition-all"
@@ -261,20 +277,34 @@ export default function HackathonManagement() {
 
         {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {managementCards.map((card) => (
-            <div 
-              key={card.id} 
-              className={`${card.bgColor} rounded-3xl p-8 border-2 border-transparent hover:border-gray-300 transition-all relative overflow-hidden group shadow-sm hover:shadow-xl flex flex-col min-h-[380px]`}
+          {managementCards.map((card) => {
+            // Owner sees everything. Co-managers see only the card matching their section.
+            const isAccessible =
+              !myAccess ||                            // still loading: show all (will refine after load)
+              myAccess.role === 'owner' ||
+              myAccess.section === card.id;
+            return (
+            <div
+              key={card.id}
+              className={`${card.bgColor} rounded-3xl p-8 border-2 border-transparent ${isAccessible ? 'hover:border-gray-300 hover:shadow-xl' : 'opacity-60'} transition-all relative overflow-hidden group shadow-sm flex flex-col min-h-[380px]`}
             >
               {/* Badge */}
-              {card.badge && (
+              {card.badge && isAccessible && (
                 <div className="absolute top-4 left-4 px-3 py-1.5 bg-orange-600 text-white text-xs rounded-full shadow-md" style={{ fontWeight: 600 }}>
                   {card.badge}
                 </div>
               )}
 
+              {/* Lock overlay for forbidden cards */}
+              {!isAccessible && (
+                <div className="absolute top-4 left-4 px-3 py-1.5 bg-gray-700 text-white text-xs rounded-full shadow-md flex items-center gap-1" style={{ fontWeight: 600 }}>
+                  <Lock className="w-3 h-3" />
+                  <span>مقفل</span>
+                </div>
+              )}
+
               {/* Icon */}
-              <div className={`w-24 h-24 ${card.iconBgColor} rounded-3xl flex items-center justify-center mb-6 mx-auto group-hover:scale-110 transition-transform shadow-sm`}>
+              <div className={`w-24 h-24 ${card.iconBgColor} rounded-3xl flex items-center justify-center mb-6 mx-auto ${isAccessible ? 'group-hover:scale-110' : ''} transition-transform shadow-sm`}>
                 <card.icon className={`w-12 h-12 ${card.iconColor}`} strokeWidth={1.5} />
               </div>
 
@@ -289,16 +319,28 @@ export default function HackathonManagement() {
               </div>
 
               {/* Button */}
-              <Link
-                to={card.link}
-                className={`w-full px-6 py-3.5 rounded-xl ${card.buttonColor} ${card.buttonHoverColor} text-white text-sm transition-all flex items-center justify-center gap-2 shadow-lg`}
-                style={{ fontWeight: 600 }}
-              >
-                <span>فتح القسم</span>
-                <ExternalLink className="w-4 h-4" />
-              </Link>
+              {isAccessible ? (
+                <Link
+                  to={card.link}
+                  className={`w-full px-6 py-3.5 rounded-xl ${card.buttonColor} ${card.buttonHoverColor} text-white text-sm transition-all flex items-center justify-center gap-2 shadow-lg`}
+                  style={{ fontWeight: 600 }}
+                >
+                  <span>فتح القسم</span>
+                  <ExternalLink className="w-4 h-4" />
+                </Link>
+              ) : (
+                <div
+                  className="w-full px-6 py-3.5 rounded-xl bg-gray-300 text-white text-sm flex items-center justify-center gap-2 cursor-not-allowed"
+                  style={{ fontWeight: 600 }}
+                  title="ليس لديك صلاحية الوصول لهذا القسم"
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>ليس لديك صلاحية</span>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

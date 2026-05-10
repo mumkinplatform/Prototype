@@ -1,209 +1,167 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ArrowRight, Users, Mail, Search, ChevronDown, Copy, Ban, Edit2, AlertTriangle, UserPlus, X } from 'lucide-react';
+import { ArrowRight, Users, Mail, Search, ChevronDown, Copy, Ban, Edit2, AlertTriangle, UserPlus, X, Send } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiGet, apiPost, apiPut, apiDelete, ApiError } from '../../lib/api';
+import {
+  PERMISSIONS_BY_SECTION,
+  SECTION_LABELS,
+  SECTIONS,
+  type Section,
+} from '../../lib/permissions';
 
+// Map UI department label ↔ Section enum
+const SECTION_BADGE_COLORS: Record<Section, string> = {
+  registrations: 'bg-orange-100 text-orange-700',
+  projects: 'bg-indigo-100 text-indigo-700',
+  winners: 'bg-yellow-100 text-yellow-700',
+  sponsors: 'bg-emerald-100 text-emerald-700',
+  analytics: 'bg-blue-100 text-blue-700',
+};
+
+interface CoManagerRaw {
+  HCM_ID: number;
+  HCM_FullName: string;
+  HCM_Email: string;
+  HCM_Role: 'manager' | 'staff';
+  HCM_Section: Section | null;
+  HCM_ParentID: number | null;
+  HCM_Permissions: unknown;
+  HCM_InviteStatus: 'pending' | 'accepted' | 'declined';
+  HCM_InviteExpiresAt: string | null;
+  HCM_AcceptedAt: string | null;
+  M_ID: number | null;
+}
+
+// UI shape — mirrors the original mock so we don't redo the markup.
 interface TeamMember {
   id: number;
   name: string;
   email: string;
   avatar: string;
-  department: string;
-  departmentColor: string;
-  accessLevel: string;
+  department: string;        // Arabic section label
+  departmentColor: string;   // tailwind classes
+  accessLevel: string;       // "مدير قسم" or "موظف"
   status: 'نشط' | 'مدعو';
-  permissions: number;
+  permissions: number;       // 0..100 — % of section permissions selected
   role: string;
+  // backing data we need for edit/save
+  section: Section | null;
+  parentId: number | null;
+  permissionKeys: string[];
 }
 
-const mockTeamMembers: TeamMember[] = [
-  {
-    id: 1,
-    name: 'أحمد محمد',
-    email: 'ahmed@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop',
-    department: 'إدارة التسجيلات',
-    departmentColor: 'bg-blue-100 text-blue-700',
-    accessLevel: 'مدير القسم',
-    status: 'نشط',
-    permissions: 90,
-    role: 'manager'
-  },
-  {
-    id: 2,
-    name: 'ساره خالد',
-    email: 'sara.kh@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
-    department: 'لجنة التحكيم',
-    departmentColor: 'bg-purple-100 text-purple-700',
-    accessLevel: 'منظم',
-    status: 'نشط',
-    permissions: 45,
-    role: 'organizer'
-  },
-  {
-    id: 3,
-    name: 'عمر العتيبي',
-    email: 'omar.o@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop',
-    department: 'قسم الرعاية',
-    departmentColor: 'bg-green-100 text-green-700',
-    accessLevel: 'مشرف',
-    status: 'نشط',
-    permissions: 65,
-    role: 'supervisor'
-  },
-  {
-    id: 4,
-    name: 'فاطمة الزهراني',
-    email: 'fatima.z@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop',
-    department: 'إدارة التسجيلات',
-    departmentColor: 'bg-blue-100 text-blue-700',
-    accessLevel: 'منظم',
-    status: 'نشط',
-    permissions: 55,
-    role: 'organizer'
-  },
-  {
-    id: 5,
-    name: 'خالد السعيد',
-    email: 'khaled.s@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop',
-    department: 'قسم الرعاية',
-    departmentColor: 'bg-green-100 text-green-700',
-    accessLevel: 'مدير القسم',
-    status: 'نشط',
-    permissions: 85,
-    role: 'manager'
-  },
-  {
-    id: 6,
-    name: 'نورة القحطاني',
-    email: 'norah.q@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=100&h=100&fit=crop',
-    department: 'لجنة التحكيم',
-    departmentColor: 'bg-purple-100 text-purple-700',
-    accessLevel: 'مدير القسم',
-    status: 'نشط',
-    permissions: 95,
-    role: 'manager'
-  },
-  {
-    id: 7,
-    name: 'محمد الدوسري',
-    email: 'mohammed.d@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1519345182560-3f2917c472ef?w=100&h=100&fit=crop',
-    department: 'إدارة التسجيلات',
-    departmentColor: 'bg-blue-100 text-blue-700',
-    accessLevel: 'مشرف',
-    status: 'نشط',
-    permissions: 70,
-    role: 'supervisor'
-  },
-  {
-    id: 8,
-    name: 'ريم العمري',
-    email: 'reem.o@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop',
-    department: 'قسم الرعاية',
-    departmentColor: 'bg-green-100 text-green-700',
-    accessLevel: 'منظم',
-    status: 'نشط',
-    permissions: 60,
-    role: 'organizer'
-  },
-  {
-    id: 9,
-    name: 'عبدالله الشمري',
-    email: 'abdullah.sh@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop',
-    department: 'لجنة التحكيم',
-    departmentColor: 'bg-purple-100 text-purple-700',
-    accessLevel: 'منظم',
-    status: 'مدعو',
-    permissions: 0,
-    role: 'organizer'
-  },
-  {
-    id: 10,
-    name: 'هند المطيري',
-    email: 'hind.m@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop',
-    department: 'إدارة التسجيلات',
-    departmentColor: 'bg-blue-100 text-blue-700',
-    accessLevel: 'منظم',
-    status: 'مدعو',
-    permissions: 0,
-    role: 'organizer'
-  },
-  {
-    id: 11,
-    name: 'سعد الغامدي',
-    email: 'saad.g@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=100&h=100&fit=crop',
-    department: 'قسم الرعاية',
-    departmentColor: 'bg-green-100 text-green-700',
-    accessLevel: 'مشرف',
-    status: 'مدعو',
-    permissions: 0,
-    role: 'supervisor'
-  },
-  {
-    id: 12,
-    name: 'مريم الحربي',
-    email: 'maryam.h@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=100&h=100&fit=crop',
-    department: 'لجنة التحكيم',
-    departmentColor: 'bg-purple-100 text-purple-700',
-    accessLevel: 'منظم',
-    status: 'مدعو',
-    permissions: 0,
-    role: 'organizer'
-  },
-  {
-    id: 13,
-    name: 'يوسف الشهري',
-    email: 'youssef.sh@hackathon.com',
-    avatar: 'https://images.unsplash.com/photo-1463453091185-61582044d556?w=100&h=100&fit=crop',
-    department: 'إدارة التسجيلات',
-    departmentColor: 'bg-blue-100 text-blue-700',
-    accessLevel: 'منظم',
-    status: 'مدعو',
-    permissions: 0,
-    role: 'organizer'
+function parsePermissions(raw: unknown): string[] {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === 'string');
+  } catch {
+    /* ignore */
   }
-];
+  return [];
+}
+
+function buildAvatar(name: string): string {
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
+}
+
+function mapCoManager(c: CoManagerRaw): TeamMember {
+  const perms = parsePermissions(c.HCM_Permissions);
+  const total = c.HCM_Section ? PERMISSIONS_BY_SECTION[c.HCM_Section].length : 1;
+  const pct = c.HCM_Section ? Math.round((perms.length / total) * 100) : 0;
+  const sectionLabel = c.HCM_Section ? SECTION_LABELS[c.HCM_Section] : '—';
+  const sectionColor = c.HCM_Section ? SECTION_BADGE_COLORS[c.HCM_Section] : 'bg-gray-100 text-gray-600';
+  return {
+    id: c.HCM_ID,
+    name: c.HCM_FullName,
+    email: c.HCM_Email,
+    avatar: buildAvatar(c.HCM_FullName),
+    department: sectionLabel,
+    departmentColor: sectionColor,
+    accessLevel: c.HCM_Role === 'manager' ? 'مدير قسم' : 'موظف',
+    status: c.HCM_InviteStatus === 'accepted' ? 'نشط' : 'مدعو',
+    permissions: c.HCM_InviteStatus === 'accepted' ? pct : 0,
+    role: c.HCM_Role,
+    section: c.HCM_Section,
+    parentId: c.HCM_ParentID,
+    permissionKeys: perms,
+  };
+}
+
 
 export function HackathonTeams() {
   const { id } = useParams();
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(mockTeamMembers);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
-  const [filterDepartment, setFilterDepartment] = useState('all');
-  const [filterPermissions, setFilterPermissions] = useState('all');
+  const [filterDepartment, setFilterDepartment] = useState<Section | 'all'>('all');
+  const [filterPermissions, setFilterPermissions] = useState<'all' | 'manager' | 'staff'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'pending'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
-  
+
   // Add Member Modal
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
-  const [newMember, setNewMember] = useState({
+  const [newMember, setNewMember] = useState<{
+    name: string;
+    email: string;
+    section: Section;
+    role: 'manager' | 'staff';
+    parentId: number | null;
+    permissions: string[];
+  }>({
     name: '',
     email: '',
-    department: 'إدارة التسجيلات',
-    accessLevel: 'منظم'
-  });
-  
-  // Permission options
-  const [permissions, setPermissions] = useState({
-    addParticipants: false,
-    approveReject: false,
-    assignJudges: false,
-    editSchedule: false
+    section: 'registrations',
+    role: 'staff',
+    parentId: null,
+    permissions: [],
   });
 
-  const [sensitiveActions, setSensitiveActions] = useState(false);
+  // Sidebar editable form for the selected member.
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    email: string;
+    role: 'manager' | 'staff';
+    section: Section | '';
+    permissions: string[];
+  }>({ name: '', email: '', role: 'staff', section: '', permissions: [] });
+
+  // ─── Load co-managers from API ───
+  const refresh = async () => {
+    if (!id) return;
+    try {
+      const data = await apiGet<{ coManagers: CoManagerRaw[] }>(`/hackathons/${id}`);
+      const mapped = (data.coManagers ?? []).map(mapCoManager);
+      setTeamMembers(mapped);
+    } catch (err) {
+      console.error('failed to load co-managers', err);
+      toast.error('تعذّر تحميل الفريق');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Sync sidebar form when selecting a member
+  useEffect(() => {
+    if (selectedMember) {
+      setEditForm({
+        name: selectedMember.name,
+        email: selectedMember.email,
+        role: selectedMember.role as 'manager' | 'staff',
+        section: selectedMember.section ?? '',
+        permissions: [...selectedMember.permissionKeys],
+      });
+    } else {
+      setEditForm({ name: '', email: '', role: 'staff', section: '', permissions: [] });
+    }
+  }, [selectedMember]);
 
   // Filter by tab
   const tabFilteredMembers = teamMembers.filter(member => {
@@ -214,9 +172,9 @@ export function HackathonTeams() {
 
   // Filter by search and filters
   const filteredMembers = tabFilteredMembers.filter(member => {
-    const matchSearch = member.name.includes(searchQuery) || member.email.includes(searchQuery);
-    const matchDepartment = filterDepartment === 'all' || member.department === filterDepartment;
-    const matchPermissions = filterPermissions === 'all' || member.accessLevel === filterPermissions;
+    const matchSearch = member.name.includes(searchQuery) || member.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchDepartment = filterDepartment === 'all' || member.section === filterDepartment;
+    const matchPermissions = filterPermissions === 'all' || member.role === filterPermissions;
     return matchSearch && matchDepartment && matchPermissions;
   });
 
@@ -231,101 +189,131 @@ export function HackathonTeams() {
   const activeMembers = teamMembers.filter(m => m.status === 'نشط').length;
   const pendingInvites = teamMembers.filter(m => m.status === 'مدعو').length;
 
-  const handleAddMember = () => {
-    if (!newMember.name || !newMember.email) {
-      toast.error('خطأ في البيانات', {
-        description: 'الرجاء إدخال الاسم والبريد الإلكتروني',
-        duration: 3000,
-      });
-      return;
+  const reportApiError = (err: unknown) => {
+    if (err instanceof ApiError) {
+      const body = err.body as { conflicts?: string[]; errors?: string[]; message?: string } | undefined;
+      if (err.status === 409 && body?.conflicts) {
+        toast.error('تعارض في الأدوار', { description: body.conflicts.join(' — '), duration: 8000 });
+      } else if (err.status === 400 && body?.errors) {
+        toast.error('بيانات غير صالحة', { description: body.errors.join(' — ') });
+      } else if (body?.message) {
+        toast.error(body.message);
+      } else {
+        toast.error(`تعذّر الإجراء (HTTP ${err.status})`);
+      }
+    } else {
+      toast.error('تعذّر الاتصال بالخادم');
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newMember.email)) {
-      toast.error('خطأ في البريد الإلكتروني', {
-        description: 'الرجاء إدخال بريد إلكتروني صحيح',
-        duration: 3000,
-      });
-      return;
-    }
-
-    const departmentColors: { [key: string]: string } = {
-      'إدارة التسجيلات': 'bg-blue-100 text-blue-700',
-      'لجنة التحكيم': 'bg-purple-100 text-purple-700',
-      'قسم الرعاية': 'bg-green-100 text-green-700'
-    };
-
-    const member: TeamMember = {
-      id: teamMembers.length + 1,
-      name: newMember.name,
-      email: newMember.email,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${newMember.name}`,
-      department: newMember.department,
-      departmentColor: departmentColors[newMember.department],
-      accessLevel: newMember.accessLevel,
-      status: 'مدعو',
-      permissions: 0,
-      role: 'organizer'
-    };
-
-    setTeamMembers([...teamMembers, member]);
-    setShowAddMemberModal(false);
-    setNewMember({
-      name: '',
-      email: '',
-      department: 'إدارة التسجيلات',
-      accessLevel: 'منظم'
-    });
-
-    toast.success('تم إضافة العضو بنجاح', {
-      description: `تم إرسال دعوة إلى ${newMember.email}`,
-      duration: 4000,
-    });
   };
 
-  const handleSaveChanges = () => {
-    if (!selectedMember) return;
+  const handleAddMember = async () => {
+    if (!id) return;
+    if (!newMember.name.trim() || !newMember.email.trim()) {
+      toast.error('خطأ في البيانات', { description: 'الرجاء إدخال الاسم والبريد الإلكتروني', duration: 3000 });
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newMember.email)) {
+      toast.error('خطأ في البريد الإلكتروني', { description: 'الرجاء إدخال بريد إلكتروني صحيح', duration: 3000 });
+      return;
+    }
+    if (newMember.permissions.length === 0) {
+      toast.error('اختر صلاحية واحدة على الأقل');
+      return;
+    }
+    try {
+      await apiPost(`/hackathons/${id}/co-managers`, {
+        fullName: newMember.name.trim(),
+        email: newMember.email.trim(),
+        role: newMember.role,
+        section: newMember.section,
+        // parentId is auto-resolved server-side from the section's manager.
+        permissions: newMember.permissions,
+      });
+      setShowAddMemberModal(false);
+      setNewMember({
+        name: '',
+        email: '',
+        section: 'registrations',
+        role: 'staff',
+        parentId: null,
+        permissions: [],
+      });
+      toast.success('تم إضافة العضو بنجاح', {
+        description: `أُرسلت دعوة إلى ${newMember.email} ورابط الانضمام صالح لمدة 7 أيام`,
+        duration: 4000,
+      });
+      await refresh();
+    } catch (err) {
+      reportApiError(err);
+    }
+  };
 
-    // حساب نسبة الصلاحيات
-    const enabledPermissions = Object.values(permissions).filter(p => p).length;
-    const totalPermissions = Object.values(permissions).length;
-    const permissionPercentage = Math.round((enabledPermissions / totalPermissions) * 100);
-
-    // تحديث العضو
-    const updatedMembers = teamMembers.map(member => {
-      if (member.id === selectedMember.id) {
-        return {
-          ...member,
-          permissions: permissionPercentage
-        };
-      }
-      return member;
-    });
-
-    setTeamMembers(updatedMembers);
-    
-    toast.success('تم حفظ التغييرات بنجاح', {
-      description: `تم تحديث صلاحيات ${selectedMember.name}`,
-      duration: 4000,
-    });
-
-    setSelectedMember(null);
+  const handleSaveChanges = async () => {
+    if (!selectedMember || !id) return;
+    if (!editForm.name.trim() || !editForm.email.trim()) {
+      toast.error('الاسم والإيميل مطلوبان');
+      return;
+    }
+    if (!editForm.section) {
+      toast.error('اختر القسم');
+      return;
+    }
+    if (editForm.permissions.length === 0) {
+      toast.error('اختر صلاحية واحدة على الأقل');
+      return;
+    }
+    try {
+      await apiPut(`/hackathons/${id}/co-managers/${selectedMember.id}`, {
+        fullName: editForm.name.trim(),
+        email: editForm.email.trim(),
+        role: editForm.role,
+        section: editForm.section,
+        permissions: editForm.permissions,
+      });
+      toast.success('تم حفظ التغييرات بنجاح', {
+        description: `تم تحديث بيانات ${editForm.name}`,
+        duration: 4000,
+      });
+      setSelectedMember(null);
+      await refresh();
+    } catch (err) {
+      reportApiError(err);
+    }
   };
 
   const handleCopyEmail = (email: string, name: string) => {
     navigator.clipboard.writeText(email);
-    toast.success('تم النسخ', {
-      description: `تم نسخ بريد ${name} الإلكتروني`,
-      duration: 2000,
-    });
+    toast.success('تم النسخ', { description: `تم نسخ بريد ${name} الإلكتروني`, duration: 2000 });
   };
 
-  const handleDisableMember = (member: TeamMember) => {
-    toast.warning('تعطيل العضو', {
-      description: `هل تريد تعطيل ${member.name}؟`,
-      duration: 3000,
-    });
+  const handleDisableMember = async (member: TeamMember) => {
+    if (!id) return;
+    const confirmed = window.confirm(`هل تريد حذف ${member.name} من فريق التنظيم؟`);
+    if (!confirmed) return;
+    try {
+      await apiDelete(`/hackathons/${id}/co-managers/${member.id}`);
+      toast.success('تم الحذف', { description: `تم حذف ${member.name}`, duration: 3000 });
+      if (selectedMember?.id === member.id) setSelectedMember(null);
+      await refresh();
+    } catch (err) {
+      reportApiError(err);
+    }
   };
+
+  const handleResendInvite = async (member: TeamMember) => {
+    if (!id) return;
+    try {
+      await apiPost(`/hackathons/${id}/co-managers/${member.id}/resend-invite`);
+      toast.success('تم إعادة إرسال الدعوة', {
+        description: `أُرسل إيميل تذكيري إلى ${member.email}`,
+        duration: 4000,
+      });
+    } catch (err) {
+      reportApiError(err);
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
@@ -436,14 +424,14 @@ export function HackathonTeams() {
                 <div className="relative">
                   <select
                     value={filterDepartment}
-                    onChange={(e) => setFilterDepartment(e.target.value)}
+                    onChange={(e) => setFilterDepartment(e.target.value as Section | 'all')}
                     className="appearance-none px-4 py-2.5 pr-10 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-blue-500"
                     style={{ fontWeight: 600 }}
                   >
                     <option value="all">كل الأقسام</option>
-                    <option value="إدارة التسجيلات">إدارة التسجيلات</option>
-                    <option value="لجنة التحكيم">لجنة التحكيم</option>
-                    <option value="قسم الرعاية">قسم الرعاية</option>
+                    {SECTIONS.map((s) => (
+                      <option key={s} value={s}>{SECTION_LABELS[s]}</option>
+                    ))}
                   </select>
                   <ChevronDown className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 </div>
@@ -451,14 +439,13 @@ export function HackathonTeams() {
                 <div className="relative">
                   <select
                     value={filterPermissions}
-                    onChange={(e) => setFilterPermissions(e.target.value)}
+                    onChange={(e) => setFilterPermissions(e.target.value as 'all' | 'manager' | 'staff')}
                     className="appearance-none px-4 py-2.5 pr-10 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-blue-500"
                     style={{ fontWeight: 600 }}
                   >
-                    <option value="all">كل الصلاحيات</option>
-                    <option value="مدير القسم">مدير القسم</option>
-                    <option value="منظم">منظم</option>
-                    <option value="مشرف">مشرف</option>
+                    <option value="all">كل الأدوار</option>
+                    <option value="manager">مدير قسم</option>
+                    <option value="staff">موظف</option>
                   </select>
                   <ChevronDown className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 </div>
@@ -541,30 +528,45 @@ export function HackathonTeams() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-1">
-                          <button 
+                          <button
                             className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-100 transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleCopyEmail(member.email, member.name);
                             }}
+                            title="نسخ الإيميل"
                           >
                             <Copy className="w-4 h-4" />
                           </button>
-                          <button 
+                          {member.status === 'مدعو' && (
+                            <button
+                              className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleResendInvite(member);
+                              }}
+                              title="إعادة إرسال الدعوة"
+                            >
+                              <Send className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
                             className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDisableMember(member);
                             }}
+                            title="حذف"
                           >
                             <Ban className="w-4 h-4" />
                           </button>
-                          <button 
+                          <button
                             className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-blue-50 hover:text-blue-600 transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedMember(member);
                             }}
+                            title="تعديل"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
@@ -637,7 +639,7 @@ export function HackathonTeams() {
                 {selectedMember ? 'تحرير الصلاحيات' : 'اختر عضواً'}
               </h3>
               <p className="text-sm text-gray-500 mb-6">
-                {selectedMember ? selectedMember.name : 'اختر عضواً من الجدول لتعديل صلاحياته'}
+                {selectedMember ? selectedMember.name : 'اختر عضواً من الجدول لتعديل بياناته'}
               </p>
 
               {selectedMember && (
@@ -656,102 +658,122 @@ export function HackathonTeams() {
                       </div>
                     </div>
                     
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">البريد الإلكتروني المحدد</span>
-                        <span className="text-gray-900" style={{ fontWeight: 600 }}>{selectedMember.email}</span>
+                    <div className="text-xs text-gray-500">
+                      الحالة: <span className={selectedMember.status === 'نشط' ? 'text-green-600' : 'text-orange-600'} style={{ fontWeight: 600 }}>{selectedMember.status}</span>
+                    </div>
+                  </div>
+
+                  {/* Editable fields */}
+                  <div className="space-y-4 mb-6">
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1.5" style={{ fontWeight: 600 }}>الاسم الكامل</label>
+                      <input
+                        type="text"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1.5" style={{ fontWeight: 600 }}>البريد الإلكتروني</label>
+                      <input
+                        type="email"
+                        value={editForm.email}
+                        onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                        dir="ltr"
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-700 mb-1.5" style={{ fontWeight: 600 }}>الدور</label>
+                        <select
+                          value={editForm.role}
+                          onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value as 'manager' | 'staff' }))}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="manager">مدير قسم</option>
+                          <option value="staff">موظف</option>
+                        </select>
                       </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">القسم المسؤول</span>
-                        <span className={`px-2 py-1 rounded ${selectedMember.departmentColor}`} style={{ fontWeight: 600 }}>
-                          {selectedMember.department}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">صلاحيات الجلسة الحالية</span>
-                        <span className="text-gray-900" style={{ fontWeight: 600 }}>{selectedMember.accessLevel}</span>
+                      <div>
+                        <label className="block text-xs text-gray-700 mb-1.5" style={{ fontWeight: 600 }}>القسم</label>
+                        <select
+                          value={editForm.section}
+                          onChange={(e) => {
+                            const newSection = e.target.value as Section;
+                            setEditForm((p) => ({
+                              ...p,
+                              section: newSection,
+                              // Clear permissions on section change — admin picks them manually.
+                              permissions: [],
+                            }));
+                          }}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
+                        >
+                          {SECTIONS.map((s) => (
+                            <option key={s} value={s}>{SECTION_LABELS[s]}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
 
-                  {/* Permissions */}
-                  <div className="mb-6">
-                    <p className="text-sm text-gray-700 mb-3" style={{ fontWeight: 600 }}>تخصيص الصلاحيات</p>
-                    
-                    <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.addParticipants}
-                        onChange={(e) => setPermissions({...permissions, addParticipants: e.target.checked})}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900">إضافة مشاركين جدد</p>
-                        <p className="text-xs text-gray-500">السماح بإضافة مشاركين جدد إضافة</p>
+                  {/* Permissions checkboxes */}
+                  {editForm.section && (
+                    <div className="mb-6">
+                      <label className="block text-sm text-gray-700 mb-3" style={{ fontWeight: 600 }}>
+                        الصلاحيات
+                        <span className="text-xs text-gray-400 mr-2" style={{ fontWeight: 400 }}>
+                          ({editForm.permissions.length}/{PERMISSIONS_BY_SECTION[editForm.section].length})
+                        </span>
+                      </label>
+                      <div className="space-y-2">
+                        {PERMISSIONS_BY_SECTION[editForm.section].map((perm) => {
+                          const checked = editForm.permissions.includes(perm.key);
+                          return (
+                            <label
+                              key={perm.key}
+                              className={`flex items-center gap-3 p-2.5 rounded-lg border-2 cursor-pointer transition-all ${
+                                checked ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setEditForm((p) => ({
+                                    ...p,
+                                    permissions: p.permissions.includes(perm.key)
+                                      ? p.permissions.filter((k) => k !== perm.key)
+                                      : [...p.permissions, perm.key],
+                                  }))
+                                }
+                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className={`text-sm flex-1 ${checked ? 'text-blue-700' : 'text-gray-700'}`} style={{ fontWeight: checked ? 600 : 500 }}>
+                                {perm.label}
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
-                    </label>
+                    </div>
+                  )}
 
-                    <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.approveReject}
-                        onChange={(e) => setPermissions({...permissions, approveReject: e.target.checked})}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900">قبول/رفض الطلبات</p>
-                        <p className="text-xs text-gray-500">التحكم في طلبات الانضمام للهاكاثون</p>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center gap-3 mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.assignJudges}
-                        onChange={(e) => setPermissions({...permissions, assignJudges: e.target.checked})}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900">توزيع الحكام</p>
-                        <p className="text-xs text-gray-500">إدارة تخصيص الحكام المناسبين على الفرق المشاركة</p>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.editSchedule}
-                        onChange={(e) => setPermissions({...permissions, editSchedule: e.target.checked})}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900">تعديل الجدول</p>
-                        <p className="text-xs text-gray-500">التحكم في الجدال الزمنية وأوقات الفعاليات المختلفة</p>
-                      </div>
-                    </label>
-                  </div>
-
-                  {/* Sensitive Actions */}
+                  {/* Section access info */}
                   <div className="mb-6 pb-6 border-b border-gray-100">
-                    <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-3">
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
                       <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm text-red-900 mb-1" style={{ fontWeight: 600 }}>إجراءات حساسية</p>
-                          <p className="text-xs text-red-700">السماح بحذف الهاكاثونات بالكامل</p>
+                          <p className="text-sm text-amber-900 mb-1" style={{ fontWeight: 600 }}>ملاحظة</p>
+                          <p className="text-xs text-amber-700 leading-relaxed">
+                            صلاحيات حذف/تغيير الهاكاثون محصورة على المنظّم الأصلي ولا تُمنح لأي عضو في الفريق.
+                          </p>
                         </div>
                       </div>
                     </div>
-                    
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={sensitiveActions}
-                        onChange={(e) => setSensitiveActions(e.target.checked)}
-                        className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
-                      />
-                      <span className="text-sm text-gray-700">تفعيل الإجراءات الحساسة</span>
-                    </label>
                   </div>
 
                   {/* Actions */}
@@ -778,7 +800,7 @@ export function HackathonTeams() {
                 <div className="text-center py-8">
                   <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">
-                    اضغط على أي عضو في الجدول لعرض تفاصيله وتعديل صلاحياته
+                    اضغط على أي عضو في الجدول لعرض تفاصيله وتعديل بياناته
                   </p>
                 </div>
               )}
@@ -807,7 +829,7 @@ export function HackathonTeams() {
               إضافة عضو جديد
             </h2>
             <p className="text-sm text-gray-500 mb-6">
-              أدخل بيانات العضو الجديد لإرسال دعوة الانضمام
+              ستُرسل دعوة بالبريد الإلكتروني تحوي رابطاً صالحاً لمدة 7 أيام لقبول الانضمام.
             </p>
 
             <div className="space-y-4">
@@ -842,30 +864,106 @@ export function HackathonTeams() {
                   القسم
                 </label>
                 <select
-                  value={newMember.department}
-                  onChange={(e) => setNewMember({...newMember, department: e.target.value})}
+                  value={newMember.section}
+                  onChange={(e) => {
+                    const newSection = e.target.value as Section;
+                    setNewMember({
+                      ...newMember,
+                      section: newSection,
+                      parentId: null,
+                      // Clear permissions so admin selects them manually for the new section.
+                      permissions: [],
+                    });
+                  }}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
                 >
-                  <option value="إدارة التسجيلات">إدارة التسجيلات</option>
-                  <option value="لجنة التحكيم">لجنة التحكيم</option>
-                  <option value="قسم الرعاية">قسم الرعاية</option>
+                  {SECTIONS.map((s) => (
+                    <option key={s} value={s}>{SECTION_LABELS[s]}</option>
+                  ))}
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                  مستوى الوصول
+                  الصلاحيات <span className="text-xs text-gray-400">({newMember.permissions.length}/{PERMISSIONS_BY_SECTION[newMember.section].length})</span>
+                </label>
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {PERMISSIONS_BY_SECTION[newMember.section].map((perm) => {
+                    const checked = newMember.permissions.includes(perm.key);
+                    return (
+                      <label
+                        key={perm.key}
+                        className={`flex items-center gap-3 p-2.5 rounded-lg border-2 cursor-pointer transition-all ${
+                          checked ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:border-gray-200'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setNewMember((p) => ({
+                              ...p,
+                              permissions: p.permissions.includes(perm.key)
+                                ? p.permissions.filter((k) => k !== perm.key)
+                                : [...p.permissions, perm.key],
+                            }))
+                          }
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className={`text-sm flex-1 ${checked ? 'text-blue-700' : 'text-gray-700'}`} style={{ fontWeight: checked ? 600 : 500 }}>
+                          {perm.label}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
+                  الدور
                 </label>
                 <select
-                  value={newMember.accessLevel}
-                  onChange={(e) => setNewMember({...newMember, accessLevel: e.target.value})}
+                  value={newMember.role}
+                  onChange={(e) => setNewMember({ ...newMember, role: e.target.value as 'manager' | 'staff', parentId: null })}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
                 >
-                  <option value="مدير القسم">مدير القسم</option>
-                  <option value="منظم">منظم</option>
-                  <option value="مشرف">مشرف</option>
+                  <option value="manager">مدير قسم</option>
+                  <option value="staff">موظف</option>
                 </select>
               </div>
+
+              {newMember.role === 'staff' && (() => {
+                const sectionManager = teamMembers.find(
+                  (m) => m.role === 'manager' && m.section === newMember.section,
+                );
+                if (!sectionManager) {
+                  return (
+                    <div className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800">
+                      ⚠️ لا يوجد مدير لهذا القسم بعد — أضف مدير القسم أولاً قبل الموظفين.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {newMember.role === 'manager' && (() => {
+                const dup = teamMembers.find(
+                  (m) => m.role === 'manager' && m.section === newMember.section,
+                );
+                if (dup) {
+                  return (
+                    <div className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800">
+                      ⚠️ يوجد مدير لهذا القسم بالفعل ({dup.name}). كل قسم له مدير واحد فقط.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                بعد الإضافة، تقدر تحدّد الصلاحيات بالضغط على العضو في الجدول.
+              </p>
             </div>
 
             <div className="flex items-center gap-3 mt-6">

@@ -11,6 +11,10 @@ import {
   unpublishHackathon,
   replaceTracks,
   replaceCoManagers,
+  addCoManager,
+  updateCoManager,
+  removeCoManager,
+  resendCoManagerInvite,
   replaceJudges,
   replacePrizes,
   replaceSponsorPackages,
@@ -30,6 +34,10 @@ router.post('/:id/publish', requireAuth, publishHackathon);
 router.post('/:id/unpublish', requireAuth, unpublishHackathon);
 router.put('/:id/tracks', requireAuth, replaceTracks);
 router.put('/:id/co-managers', requireAuth, replaceCoManagers);
+router.post('/:id/co-managers', requireAuth, addCoManager);
+router.put('/:id/co-managers/:hcmId', requireAuth, updateCoManager);
+router.delete('/:id/co-managers/:hcmId', requireAuth, removeCoManager);
+router.post('/:id/co-managers/:hcmId/resend-invite', requireAuth, resendCoManagerInvite);
 router.put('/:id/judges', requireAuth, replaceJudges);
 router.put('/:id/prizes', requireAuth, replacePrizes);
 router.put('/:id/sponsor-packages', requireAuth, replaceSponsorPackages);

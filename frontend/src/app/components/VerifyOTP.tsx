@@ -17,6 +17,7 @@ export function VerifyOTP() {
  
   const email = location.state?.email || "user@example.com";
   const role = location.state?.role || "participant";
+  const nextUrl: string | null = location.state?.next || null;
  
   useEffect(() => {
     if (countdown > 0) {
@@ -65,19 +66,37 @@ export function VerifyOTP() {
     }
     setIsVerifying(true);
     try {
-      const data = await apiPost<{ token: string; user: AuthUser }>(
+      const data = await apiPost<{ token: string; user: AuthUser; claimedInvites?: number }>(
         "/auth/verify-otp",
         { role, email, code }
       );
       saveAuth(data.token, data.user);
       toast.success("تم التحقق بنجاح! 🎉");
+
+      // If the user had pending co-manager invites linked to their email, they
+      // were auto-claimed server-side. Surface a friendly notification.
+      if (data.claimedInvites && data.claimedInvites > 0) {
+        setTimeout(() => {
+          toast.success(
+            data.claimedInvites === 1
+              ? "تمت إضافتك لهاكاثون جديد كمنظّم مساعد"
+              : `تمت إضافتك لـ ${data.claimedInvites} هاكاثونات كمنظّم مساعد`,
+            {
+              description: "ستجدها في صفحة هاكاثوناتي.",
+              duration: 6000,
+            },
+          );
+        }, 1200);
+      }
+
       const roleMap: Record<Role, string> = {
         admin: "/admin",
         sponsor: "/sponsor",
         participant: "/participant",
       };
+      const target = nextUrl || roleMap[data.user.role] || "/participant";
       setTimeout(() => {
-        navigate(roleMap[data.user.role] || "/participant");
+        navigate(target);
       }, 800);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
