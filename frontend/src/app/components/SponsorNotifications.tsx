@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Bell,
@@ -15,7 +15,78 @@ import {
   Info,
   ChevronLeft,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
+import { apiGet, ApiError } from "../../lib/api";
+
+// ── API Types ────────────────────────────────────────────────
+
+interface ApiApplicationItem {
+  id: number;
+  status: "pending" | "accepted" | "rejected";
+  appliedAt: string;
+  package: { id: number; name: string; type: string; price: number | null };
+  hackathon: { id: number; title: string; status: string; startDate: string | null };
+}
+
+interface ApplicationsApi {
+  items: ApiApplicationItem[];
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "الآن";
+  if (minutes < 60) return `قبل ${minutes} دقيقة`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `قبل ${hours} ساعة`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `قبل ${days} يوم`;
+  return new Date(iso).toLocaleDateString("ar-SA");
+}
+
+function applicationToNotification(app: ApiApplicationItem): Notification {
+  if (app.status === "accepted") {
+    return {
+      id: app.id,
+      type: "success",
+      title: "تم قبول طلب الرعاية",
+      message: `تم قبول طلبك على باقة ${app.package.name} في ${app.hackathon.title}`,
+      time: timeAgo(app.appliedAt),
+      read: false,
+      icon: CheckCircle2,
+      color: "#10b981",
+      bg: "#f0fdf4",
+      link: `/sponsor/hackathon/${app.hackathon.id}`,
+    };
+  }
+  if (app.status === "rejected") {
+    return {
+      id: app.id,
+      type: "alert",
+      title: "تم رفض طلب الرعاية",
+      message: `للأسف، لم يتم قبول طلبك على باقة ${app.package.name} في ${app.hackathon.title}`,
+      time: timeAgo(app.appliedAt),
+      read: false,
+      icon: AlertCircle,
+      color: "#ef4444",
+      bg: "#fef2f2",
+      link: "/sponsor/sponsorships",
+    };
+  }
+  return {
+    id: app.id,
+    type: "info",
+    title: "تم تقديم طلب الرعاية",
+    message: `قدّمت على باقة ${app.package.name} في ${app.hackathon.title} — بانتظار رد المنظم`,
+    time: timeAgo(app.appliedAt),
+    read: false,
+    icon: Handshake,
+    color: "#6366f1",
+    bg: "#eef2ff",
+    link: `/sponsor/hackathon/${app.hackathon.id}`,
+  };
+}
 
 interface Notification {
   id: number;
@@ -156,8 +227,31 @@ const filterTabs = ["الكل", "غير مقروء", "تنبيهات", "رسائ
 
 export function SponsorNotifications() {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeFilter, setActiveFilter] = useState("الكل");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<ApplicationsApi>("/sponsors/applications")
+      .then((res) => {
+        if (cancelled) return;
+        setNotifications(res.items.map(applicationToNotification));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          err instanceof ApiError ? err.message : "تعذّر تحميل الإشعارات"
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -250,9 +344,22 @@ export function SponsorNotifications() {
             ))}
           </div>
 
+          {/* Loading / Error */}
+          {loading && (
+            <div className="text-center py-12 text-gray-500 text-sm flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              جاري تحميل الإشعارات...
+            </div>
+          )}
+          {!loading && loadError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-sm">
+              {loadError}
+            </div>
+          )}
+
           {/* Notifications List */}
           <div className="space-y-2">
-            {filtered.map((notif) => {
+            {!loading && !loadError && filtered.map((notif) => {
               const Icon = notif.icon;
               return (
                 <div
@@ -331,15 +438,21 @@ export function SponsorNotifications() {
           </div>
 
           {/* Empty State */}
-          {filtered.length === 0 && (
+          {!loading && !loadError && filtered.length === 0 && (
             <div className="text-center py-16">
               <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-gray-300" />
               </div>
               <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
-                لا توجد إشعارات في هذه الفئة
+                {notifications.length === 0
+                  ? "ما عندك إشعارات حالياً"
+                  : "لا توجد إشعارات في هذه الفئة"}
               </p>
-              <p className="text-gray-400 text-xs mt-1">جرب تغيير الفلتر لعرض إشعارات أخرى</p>
+              <p className="text-gray-400 text-xs mt-1">
+                {notifications.length === 0
+                  ? "ستظهر هنا تنبيهات تقديماتك ومستجدات الرعاية."
+                  : "جرب تغيير الفلتر لعرض إشعارات أخرى"}
+              </p>
             </div>
           )}
         </div>

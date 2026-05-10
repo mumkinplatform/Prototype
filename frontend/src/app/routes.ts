@@ -40,6 +40,7 @@ import { RootLayout } from "./components/RootLayout";
 import { VerifyOTP } from "./components/VerifyOTP";
 import { ForgotPassword } from "./components/ForgotPassword";
 import { PublicHackathonPage } from "./components/PublicHackathonPage";
+import { SystemStatus } from "./components/SystemStatus";
 
 export const router = createBrowserRouter([
   {
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
           { path: "auth", Component: AuthPage },
           { path: "verify-otp", Component: VerifyOTP },
           { path: "forgot-password", Component: ForgotPassword },
+          { path: "system-status", Component: SystemStatus },
         ],
       },
       /* ── Public hackathon page (no platform layout) ── */
