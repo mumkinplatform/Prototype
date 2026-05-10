@@ -29,6 +29,7 @@ import { HackathonWinners } from "./components/HackathonWinners";
 import { HackathonStatistics } from "./components/HackathonStatistics";
 import { Notifications } from "./components/Notifications";
 import { Profile } from "./components/Profile";
+import { ParticipantProfile } from "./components/ParticipantProfile";
 import { SponsorNotifications } from "./components/SponsorNotifications";
 import { SponsorProfile } from "./components/SponsorProfile";
 import { SponsorLayout } from "./components/SponsorLayout";
@@ -114,7 +115,7 @@ export const router = createBrowserRouter([
           { path: "messages", Component: MessagesPage },
           { path: "payments", Component: PaymentsPage },
           { path: "notifications", Component: ParticipantNotifications },
-          { path: "profile", Component: Profile },
+          { path: "profile", Component: ParticipantProfile },
         ],
       },
     ],
