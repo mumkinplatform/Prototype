@@ -21,261 +21,232 @@ import {
   ChevronLeft,
   Code,
 } from "lucide-react";
- 
-const hackathonsData = [
-  {
-    id: 1,
-    title: "هاكاثون شفاء التقني",
-    org: "وزارة الصحة",
-    orgLogo: "ص",
-    orgColor: "#e35654",
-    tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#e35654", "#6366f1"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "01 يونيو 2025",
-    deadline: "15 مايو 2025",
-    prize: "75,000 ر.س",
-    viewers: 124,
-    teams: 48,
-    cover: "from-green-800 via-teal-700 to-cyan-600",
-    coverText: "HEALTH\nhackathon",
-    featured: true,
-    location: "الرياض، المملكة العربية السعودية",
-    duration: "48 ساعة",
-    participants: 230,
-    maxTeam: 5,
-    registrationOpen: true,
-    desc: "هاكاثون وطني متخصص في ابتكار حلول تقنية لقطاع الصحة، يجمع أفضل العقول التقنية لتطوير منصات وأدوات رقمية تُحسّن جودة الرعاية الصحية في المملكة. الحدث يُقام بالشراكة مع وزارة الصحة ضمن مبادرات رؤية 2030.",
-    skills: ["Python", "React", "Data Analysis", "Machine Learning", "Healthcare APIs"],
-    prizes: [
-      { rank: "المركز الأول", amount: "40,000 ر.س", icon: "🥇", color: "#f59e0b" },
-      { rank: "المركز الثاني", amount: "20,000 ر.س", icon: "🥈", color: "#94a3b8" },
-      { rank: "المركز الثالث", amount: "15,000 ر.س", icon: "🥉", color: "#92400e" },
-    ],
-    timeline: [
-      { date: "15 مايو", label: "آخر موعد للتسجيل", done: true },
-      { date: "22 مايو", label: "الإعلان عن الفرق المقبولة", done: true },
-      { date: "01 يونيو", label: "انطلاق الهاكاثون", done: false },
-      { date: "03 يونيو", label: "التسليم النهائي", done: false },
-      { date: "05 يونيو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 2,
-    title: "هاكاثون مستقبل المال 2.0",
-    org: "ساب تك",
-    orgLogo: "س",
-    orgColor: "#6366f1",
-    tags: ["التقنية المالية", "بلوكشين"],
-    tagColors: ["#10b981", "#f59e0b"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "12 يونيو 2025",
-    deadline: "28 مايو 2025",
-    prize: "100,000 ر.س",
-    viewers: 98,
-    teams: 62,
-    cover: "from-blue-800 via-indigo-700 to-purple-600",
-    coverText: "FINTECH\nhackathon",
-    featured: true,
-    location: "جدة + إلكتروني",
-    duration: "72 ساعة",
-    participants: 310,
-    maxTeam: 4,
-    registrationOpen: true,
-    desc: "منافسة تقنية مالية تجمع شركات الناشئة والمطورين المستقلين لبناء حلول مبتكرة في مجالات المدفوعات الرقمية والبلوكشين والتمويل اللامركزي.",
-    skills: ["Blockchain", "Node.js", "Solidity", "Smart Contracts", "FinTech APIs"],
-    prizes: [
-      { rank: "المركز الأول", amount: "50,000 ر.س", icon: "🥇", color: "#f59e0b" },
-      { rank: "المركز الثاني", amount: "30,000 ر.س", icon: "🥈", color: "#94a3b8" },
-      { rank: "المركز الثالث", amount: "20,000 ر.س", icon: "🥉", color: "#92400e" },
-    ],
-    timeline: [
-      { date: "28 مايو", label: "آخر موعد للتسجيل", done: true },
-      { date: "04 يونيو", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "12 يونيو", label: "انطلاق الهاكاثون", done: false },
-      { date: "15 يونيو", label: "التسليم النهائي", done: false },
-      { date: "18 يونيو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 3,
-    title: "هاكاثون الدرع التقني 2025",
-    org: "مؤسسة ريادة",
-    orgLogo: "ر",
-    orgColor: "#06b6d4",
-    tags: ["الأمن السيبراني", "تطبيقات الويب"],
-    tagColors: ["#06b6d4", "#8b5cf6"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "25 مايو 2025",
-    deadline: "10 مايو 2025",
-    prize: "16,000 ر.س",
-    viewers: 76,
-    teams: 31,
-    cover: "from-gray-800 via-slate-700 to-gray-900",
-    coverText: "CYBER\nSECURITY",
-    featured: false,
-    location: "إلكتروني بالكامل",
-    duration: "36 ساعة",
-    participants: 155,
-    maxTeam: 3,
-    registrationOpen: false,
-    desc: "هاكاثون متخصص في اكتشاف ثغرات الأمن السيبراني وبناء حلول دفاعية للتطبيقات والأنظمة.",
-    skills: ["Pentesting", "CTF", "Network Security", "Web Security"],
-    prizes: [
-      { rank: "المركز الأول", amount: "8,000 ر.س", icon: "🥇", color: "#f59e0b" },
-      { rank: "المركز الثاني", amount: "5,000 ر.س", icon: "🥈", color: "#94a3b8" },
-      { rank: "المركز الثالث", amount: "3,000 ر.س", icon: "🥉", color: "#92400e" },
-    ],
-    timeline: [
-      { date: "10 مايو", label: "آخر موعد للتسجيل", done: true },
-      { date: "18 مايو", label: "الإعلان عن الفرق المقبولة", done: true },
-      { date: "25 مايو", label: "انطلاق الهاكاثون", done: false },
-      { date: "26 مايو", label: "التسليم النهائي", done: false },
-      { date: "28 مايو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 4,
-    title: "هاكاثون NEOM للابتكار",
-    org: "مؤسسة نيوم",
-    orgLogo: "ن",
-    orgColor: "#f59e0b",
-    tags: ["المدن الذكية", "الاستدامة"],
-    tagColors: ["#f59e0b", "#10b981"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "20 يوليو 2025",
-    deadline: "5 يوليو 2025",
-    prize: "200,000 ر.س",
-    viewers: 310,
-    teams: 85,
-    cover: "from-amber-700 via-orange-600 to-red-700",
-    coverText: "NEOM\n2025",
-    featured: true,
-    location: "نيوم، تبوك",
-    duration: "72 ساعة",
-    participants: 425,
-    maxTeam: 6,
-    registrationOpen: true,
-    desc: "أضخم هاكاثون في المملكة لعام 2025، يُقام في قلب مدينة نيوم المستقبلية. يستهدف المبتكرين من مجالات البناء الذكي، والطاقة المستدامة، والمواصلات المستقبلية.",
-    skills: ["IoT", "AI", "Smart Systems", "Robotics", "Sustainability Tech"],
-    prizes: [
-      { rank: "المركز الأول", amount: "100,000 ر.س", icon: "🥇", color: "#f59e0b" },
-      { rank: "المركز الثاني", amount: "60,000 ر.س", icon: "🥈", color: "#94a3b8" },
-      { rank: "المركز الثالث", amount: "40,000 ر.س", icon: "🥉", color: "#92400e" },
-    ],
-    timeline: [
-      { date: "5 يوليو", label: "آخر موعد للتسجيل", done: false },
-      { date: "12 يوليو", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "20 يوليو", label: "انطلاق الهاكاثون", done: false },
-      { date: "23 يوليو", label: "التسليم النهائي", done: false },
-      { date: "25 يوليو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 5,
-    title: "هاكاثون الطاقة المتجددة",
-    org: "أرامكو السعودية",
-    orgLogo: "أ",
-    orgColor: "#10b981",
-    tags: ["الطاقة", "الاستدامة", "IoT"],
-    tagColors: ["#10b981", "#06b6d4", "#8b5cf6"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "10 أغسطس 2025",
-    deadline: "25 يوليو 2025",
-    prize: "150,000 ر.س",
-    viewers: 189,
-    teams: 54,
-    cover: "from-emerald-700 via-green-600 to-teal-700",
-    coverText: "ENERGY\nHACK",
-    featured: false,
-    location: "الظهران + إلكتروني",
-    duration: "48 ساعة",
-    participants: 270,
-    maxTeam: 5,
-    registrationOpen: true,
-    desc: "هاكاثون تنظمه أرامكو السعودية لاستقطاب أفضل العقول التقنية لتطوير حلول مستدامة في قطاع الطاقة المتجددة والإنترنت الصناعي للأشياء.",
-    skills: ["Embedded Systems", "Data Science", "Cloud", "IoT Protocols"],
-    prizes: [
-      { rank: "المركز الأول", amount: "75,000 ر.س", icon: "🥇", color: "#f59e0b" },
-      { rank: "المركز الثاني", amount: "45,000 ر.س", icon: "🥈", color: "#94a3b8" },
-      { rank: "المركز الثالث", amount: "30,000 ر.س", icon: "🥉", color: "#92400e" },
-    ],
-    timeline: [
-      { date: "25 يوليو", label: "آخر موعد للتسجيل", done: false },
-      { date: "1 أغسطس", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "10 أغسطس", label: "انطلاق الهاكاثون", done: false },
-      { date: "12 أغسطس", label: "التسليم النهائي", done: false },
-      { date: "15 أغسطس", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 6,
-    title: "قمة الذكاء الاصطناعي العالمية",
-    org: "STC",
-    orgLogo: "STC",
-    orgColor: "#8b5cf6",
-    tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#e35654"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "5 سبتمبر 2025",
-    deadline: "20 أغسطس 2025",
-    prize: "120,000 ر.س",
-    viewers: 241,
-    teams: 70,
-    cover: "from-violet-800 via-purple-700 to-indigo-800",
-    coverText: "AI\nSUMMIT",
-    featured: false,
-    location: "إلكتروني بالكامل",
-    duration: "48 ساعة",
-    participants: 350,
-    maxTeam: 4,
-    registrationOpen: true,
-    desc: "قمة تقنية عالمية لتطوير حلول الذكاء الاصطناعي والتعلم الآلي. تجمع المطورين والباحثين من أكثر من 20 دولة لبناء نماذج ذكاء اصطناعي تحل مشكلات حقيقية.",
-    skills: ["Python", "TensorFlow", "LLMs", "PyTorch", "NLP"],
-    prizes: [
-      { rank: "المركز الأول", amount: "60,000 ر.س", icon: "🥇", color: "#f59e0b" },
-      { rank: "المركز الثاني", amount: "35,000 ر.س", icon: "🥈", color: "#94a3b8" },
-      { rank: "المركز الثالث", amount: "25,000 ر.س", icon: "🥉", color: "#92400e" },
-    ],
-    timeline: [
-      { date: "20 أغسطس", label: "آخر موعد للتسجيل", done: false },
-      { date: "28 أغسطس", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "5 سبتمبر", label: "انطلاق الهاكاثون", done: false },
-      { date: "7 سبتمبر", label: "التسليم النهائي", done: false },
-      { date: "10 سبتمبر", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
+import { apiGet, apiPost, ApiError } from "../../lib/api";
+
+interface ApiPrize {
+  rank: string;
+  amount: string | null;
+  sortOrder: number;
+}
+
+interface ApiTimelineEntry {
+  date: string;
+  label: string;
+  done: boolean;
+}
+
+interface ApiHackathonDetail {
+  id: number;
+  title: string;
+  slug: string | null;
+  type: string | null;
+  description: string | null;
+  location: string | null;
+  org: string | null;
+  organizerId: number | null;
+  hackathonStartDate: string | null;
+  hackathonEndDate: string | null;
+  registrationStartDate: string | null;
+  registrationEndDate: string | null;
+  submissionDeadline: string | null;
+  teamMin: number;
+  teamMax: number;
+  participationMode: string;
+  tags: string[];
+  prizes: ApiPrize[];
+  prizeTotal: number;
+  timeline: ApiTimelineEntry[];
+  applicantsCount: number;
+  registrationOpen: boolean;
+  isRegistered: boolean;
+  participationType: "solo" | "team" | null;
+  hasTeam: boolean;
+  skills: string[];
+}
+
+interface UiPrize {
+  rank: string;
+  amount: string;
+  icon: string;
+  color: string;
+}
+
+interface UiTimelineEntry {
+  date: string;
+  label: string;
+  done: boolean;
+}
+
+interface UiHackathon {
+  id: number;
+  title: string;
+  org: string;
+  orgLogo: string;
+  orgColor: string;
+  tags: string[];
+  tagColors: string[];
+  type: string;
+  typeColor: string;
+  typeBg: string;
+  date: string;
+  deadline: string;
+  prize: string;
+  viewers: number;
+  teams: number;
+  cover: string;
+  coverText: string;
+  featured: boolean;
+  location: string;
+  duration: string;
+  participants: number;
+  maxTeam: number;
+  registrationOpen: boolean;
+  isRegistered: boolean;
+  participationType: "solo" | "team" | null;
+  hasTeam: boolean;
+  desc: string;
+  skills: string[];
+  prizes: UiPrize[];
+  timeline: UiTimelineEntry[];
+}
+
+const TAG_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
+const ORG_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
+
+const COVER_PALETTE = [
+  { gradient: "from-green-800 via-teal-700 to-cyan-600", label: "HACK\n2025" },
+  { gradient: "from-blue-800 via-indigo-700 to-purple-600", label: "TECH\nhackathon" },
+  { gradient: "from-violet-800 via-purple-700 to-indigo-800", label: "INNO\nVATION" },
+  { gradient: "from-amber-700 via-orange-600 to-red-700", label: "CODE\nFEST" },
+  { gradient: "from-emerald-700 via-green-600 to-teal-700", label: "BUILD\n2025" },
+  { gradient: "from-gray-800 via-slate-700 to-gray-900", label: "DEV\nHACK" },
 ];
- 
+
+const TYPE_STYLES: Record<string, { color: string; bg: string }> = {
+  "حضوري":       { color: "#e35654", bg: "#fef2f2" },
+  "عبر الإنترنت": { color: "#10b981", bg: "#f0fdf4" },
+};
+
+const PRIZE_STYLE_BY_ORDER: Record<number, { icon: string; color: string }> = {
+  1: { icon: "🥇", color: "#f59e0b" },
+  2: { icon: "🥈", color: "#94a3b8" },
+  3: { icon: "🥉", color: "#92400e" },
+};
+
+function formatDateAr(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+}
+
+function formatTimelineDate(value: string): string {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "numeric",
+    month: "long",
+  }).format(d);
+}
+
+function formatPrize(amount: number): string {
+  if (!amount) return "0 ر.س";
+  return `${new Intl.NumberFormat("en-US").format(amount)} ر.س`;
+}
+
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start || !end) return "—";
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (isNaN(s) || isNaN(e) || e <= s) return "—";
+  const hours = Math.round((e - s) / (1000 * 60 * 60));
+  if (hours < 48) return `${hours} ساعة`;
+  const days = Math.round(hours / 24);
+  return `${days} يوم`;
+}
+
+function toUiHackathon(h: ApiHackathonDetail): UiHackathon {
+  const cover = COVER_PALETTE[h.id % COVER_PALETTE.length];
+  const typeStyle = (h.type && TYPE_STYLES[h.type]) || { color: "#6366f1", bg: "#eef2ff" };
+  const orgName = h.org ?? "—";
+  const orgInitial = orgName.charAt(0) || "؟";
+
+  const uiPrizes: UiPrize[] = h.prizes.map((p) => {
+    const style = PRIZE_STYLE_BY_ORDER[p.sortOrder] ?? { icon: "🏆", color: "#6366f1" };
+    return {
+      rank: p.rank,
+      amount: p.amount ?? "—",
+      icon: style.icon,
+      color: style.color,
+    };
+  });
+
+  const uiTimeline: UiTimelineEntry[] = h.timeline.map((t) => ({
+    date: formatTimelineDate(t.date),
+    label: t.label,
+    done: t.done,
+  }));
+
+  return {
+    id: h.id,
+    title: h.title,
+    org: orgName,
+    orgLogo: orgInitial,
+    orgColor: ORG_COLOR_PALETTE[h.id % ORG_COLOR_PALETTE.length],
+    tags: h.tags,
+    tagColors: h.tags.map((_, i) => TAG_PALETTE[i % TAG_PALETTE.length]),
+    type: h.type ?? "—",
+    typeColor: typeStyle.color,
+    typeBg: typeStyle.bg,
+    date: formatDateAr(h.hackathonStartDate),
+    deadline: formatDateAr(h.registrationEndDate),
+    prize: formatPrize(h.prizeTotal),
+    viewers: 0,
+    teams: h.applicantsCount,
+    cover: cover.gradient,
+    coverText: cover.label,
+    featured: false,
+    location: h.location ?? "—",
+    duration: formatDuration(h.hackathonStartDate, h.hackathonEndDate),
+    participants: h.applicantsCount,
+    maxTeam: h.teamMax,
+    registrationOpen: h.registrationOpen,
+    isRegistered: h.isRegistered,
+    participationType: h.participationType,
+    hasTeam: h.hasTeam,
+    desc: h.description ?? "",
+    skills: h.skills ?? [],
+    prizes: uiPrizes,
+    timeline: uiTimeline,
+  };
+}
+
 // ─── Registration Modal ───────────────────────────────────────────────────────
 function RegistrationModal({
+  hackathonId,
   hackathonTitle,
   onClose,
   onSuccess,
 }: {
+  hackathonId: number;
   hackathonTitle: string;
   onClose: () => void;
   onSuccess: (type: "solo" | "team") => void;
 }) {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"type" | "team">("type");
   const [participationType, setParticipationType] = useState<"solo" | "team" | null>(null);
   const [teamMethod, setTeamMethod] = useState<"email" | "ai" | null>(null);
   const [email, setEmail] = useState("");
   const [invitedEmails, setInvitedEmails] = useState<string[]>([]);
- 
+  const [ideaTitle, setIdeaTitle] = useState("");
+  const [ideaDescription, setIdeaDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const participationOptions = [
     {
       id: "solo",
@@ -298,13 +269,38 @@ function RegistrationModal({
     }
   };
  
-  const handleConfirm = () => {
-    if (participationType === "team" && teamMethod === "ai") {
-      navigate("/participant/matchmaking");
+  const trimmedTitle = ideaTitle.trim();
+  const trimmedDesc = ideaDescription.trim();
+  const ideaValid = trimmedTitle.length > 0 && trimmedDesc.length > 0;
+
+  const handleConfirm = async () => {
+    if (!participationType) return;
+    if (participationType === "team" && !teamMethod) return;
+    if (!ideaValid) {
+      setSubmitError("عنوان الفكرة ونبذتها مطلوبان");
       return;
     }
-    onSuccess(participationType!);
-    onClose();
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await apiPost(`/participants/hackathons/${hackathonId}/register`, {
+        ideaTitle: trimmedTitle,
+        ideaDescription: trimmedDesc,
+        participationType,
+      });
+
+      if (participationType === "team" && teamMethod === "ai") {
+        navigate("/participant/matchmaking");
+        return;
+      }
+      onSuccess(participationType);
+      onClose();
+    } catch (e) {
+      setSubmitError(e instanceof ApiError ? e.message : "فشل تسجيل الاشتراك");
+    } finally {
+      setSubmitting(false);
+    }
   };
  
   return (
@@ -439,6 +435,7 @@ function RegistrationModal({
                   teamMethod === "ai" ? "border-[#6366f1] bg-[#eef2ff]" : "border-gray-100"
                 }`}
                 onClick={() => setTeamMethod("ai")}
+                aria-disabled={false}
               >
                 <input
                   type="radio"
@@ -472,8 +469,42 @@ function RegistrationModal({
               </label>
             </div>
           )}
+
+          {/* Step 3: Idea (required for everyone) */}
+          {participationType && (
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
+                نبذة عن الفكرة <span className="text-[#e35654]">*</span>
+              </p>
+              <input
+                type="text"
+                value={ideaTitle}
+                onChange={(e) => setIdeaTitle(e.target.value)}
+                placeholder="عنوان الفكرة"
+                maxLength={200}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654]"
+              />
+              <textarea
+                value={ideaDescription}
+                onChange={(e) => setIdeaDescription(e.target.value)}
+                placeholder="نبذة تفصيلية عن الفكرة (المشكلة، الحل المقترح، الفئة المستهدفة...)"
+                rows={4}
+                maxLength={5000}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] resize-none"
+              />
+              <p className="text-gray-300 text-left" style={{ fontSize: "0.6rem" }}>
+                {trimmedDesc.length} / 5000
+              </p>
+            </div>
+          )}
+
+          {submitError && (
+            <p className="text-red-500 text-xs" style={{ fontWeight: 500 }}>
+              {submitError}
+            </p>
+          )}
         </div>
- 
+
         {/* Footer */}
         <div className="flex items-center justify-between px-6 pb-6 gap-3">
           <button
@@ -485,15 +516,22 @@ function RegistrationModal({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!participationType || (participationType === "team" && !teamMethod)}
+            disabled={
+              !participationType ||
+              (participationType === "team" && !teamMethod) ||
+              !ideaValid ||
+              submitting
+            }
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm transition-all ${
-              participationType && (participationType === "solo" || teamMethod)
+              participationType && (participationType === "solo" || teamMethod) && ideaValid && !submitting
                 ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             }`}
             style={{ fontWeight: 600 }}
           >
-            {participationType === "team" && teamMethod === "ai" ? (
+            {submitting ? (
+              <>جاري الحفظ...</>
+            ) : participationType === "team" && teamMethod === "ai" ? (
               <>
                 <Sparkles className="w-4 h-4" />
                 انتقل لـ AI Matching
@@ -519,10 +557,39 @@ export function ParticipantHackathonDetails() {
   const [showRegModal, setShowRegModal] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [registrationType, setRegistrationType] = useState<"solo" | "team" | null>(null);
- 
-  const hackathon = hackathonsData.find((h) => h.id === Number(id)) || hackathonsData[0];
- 
-  // قراءة حالة التسجيل القادمة من SmartMatchmaking
+  const [hackathon, setHackathon] = useState<UiHackathon | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    setLoading(true);
+    apiGet<ApiHackathonDetail>(`/participants/hackathons/${id}`)
+      .then((data) => {
+        if (cancelled) return;
+        const ui = toUiHackathon(data);
+        setHackathon(ui);
+        if (ui.isRegistered) {
+          setRegistered(true);
+          if (ui.participationType) {
+            setRegistrationType(ui.participationType);
+          }
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل تفاصيل الهاكاثون");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Read the just-joined hint coming from SmartMatchmaking
   useEffect(() => {
     const regType = localStorage.getItem("hackathon_registered");
     if (regType === "team") {
@@ -531,12 +598,19 @@ export function ParticipantHackathonDetails() {
       localStorage.removeItem("hackathon_registered");
     }
   }, []);
- 
+
   const handleRegistrationSuccess = (type: "solo" | "team") => {
     setRegistered(true);
     setRegistrationType(type);
   };
- 
+
+  if (loading) {
+    return <div className="max-w-6xl mx-auto px-4 py-20 text-center text-gray-500">جاري تحميل تفاصيل الهاكاثون...</div>;
+  }
+  if (error || !hackathon) {
+    return <div className="max-w-6xl mx-auto px-4 py-20 text-center text-red-500">{error ?? "الهاكاثون غير موجود"}</div>;
+  }
+
   return (
     <>
       {/* ── Hero Cover ── */}
@@ -779,10 +853,57 @@ export function ParticipantHackathonDetails() {
           <div className="space-y-4">
  
             {/* CTA Card */}
-            <div className={`bg-white rounded-2xl border-2 p-5 sticky top-4 ${registered ? "border-green-200" : "border-gray-100"}`}>
-              {registered ? (
+            <div className={`bg-white rounded-2xl border-2 p-5 sticky top-4 ${
+              registered
+                ? (hackathon.participationType === "team" && !hackathon.hasTeam
+                    ? "border-amber-200"
+                    : "border-green-200")
+                : "border-gray-100"
+            }`}>
+              {registered && hackathon.participationType === "team" && !hackathon.hasTeam ? (
                 <>
-                  {/* ── Registered State ── */}
+                  {/* ── Registered, Awaiting Team ── */}
+                  <div className="flex flex-col items-center text-center py-2">
+                    <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mb-4">
+                      <Users className="w-8 h-8 text-amber-600" />
+                    </div>
+                    <span
+                      className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 text-xs px-3 py-1 rounded-full mb-3"
+                      style={{ fontWeight: 700 }}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      تم تقديم الفكرة
+                    </span>
+                    <h3 className="text-gray-900 mb-1" style={{ fontWeight: 700, fontSize: "0.95rem" }}>
+                      تبقى إيجاد فريق
+                    </h3>
+                    <p className="text-gray-400 text-xs mb-1">
+                      {hackathon.title}
+                    </p>
+                    <p className="text-gray-400 text-xs mb-5 leading-relaxed">
+                      تسجيلك لم يكتمل بعد. انضم إلى فريق لإكمال مشاركتك في الهاكاثون.
+                    </p>
+
+                    <button
+                      onClick={() => navigate("/participant/matchmaking")}
+                      className="w-full py-3 rounded-xl text-sm bg-[#6366f1] text-white hover:bg-[#4f51d4] shadow-md shadow-[#6366f1]/25 transition-all flex items-center justify-center gap-2 mb-2"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      ابحث عن فريق
+                    </button>
+                    <button
+                      onClick={() => navigate("/participant/hackathons")}
+                      className="w-full py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all"
+                      style={{ fontWeight: 600 }}
+                    >
+                      استكشف هاكاثونات أخرى
+                    </button>
+                  </div>
+                </>
+              ) : registered ? (
+                <>
+                  {/* ── Registered, Complete ── */}
                   <div className="flex flex-col items-center text-center py-2">
                     <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
                       <CheckCircle2 className="w-8 h-8 text-green-500" />
@@ -805,7 +926,7 @@ export function ParticipantHackathonDetails() {
                         {registrationType === "solo" ? "مشارك فردي 👤" : "ضمن فريق 👥"}
                       </span>
                     </p>
- 
+
                     <div className="w-full space-y-2 mb-4 text-right">
                       <div className="flex items-center justify-between text-xs bg-gray-50 rounded-xl px-3 py-2">
                         <span className="text-gray-400">موعد الانطلاق</span>
@@ -820,7 +941,7 @@ export function ParticipantHackathonDetails() {
                         <span className="text-gray-700" style={{ fontWeight: 600 }}>{hackathon.duration}</span>
                       </div>
                     </div>
- 
+
                     <button
                       onClick={() => navigate("/participant/hackathons")}
                       className="w-full py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all"
@@ -958,6 +1079,7 @@ export function ParticipantHackathonDetails() {
       {/* Registration Modal */}
       {showRegModal && (
         <RegistrationModal
+          hackathonId={hackathon.id}
           hackathonTitle={hackathon.title}
           onClose={() => setShowRegModal(false)}
           onSuccess={handleRegistrationSuccess}

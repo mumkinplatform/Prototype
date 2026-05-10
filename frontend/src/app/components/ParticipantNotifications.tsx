@@ -1,25 +1,34 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Bell,
   CheckCircle2,
   Trophy,
   Users,
-  FileText,
-  Calendar,
   Star,
-  X,
   CheckCheck,
   Trash2,
-  Filter,
-  Sparkles,
   Clock,
   ArrowRight,
 } from "lucide-react";
+import { apiGet, apiPut, apiDelete, ApiError } from "../../lib/api";
+
+type NotificationType = "acceptance" | "team" | "deadline" | "evaluation" | "achievement" | "system";
+
+interface ApiNotification {
+  id: number;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  actionLabel: string | null;
+  actionRoute: string | null;
+  createdAt: string;
+}
 
 interface Notification {
   id: number;
-  type: "acceptance" | "team" | "deadline" | "evaluation" | "achievement" | "system";
+  type: NotificationType;
   title: string;
   message: string;
   time: string;
@@ -28,82 +37,34 @@ interface Notification {
   actionRoute?: string;
 }
 
-const initialNotifications: Notification[] = [
-  {
-    id: 1,
-    type: "acceptance",
-    title: "تم قبولك في الهاكاثون!",
-    message: "تهانينا! تم قبولك في هاكاثون قمة الذكاء الاصطناعي العالمية. يمكنك الآن الدخول لمساحة العمل.",
-    time: "منذ 5 دقائق",
-    read: false,
-    actionLabel: "دخول مساحة العمل",
-    actionRoute: "/participant/workspace",
-  },
-  {
-    id: 2,
-    type: "team",
-    title: "عضو جديد انضم لفريقك",
-    message: "انضمت ريم العتيبي (مصممة UI/UX) لفريقك في هاكاثون الذكاء الاصطناعي.",
-    time: "منذ 30 دقيقة",
-    read: false,
-  },
-  {
-    id: 3,
-    type: "deadline",
-    title: "تنبيه: موعد التسليم يقترب!",
-    message: "تبقى 3 أيام على الموعد النهائي لتسليم المشروع في هاكاثون الذكاء الاصطناعي. تأكد من رفع مشروعك النهائي.",
-    time: "منذ ساعة",
-    read: false,
-    actionLabel: "رفع المشروع",
-    actionRoute: "/participant/workspace",
-  },
-  {
-    id: 4,
-    type: "evaluation",
-    title: "تقييم جديد من الحكام",
-    message: "حصل مشروعك على تقييم جديد من أحد الحكام في مسار الذكاء الاصطناعي. الدرجة: 85/100.",
-    time: "منذ 3 ساعات",
-    read: true,
-    actionLabel: "عرض التقييم",
-    actionRoute: "/participant/workspace",
-  },
-  {
-    id: 5,
-    type: "achievement",
-    title: "مبارك! حصلت على شهادة مشاركة",
-    message: "تم إصدار شهادة مشاركتك في هاكاثون التقنية المالية. يمكنك تحميلها الآن.",
-    time: "منذ يوم",
-    read: true,
-    actionLabel: "تحميل الشهادة",
-    actionRoute: "/participant/workspace",
-  },
-  {
-    id: 6,
-    type: "system",
-    title: "تحديث سياسة المنصة",
-    message: "تم تحديث شروط وأحكام استخدام منصة مُمكّن. يرجى الاطلاع عليها.",
-    time: "منذ يومين",
-    read: true,
-  },
-  {
-    id: 7,
-    type: "team",
-    title: "رسالة جديدة في شات الفريق",
-    message: "محمد علي أرسل رسالة: 'أنا خلصت من الواجهة الأمامية، من يراجعها؟'",
-    time: "منذ يومين",
-    read: true,
-  },
-  {
-    id: 8,
-    type: "acceptance",
-    title: "هاكاثون جديد يناسب مهاراتك!",
-    message: "بناءً على خبراتك في React وAI، نرشّح لك هاكاثون حلول المدن الذكية. سجّل الآن!",
-    time: "منذ 3 أيام",
-    read: true,
-    actionLabel: "عرض الهاكاثون",
-    actionRoute: "/participant/hackathons",
-  },
-];
+function formatRelativeTime(iso: string): string {
+  const created = new Date(iso).getTime();
+  const now = Date.now();
+  const diffSec = Math.max(0, Math.round((now - created) / 1000));
+  if (diffSec < 60) return "الآن";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `منذ ${diffMin} دقيقة`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `منذ ${diffHr} ساعة`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 30) return `منذ ${diffDay} يوم`;
+  const diffMonth = Math.round(diffDay / 30);
+  return `منذ ${diffMonth} شهر`;
+}
+
+function toUiNotification(n: ApiNotification): Notification {
+  return {
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    message: n.message,
+    time: formatRelativeTime(n.createdAt),
+    read: n.read,
+    actionLabel: n.actionLabel ?? undefined,
+    actionRoute: n.actionRoute ?? undefined,
+  };
+}
+
 
 const typeConfig: Record<string, { icon: any; color: string; bg: string; label: string }> = {
   acceptance: { icon: CheckCircle2, color: "#10b981", bg: "#f0fdf4", label: "قبول" },
@@ -118,21 +79,57 @@ const filterTabs = ["الكل", "غير مقروء", "قبول", "فريق", "ت
 
 export function ParticipantNotifications() {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeFilter, setActiveFilter] = useState("الكل");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ items: ApiNotification[] }>("/participants/notifications")
+      .then((data) => {
+        if (cancelled) return;
+        setNotifications(data.items.map(toUiNotification));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل الإشعارات");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const markAllRead = async () => {
+    try {
+      await apiPut("/participants/notifications/read-all");
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل تحديث الإشعارات");
+    }
   };
 
-  const markAsRead = (id: number) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  const markAsRead = async (id: number) => {
+    try {
+      await apiPut(`/participants/notifications/${id}/read`);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل تحديث الإشعار");
+    }
   };
 
-  const deleteNotification = (id: number) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  const deleteNotification = async (id: number) => {
+    try {
+      await apiDelete(`/participants/notifications/${id}`);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل حذف الإشعار");
+    }
   };
 
   const filtered = notifications.filter((n) => {
@@ -214,7 +211,15 @@ export function ParticipantNotifications() {
           </div>
 
           {/* Notifications List */}
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-500 text-sm">
+              جاري تحميل الإشعارات...
+            </div>
+          ) : error ? (
+            <div className="bg-white rounded-2xl border border-red-100 p-12 text-center text-red-500 text-sm">
+              {error}
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-gray-300" />

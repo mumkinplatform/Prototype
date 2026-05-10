@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { apiGet, apiPost, ApiError } from "../../lib/api";
 import {
   Sparkles,
   Brain,
@@ -29,48 +30,93 @@ const skillOptions = [
   { id: "blockchain", label: "Blockchain", icon: Zap, color: "#f97316" },
 ];
 
-const suggestedTeams = [
-  {
-    id: 1,
-    name: "فريق الابتكار الرقمي",
-    score: 98,
-    members: [
-      { name: "سلمى العتيبي", skill: "UI/UX", avatar: "س", color: "#e35654", level: 90 },
-      { name: "أحمد المطيري", skill: "AI/ML", avatar: "أ", color: "#f59e0b", level: 88 },
-      { name: "نورة الشمري", skill: "Backend", avatar: "ن", color: "#10b981", level: 92 },
-      { name: "خالد الدوسري", skill: "Mobile", avatar: "خ", color: "#8b5cf6", level: 85 },
-    ],
-    tags: ["Frontend", "AI", "Backend", "Mobile"],
-    reason: "فريق متكامل يجمع مهارات تقنية متنوعة مع خبرة عملية في مجال الابتكار.",
-    color: "#e35654",
-  },
-  {
-    id: 2,
-    name: "فريق التقنية الذكية",
-    score: 95,
-    members: [
-      { name: "عبدالله الغامدي", skill: "DevOps", avatar: "ع", color: "#06b6d4", level: 87 },
-      { name: "ريم القحطاني", skill: "Data Science", avatar: "ر", color: "#ec4899", level: 91 },
-      { name: "فيصل العمري", skill: "Frontend", avatar: "ف", color: "#6366f1", level: 89 },
-    ],
-    tags: ["DevOps", "Data", "Frontend"],
-    reason: "تركيبة قوية تجمع بين تحليل البيانات والتطوير والبنية التحتية.",
-    color: "#6366f1",
-  },
-  {
-    id: 3,
-    name: "فريق البناة",
-    score: 91,
-    members: [
-      { name: "منال الحربي", skill: "Blockchain", avatar: "م", color: "#f97316", level: 83 },
-      { name: "طارق السبيعي", skill: "Backend", avatar: "ط", color: "#10b981", level: 88 },
-      { name: "دانة الزهراني", skill: "UI/UX", avatar: "د", color: "#e35654", level: 94 },
-    ],
-    tags: ["Blockchain", "Backend", "UX"],
-    reason: "فريق مثالي لمشاريع Web3 والتطبيقات اللامركزية مع تصميم احترافي.",
-    color: "#f97316",
-  },
-];
+interface ApiMyHackathon {
+  id: number;
+  title: string;
+  status: string;
+  registrationDeadline: string | null;
+  hackathonStartDate: string | null;
+  teamMin: number;
+  teamMax: number;
+  myTeamId: number | null;
+}
+
+interface ApiTeamMember {
+  id: number;
+  fullName: string;
+  isLeader: boolean;
+  skills: string[];
+}
+
+interface ApiTeam {
+  id: number;
+  name: string;
+  leaderId: number;
+  leaderName: string;
+  membersCount: number;
+  tags: string[];
+  members: ApiTeamMember[];
+}
+
+interface UiTeamMember {
+  name: string;
+  skill: string;
+  avatar: string;
+  color: string;
+  level: number;
+}
+
+interface UiTeam {
+  id: number;
+  name: string;
+  score: number;
+  members: UiTeamMember[];
+  tags: string[];
+  reason: string;
+  color: string;
+}
+
+const TEAM_COLOR_PALETTE = ["#e35654", "#6366f1", "#f97316", "#10b981", "#06b6d4", "#8b5cf6"];
+const MEMBER_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#ec4899", "#f97316"];
+
+function colorByIndex(palette: string[], i: number): string {
+  return palette[i % palette.length];
+}
+
+function computeMatchScore(teamTags: string[], selectedSkillLabels: string[]): number {
+  if (selectedSkillLabels.length === 0) return 0;
+  const teamLower = teamTags.map((t) => t.toLowerCase());
+  let matches = 0;
+  for (const s of selectedSkillLabels) {
+    if (teamLower.some((t) => t.includes(s.toLowerCase()) || s.toLowerCase().includes(t))) {
+      matches += 1;
+    }
+  }
+  return Math.round((matches / selectedSkillLabels.length) * 100);
+}
+
+function toUiTeam(t: ApiTeam, index: number, score: number): UiTeam {
+  const teamColor = colorByIndex(TEAM_COLOR_PALETTE, index);
+  return {
+    id: t.id,
+    name: t.name,
+    score,
+    color: teamColor,
+    tags: t.tags,
+    reason: score >= 70
+      ? "نسبة توافق عالية مع مهاراتك المحددة."
+      : score >= 30
+      ? "بعض مهاراتك متطابقة مع تخصصات الفريق."
+      : "فريق متاح للانضمام إذا تبحث عن خبرات جديدة.",
+    members: t.members.map((m, mi) => ({
+      name: m.fullName,
+      skill: m.skills[0] ?? (m.isLeader ? "قائد الفريق" : "—"),
+      avatar: m.fullName.charAt(0) || "؟",
+      color: colorByIndex(MEMBER_COLOR_PALETTE, mi),
+      level: 80,
+    })),
+  };
+}
 
 type Phase = "skills" | "loading" | "results";
 
@@ -82,25 +128,88 @@ export function SmartMatchmaking() {
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
   const [joined, setJoined] = useState(false);
 
+  const [myHackathons, setMyHackathons] = useState<ApiMyHackathon[]>([]);
+  const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(null);
+  const [teams, setTeams] = useState<UiTeam[]>([]);
+  const [hackathonsError, setHackathonsError] = useState<string | null>(null);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
+
+  // Load hackathons the participant is registered in
+  useEffect(() => {
+    apiGet<{ items: ApiMyHackathon[] }>("/participants/my-hackathons")
+      .then((data) => {
+        setMyHackathons(data.items);
+        if (data.items.length > 0) {
+          setSelectedHackathonId(data.items[0].id);
+        }
+      })
+      .catch((e) => {
+        setHackathonsError(e instanceof ApiError ? e.message : "فشل تحميل الهاكاثونات");
+      });
+  }, []);
+
+  const selectedSkillLabels = useMemo(
+    () =>
+      selectedSkills
+        .map((id) => skillOptions.find((s) => s.id === id)?.label)
+        .filter((l): l is string => Boolean(l)),
+    [selectedSkills]
+  );
+
   const toggleSkill = (id: string) => {
     setSelectedSkills((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
     );
   };
 
-  const startAnalysis = () => {
+  const startAnalysis = async () => {
+    if (!selectedHackathonId) return;
+    setTeamsError(null);
     setPhase("loading");
     setLoadingProgress(0);
+
     const interval = setInterval(() => {
       setLoadingProgress((prev) => {
         if (prev >= 100) {
           clearInterval(interval);
-          setTimeout(() => setPhase("results"), 300);
           return 100;
         }
         return prev + 8;
       });
     }, 150);
+
+    try {
+      const data = await apiGet<{ items: ApiTeam[] }>(
+        `/participants/hackathons/${selectedHackathonId}/teams`
+      );
+      const ranked = data.items
+        .map((t, i) => ({ team: t, index: i, score: computeMatchScore(t.tags, selectedSkillLabels) }))
+        .sort((a, b) => b.score - a.score)
+        .map(({ team, index, score }) => toUiTeam(team, index, score));
+      setTeams(ranked);
+    } catch (e) {
+      setTeamsError(e instanceof ApiError ? e.message : "فشل تحميل الفرق");
+      setTeams([]);
+    } finally {
+      // Let the progress bar reach 100% before transitioning
+      setTimeout(() => setPhase("results"), 400);
+    }
+  };
+
+  const handleJoinTeam = async (teamId: number) => {
+    if (!selectedHackathonId) return;
+    setJoinError(null);
+    try {
+      await apiPost(`/participants/hackathons/${selectedHackathonId}/join-team`, { teamId });
+      setJoined(true);
+      setTimeout(() => {
+        localStorage.setItem("hackathon_registered", "team");
+        navigate(-1);
+      }, 1400);
+    } catch (e) {
+      setJoinError(e instanceof ApiError ? e.message : "فشل الانضمام للفريق");
+    }
   };
 
   const steps = [
@@ -213,11 +322,26 @@ export function SmartMatchmaking() {
               <label className="text-gray-700 text-sm block mb-2" style={{ fontWeight: 500 }}>
                 الهاكاثون المستهدف
               </label>
-              <select className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all">
-                <option>هاكاثون NEOM 2025</option>
-                <option>Health Tech Hackathon</option>
-                <option>Fintech Innovation Cup</option>
-              </select>
+              {hackathonsError ? (
+                <p className="text-red-500 text-sm">{hackathonsError}</p>
+              ) : myHackathons.length === 0 ? (
+                <div className="px-4 py-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
+                  لا توجد هاكاثونات مسجّل فيها بعد. سجّل في هاكاثون أولاً.
+                </div>
+              ) : (
+                <select
+                  value={selectedHackathonId ?? ""}
+                  onChange={(e) => setSelectedHackathonId(Number(e.target.value))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
+                >
+                  {myHackathons.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.title}
+                      {h.myTeamId !== null ? " (لديك فريق بالفعل)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="flex items-center justify-between">
@@ -228,9 +352,9 @@ export function SmartMatchmaking() {
               </p>
               <button
                 onClick={startAnalysis}
-                disabled={selectedSkills.length === 0}
+                disabled={selectedSkills.length === 0 || !selectedHackathonId}
                 className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-white text-sm transition-all duration-200 ${
-                  selectedSkills.length > 0
+                  selectedSkills.length > 0 && selectedHackathonId
                     ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25"
                     : "bg-gray-200 cursor-not-allowed"
                 }`}
@@ -317,8 +441,23 @@ export function SmartMatchmaking() {
             </button>
           </div>
 
+          {teamsError ? (
+            <div className="text-center py-12 text-red-500 text-sm">{teamsError}</div>
+          ) : teams.length === 0 ? (
+            <div className="text-center py-12 px-6 rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+              <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                لا توجد فرق متاحة للانضمام في هذا الهاكاثون بعد.
+              </p>
+              <p className="text-gray-400 text-xs mt-1">
+                جرّب لاحقاً، أو ارجع لصفحة الهاكاثون لإنشاء فريق جديد.
+              </p>
+            </div>
+          ) : (
           <div className="space-y-4">
-            {suggestedTeams.map((team) => (
+            {joinError && (
+              <p className="text-red-500 text-sm" style={{ fontWeight: 500 }}>{joinError}</p>
+            )}
+            {teams.map((team) => (
               <div
                 key={team.id}
                 className={`bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all duration-200 cursor-pointer ${
@@ -426,11 +565,7 @@ export function SmartMatchmaking() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setJoined(true);
-                          setTimeout(() => {
-                            localStorage.setItem("hackathon_registered", "team");
-                            navigate(-1);
-                          }, 1400);
+                          handleJoinTeam(team.id);
                         }}
                         className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm transition-all duration-200 flex-1 justify-center ${
                           joined
@@ -457,6 +592,7 @@ export function SmartMatchmaking() {
               </div>
             ))}
           </div>
+          )}
 
           {/* How it works info */}
           <div className="mt-8 bg-gradient-to-br from-[#e35654]/5 to-[#e35654]/10 rounded-2xl p-6 border border-[#e35654]/10">

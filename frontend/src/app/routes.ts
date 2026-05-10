@@ -28,6 +28,7 @@ import { HackathonWinners } from "./components/HackathonWinners";
 import { HackathonStatistics } from "./components/HackathonStatistics";
 import { Notifications } from "./components/Notifications";
 import { Profile } from "./components/Profile";
+import { ParticipantProfile } from "./components/ParticipantProfile";
 import { SponsorNotifications } from "./components/SponsorNotifications";
 import { SponsorProfile } from "./components/SponsorProfile";
 import { SponsorLayout } from "./components/SponsorLayout";
@@ -39,6 +40,7 @@ import { RootLayout } from "./components/RootLayout";
 import { VerifyOTP } from "./components/VerifyOTP";
 import { ForgotPassword } from "./components/ForgotPassword";
 import { PublicHackathonPage } from "./components/PublicHackathonPage";
+import { SystemStatus } from "./components/SystemStatus";
 import { InviteAcceptPage } from "./components/InviteAcceptPage";
 
 export const router = createBrowserRouter([
@@ -54,6 +56,7 @@ export const router = createBrowserRouter([
           { path: "auth", Component: AuthPage },
           { path: "verify-otp", Component: VerifyOTP },
           { path: "forgot-password", Component: ForgotPassword },
+          { path: "system-status", Component: SystemStatus },
         ],
       },
       /* ── Public hackathon page (no platform layout) ── */
@@ -113,7 +116,7 @@ export const router = createBrowserRouter([
           { path: "messages", Component: MessagesPage },
           { path: "payments", Component: PaymentsPage },
           { path: "notifications", Component: ParticipantNotifications },
-          { path: "profile", Component: Profile },
+          { path: "profile", Component: ParticipantProfile },
         ],
       },
     ],
