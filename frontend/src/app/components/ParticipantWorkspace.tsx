@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { apiGet, apiPut, apiDelete, apiPost, apiUpload, API_URL, ApiError } from "../../lib/api";
+import { HackathonCover, BrandingPayload } from "./HackathonCover";
 import {
   ArrowLeft,
   Calendar,
@@ -42,235 +44,380 @@ const IMG_AI = "https://images.unsplash.com/photo-1540058404349-2e5fabf32d75?cro
 const IMG_CYBER = "https://images.unsplash.com/photo-1768839721176-2fa91fdce725?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=600";
 const IMG_CITY = "https://images.unsplash.com/photo-1758640098400-061795902273?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=600";
 
-// ── Hackathons Data ──────────────────────────────────────────────
-const myHackathons = [
-  {
-    id: 1,
-    name: "قمة الذكاء الاصطناعي العالمية",
-    status: "مقبول",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    note: "تبقى 12 يوماً على الموعد النهائي لتسليم المشروع الأولي.",
-    image: IMG_AI,
-    track: "الذكاء الاصطناعي",
-    organizer: "STC",
-    location: "إلكتروني بالكامل",
-    tags: ["إلكتروني", "ذكاء اصطناعي", "تعلم آلي"],
-    description: "قمة تقنية عالمية لتطوير حلول الذكاء الاصطناعي والتعلم الآلي. تجمع المطورين والباحثين من أكثر من 20 دولة لبناء نماذج ذكاء اصطناعي تحل مشكلات حقيقية في مجالات الصحة والتعليم والطاقة والمالية.",
-    startDate: "1 أكتوبر 2025",
-    endDate: "15 أكتوبر 2025",
-    submissionDate: "13 أكتوبر 2025",
-    daysLeft: 10,
-    hoursLeft: 5,
-    minutesLeft: 32,
-  },
-  {
-    id: 2,
-    name: "تحدي المن السيبراني للمحترفين",
-    status: "مقبول",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    note: "تم القبول في فريقك. يمكنك البدء في مرحلة النماذج الأولية.",
-    image: IMG_CYBER,
-    track: "الأمن السيبراني",
-    organizer: "CITC",
-    location: "الرياض، السعودية",
-    tags: ["حضوري", "أمن سيبراني", "اختراق أخلاقي"],
-    description: "تحدي وطني لتطوير حلول أمن سيبراني متقدمة لحماية البنية التحتية الرقمية.",
-    startDate: "15 أكتوبر 2025",
-    endDate: "30 أكتوبر 2025",
-    submissionDate: "28 أكتوبر 2025",
-    daysLeft: 25,
-    hoursLeft: 10,
-    minutesLeft: 45,
-  },
-  {
-    id: 3,
-    name: "هاكاثون حلول المدن الذكية",
-    status: "مقبول",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    note: "انضم إلى فريقك وابدأ التخطيط للمشروع.",
-    image: IMG_CITY,
-    track: "المدن الذكية",
-    organizer: "NEOM",
-    location: "جدة، السعودية",
-    tags: ["هجين", "IoT", "مدن ذكية"],
-    description: "مسابقة لابتكار حلول تقنية للمدن الذكية باستخدام إنترنت الأشياء واتقنيات الحديثة.",
-    startDate: "1 نوفمبر 2025",
-    endDate: "20 نوفمبر 2025",
-    submissionDate: "18 نوفمبر 2025",
-    daysLeft: 40,
-    hoursLeft: 15,
-    minutesLeft: 20,
-  },
-];
+// ── API Types ────────────────────────────────────────────────────
+interface ApiMyHackathon {
+  id: number;
+  title: string;
+  description: string | null;
+  type: string | null;
+  location: string | null;
+  org: string | null;
+  registrationStartDate: string | null;
+  registrationDeadline: string | null;
+  hackathonStartDate: string | null;
+  hackathonEndDate: string | null;
+  submissionDeadline: string | null;
+  announcementDate: string | null;
+  winnersDate: string | null;
+  status: string;
+  teamMin: number;
+  teamMax: number;
+  myTeamId: number | null;
+  participationType: "solo" | "team";
+  tags: string[];
+  branding: BrandingPayload | null;
+}
+
+interface UiTimelinePhase {
+  phase: string;
+  date: string;
+  status: "completed" | "active" | "upcoming";
+  color: string;
+}
+
+interface UiMyHackathon {
+  id: number;
+  name: string;
+  status: string;
+  statusColor: string;
+  statusBg: string;
+  note: string;
+  branding: BrandingPayload | null;
+  track: string;
+  organizer: string;
+  location: string;
+  tags: string[];
+  description: string;
+  startDate: string;
+  endDate: string;
+  submissionDate: string;
+  daysLeft: number;
+  hoursLeft: number;
+  minutesLeft: number;
+  submissionDeadlineRaw: string | null;
+  hasTeam: boolean;
+  participationType: "solo" | "team";
+  timeline: UiTimelinePhase[];
+}
+
+function formatDateAr(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+}
+
+function computeCountdown(deadline: string | null): { days: number; hours: number; minutes: number } {
+  if (!deadline) return { days: 0, hours: 0, minutes: 0 };
+  const target = new Date(deadline).getTime();
+  const now = Date.now();
+  const diff = Math.max(0, target - now);
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+  const minutes = Math.floor((diff / (1000 * 60)) % 60);
+  return { days, hours, minutes };
+}
+
+function formatRange(start: string | null, end: string | null): string {
+  if (!start && !end) return "—";
+  if (start && end && new Date(start).getTime() !== new Date(end).getTime()) {
+    return `${formatDateAr(start)} — ${formatDateAr(end)}`;
+  }
+  return formatDateAr(start ?? end);
+}
+
+function buildTimeline(h: ApiMyHackathon): UiTimelinePhase[] {
+  const now = Date.now();
+
+  const phases: Array<{
+    phase: string;
+    start: string | null;
+    end: string | null;
+  }> = [
+    { phase: "التسجيل والقبول", start: h.registrationStartDate, end: h.registrationDeadline },
+    { phase: "بداية المسابقة", start: h.hackathonStartDate, end: h.hackathonStartDate },
+    { phase: "التسليم النهائي", start: h.submissionDeadline, end: h.submissionDeadline },
+    { phase: "إعلان النتائج", start: h.winnersDate, end: h.winnersDate },
+  ];
+
+  return phases
+    .filter((p) => p.start || p.end)
+    .map((p): UiTimelinePhase => {
+      const startMs = p.start ? new Date(p.start).getTime() : null;
+      const endMs = p.end ? new Date(p.end).getTime() : null;
+
+      let status: UiTimelinePhase["status"];
+      let color: string;
+      if (endMs !== null && now > endMs) {
+        status = "completed";
+        color = "#10b981";
+      } else if (startMs !== null && now >= startMs) {
+        status = "active";
+        color = "#e35654";
+      } else {
+        status = "upcoming";
+        color = "#6b7280";
+      }
+
+      return {
+        phase: p.phase,
+        date: formatRange(p.start, p.end),
+        status,
+        color,
+      };
+    });
+}
+
+function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
+  const cd = computeCountdown(h.submissionDeadline);
+  const note = h.myTeamId
+    ? "تم القبول في فريقك. يمكنك البدء في العمل على المشروع."
+    : h.participationType === "team"
+    ? "تسجيلك لم يكتمل — تبقى إيجاد فريق."
+    : "أنت مسجّل بشكل فردي. ابدأ في إعداد مشروعك.";
+
+  return {
+    id: h.id,
+    name: h.title,
+    status: h.myTeamId || h.participationType === "solo" ? "مقبول" : "بانتظار فريق",
+    statusColor: h.myTeamId || h.participationType === "solo" ? "#10b981" : "#f59e0b",
+    statusBg: h.myTeamId || h.participationType === "solo" ? "#f0fdf4" : "#fffbeb",
+    note,
+    branding: h.branding,
+    track: h.tags[0] ?? (h.type ?? "هاكاثون"),
+    organizer: h.org ?? "—",
+    location: h.location ?? "—",
+    tags: h.tags.length > 0 ? h.tags : (h.type ? [h.type] : []),
+    description: h.description ?? "",
+    startDate: formatDateAr(h.hackathonStartDate),
+    endDate: formatDateAr(h.hackathonEndDate),
+    submissionDate: formatDateAr(h.submissionDeadline),
+    daysLeft: cd.days,
+    hoursLeft: cd.hours,
+    minutesLeft: cd.minutes,
+    submissionDeadlineRaw: h.submissionDeadline,
+    hasTeam: h.myTeamId !== null,
+    participationType: h.participationType,
+    timeline: buildTimeline(h),
+  };
+}
+
+// ── Hackathons Data (legacy mock — kept for reference, unused) ───
 
 // ─── Types ──────────────────────────────────────────────
 type WorkspaceTab = "home" | "team" | "submission" | "evaluations" | "certificates" | "sessions";
 
-// ─── Team Data ──────────────────────────────────────────
-const teamMembers = [
-  { name: "أحمد محمد", role: "مطوّر Full Stack", color: "#e35654", initials: "أ", you: true, online: true },
-  { name: "ريم العتيبي", role: "مصممة UI/UX", color: "#6366f1", initials: "ر", online: true },
-  { name: "عبدالله الغامدي", role: "مطوّر AI/ML", color: "#10b981", initials: "ع", online: false },
-  { name: "نورة الشمري", role: "محللة بيانات", color: "#f59e0b", initials: "ن", online: true },
-];
+// ─── Team Chat ────────────────────────────────────────────
+interface ApiTeamMessage {
+  id: number;
+  senderId: number;
+  senderName: string;
+  text: string;
+  createdAt: string;
+  isMine: boolean;
+}
 
-const chatMessages = [
-  { id: 1, sender: "ريم العتيبي", avatar: "ر", color: "#6366f1", text: "خلصت تصميم الواجهة الرئيسية 🎨", time: "10:30 ص", mine: false },
-  { id: 2, sender: "أنت", avatar: "أ", color: "#e35654", text: "ممتاز! أنا أشتغل على الـ API حالياً", time: "10:32 ص", mine: true },
-  { id: 3, sender: "عبدالله الغامدي", avatar: "ع", color: "#10b981", text: "النموذج جاهز للتجربة، أرسلته على GitHub 💻", time: "10:45 ص", mine: false },
-  { id: 4, sender: "نورة الشمري", avatar: "ن", color: "#f59e0b", text: "جمعت البيانات المطلوبة وجهزت الـ Dashboard", time: "11:00 ص", mine: false },
-];
+// ─── Evaluations ──────────────────────────────────────────
+interface ApiEvaluation {
+  id: number;
+  judgeName: string;
+  judgeSpecialty: string | null;
+  comment: string | null;
+  evaluatedAt: string;
+  criteria: { name: string; score: number }[];
+  totalScore: number;
+  maxScore: number;
+}
 
-// ─── Evaluations Data ───────────────────────────────────
-const evaluations = [
-  {
-    judge: "د. فهد العمري",
-    role: "خبير ذكاء اصطناعي",
-    score: 88,
-    maxScore: 100,
-    criteria: [
-      { name: "الابتكار", score: 92 },
-      { name: "الجدوى التقنية", score: 85 },
-      { name: "جودة العرض", score: 90 },
-      { name: "التأثير المجتمعي", score: 84 },
-    ],
-    comment: "مشروع متميز من ناحية الابتكار. التطبيق العملي للنموذج ممتاز وواجهة المستخدم سلسة.",
-    date: "15 سبتمبر 2025",
-  },
-  {
-    judge: "أ. سارة الحربي",
-    role: "مديرة منتجات تقنية",
-    score: 82,
-    maxScore: 100,
-    criteria: [
-      { name: "الابتكار", score: 80 },
-      { name: "الجدوى التقنية", score: 88 },
-      { name: "جودة العرض", score: 78 },
-      { name: "التأثير المجتمعي", score: 82 },
-    ],
-    comment: "عمل جيد في الجانب التقني. أقترح تحسين طريقة عرض البيانات وإضافة أمثلة حية.",
-    date: "16 سبتمبر 2025",
-  },
-];
+// ─── Certificates ─────────────────────────────────────────
+interface ApiCertificate {
+  id: number;
+  hackathonId: number;
+  hackathonTitle: string;
+  title: string;
+  type: "participation" | "win" | "completion";
+  position: string | null;
+  fileUrl: string | null;
+  issuedAt: string;
+}
 
-// ─── Certificates Data ──────────────────────────────────
-const certificates = [
-  { id: 1, title: "شهادة مشاركة", hackathon: "قمة الذكاء الاصطناعي العالمية", date: "20 سبتمبر 2025", type: "مشاركة", color: "#6366f1" },
-  { id: 2, title: "شهادة المركز الثاني", hackathon: "هاكاثون التقنية المالية", date: "15 أغسطس 2025", type: "فوز", color: "#f59e0b" },
-  { id: 3, title: "شهادة إكمال التدريب", hackathon: "ورشة تحضيرية - الذكاء الاصطناعي", date: "1 أغسطس 2025", type: "تدريب", color: "#10b981" },
-];
+const CERT_TYPE_STYLE: Record<ApiCertificate["type"], { color: string; label: string }> = {
+  participation: { color: "#6366f1", label: "مشاركة" },
+  win:           { color: "#f59e0b", label: "فوز" },
+  completion:    { color: "#10b981", label: "تدريب" },
+};
 
-// ─── Project Files ──────────────────────────────────────
-const projectFiles = [
-  { name: "العرض التقديمي النهائي.pdf", size: "4.2 MB", color: "#e35654", date: "18 سبتمبر 2025" },
-  { name: "الكود المصدري.zip", size: "12.8 MB", color: "#6366f1", date: "18 سبتمبر 2025" },
-  { name: "فيديو توضيحي.mp4", size: "45.3 MB", color: "#10b981", date: "17 سبتمبر 2025" },
-];
+// ─── Submission ───────────────────────────────────────────
+interface ApiSubmissionFile {
+  id: number;
+  name: string;
+  url: string;
+  size: number;
+  mimeType: string | null;
+  uploadedAt: string;
+  uploaderName?: string | null;
+}
 
-// ─── Submission Requirements ──────────────────────────────
-const submissionRequirements = [
-  { id: 1, title: "العرض التقديمي", description: "عرض تقديمي شامل عن المشروع (PDF أو PPT)", completed: true },
-  { id: 2, title: "الكود المصدري", description: "رابط GitHub أو ملف ZIP يحتوي على الكود الكامل", completed: true },
-  { id: 3, title: "فيديو توضيحي", description: "فيديو يشرح المشروع والحل المقترح (3-5 دقائق)", completed: true },
-  { id: 4, title: "ملف README", description: "وثيقة تشرح كيفية تشغيل المشروع وفكرته", completed: false },
-  { id: 5, title: "البيانات التجريبية", description: "عينة من البيانات المستخدمة في التدريب (إن وجد)", completed: false },
-];
+interface ApiSubmission {
+  submissionId: number;
+  projectName: string | null;
+  projectDescription: string | null;
+  repoUrl: string | null;
+  demoUrl: string | null;
+  submittedAt: string | null;
+  submissionDeadline: string | null;
+  allowLateSubmission: boolean;
+  maxFileSizeMb: number;
+  submissionFields: string[];
+  requirements: string[];
+  files: ApiSubmissionFile[];
+}
 
-// ─── Sessions Data ──────────────────────────────────────
-const sessions = [
-  {
-    id: 1,
-    title: "جلسة الافتتاح والتوجيه",
-    type: "zoom",
-    date: "1 أكتوبر 2025",
-    time: "10:00 ص",
-    duration: "ساعة واحدة",
-    status: "completed",
-    link: "https://zoom.us/j/123456789",
-    description: "جلسة ترحيبية وتوجيهية للمشاركين مع شرح قواعد المسابقة والجدول الزمني.",
-  },
-  {
-    id: 2,
-    title: "ورشة تدريبية: مقدمة في التعلم الآلي",
-    type: "zoom",
-    date: "3 أكتوبر 2025",
-    time: "6:00 م",
-    duration: "ساعتان",
-    status: "upcoming",
-    link: "https://zoom.us/j/987654321",
-    description: "ورشة عملية لتعلم أساسيات التعلم الآلي وتطبيقاتها العملية.",
-  },
-  {
-    id: 3,
-    title: "جلسة الإرشاد مع الخبراء",
-    type: "teams",
-    date: "7 أكتوبر 2025",
-    time: "4:00 م",
-    duration: "3 ساعات",
-    status: "upcoming",
-    link: "https://teams.microsoft.com/l/meetup-join/123",
-    description: "جلسة استشارية مفتوحة مع خبراء في الذكاء الاصطناعي للإجابة على أسئلة الفرق.",
-  },
-  {
-    id: 4,
-    title: "العرض التقديمي النهائي",
-    type: "zoom",
-    date: "13 أكتوبر 2025",
-    time: "2:00 م",
-    duration: "4 ساعات",
-    status: "scheduled",
-    link: "https://zoom.us/j/456789123",
-    description: "جلسة العروض التقديمية النهائية أمام لجنة التحكيم.",
-  },
-];
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+const FILE_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
+
+// ─── Sessions ─────────────────────────────────────────────
+type SessionPlatform = "zoom" | "teams" | "meet" | "other";
+type SessionStatus = "completed" | "live" | "soon" | "scheduled";
+
+interface ApiSession {
+  id: number;
+  title: string;
+  description: string | null;
+  type: SessionPlatform;
+  startAt: string;
+  durationMinutes: number;
+  link: string | null;
+}
+
+interface UiSession {
+  id: number;
+  title: string;
+  description: string;
+  type: SessionPlatform;
+  date: string;
+  time: string;
+  duration: string;
+  status: SessionStatus;
+  link: string | null;
+}
+
+function formatTimeAr(value: string): string {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} دقيقة`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 1 && m === 0) return "ساعة واحدة";
+  if (h === 2 && m === 0) return "ساعتان";
+  if (m === 0) return `${h} ساعات`;
+  return `${h} س ${m} د`;
+}
+
+function computeSessionStatus(startAt: string, durationMinutes: number): SessionStatus {
+  const startMs = new Date(startAt).getTime();
+  const endMs = startMs + durationMinutes * 60 * 1000;
+  const now = Date.now();
+  if (now >= endMs) return "completed";
+  if (now >= startMs) return "live";
+  // Starts within 24 hours
+  if (startMs - now <= 24 * 60 * 60 * 1000) return "soon";
+  return "scheduled";
+}
+
+function toUiSession(s: ApiSession): UiSession {
+  return {
+    id: s.id,
+    title: s.title,
+    description: s.description ?? "",
+    type: s.type,
+    date: formatDateAr(s.startAt),
+    time: formatTimeAr(s.startAt),
+    duration: formatDuration(s.durationMinutes),
+    status: computeSessionStatus(s.startAt, s.durationMinutes),
+    link: s.link,
+  };
+}
 
 // ─── Timeline Data ──────────────────────────────────────
-const timeline = [
-  { phase: "التسجيل والقبول", date: "15-30 سبتمبر", status: "completed", color: "#10b981" },
-  { phase: "بداية المسابقة", date: "1 أكتوبر", status: "completed", color: "#10b981" },
-  { phase: "تطوير النماذج الأولية", date: "1-7 أكتوبر", status: "active", color: "#e35654" },
-  { phase: "التسليم الأولي", date: "7 أكتوبر", status: "upcoming", color: "#6b7280" },
-  { phase: "التطوير النهائي", date: "8-12 أكتوبر", status: "upcoming", color: "#6b7280" },
-  { phase: "التسليم النهائي", date: "13 أكتوبر", status: "upcoming", color: "#6b7280" },
-  { phase: "العروض التقديمية", date: "13 أكتوبر", status: "upcoming", color: "#6b7280" },
-  { phase: "إعلان النتائج", date: "15 أكتوبر", status: "upcoming", color: "#6b7280" },
-];
-
 // ─── Sidebar Cards ──────────────────────────────────────
-const sidebarCards: { tab: WorkspaceTab; icon: any; label: string; desc: string; color: string; bg: string; badge?: string }[] = [
+const sidebarCards: { tab: WorkspaceTab; icon: any; label: string; desc: string; color: string; bg: string }[] = [
   { tab: "home", icon: Home, label: "الرئيسية", desc: "نظرة عامة على الهاكاثون", color: "#6366f1", bg: "#eef2ff" },
-  { tab: "team", icon: Users, label: "بيانات الفريق", desc: "التواصل مع أعضاء فريقك", color: "#10b981", bg: "#f0fdf4", badge: "4" },
-  { tab: "sessions", icon: Video, label: "الجلسات", desc: "الانضمام للجلسات المباشرة", color: "#06b6d4", bg: "#ecfeff", badge: "4" },
-  { tab: "submission", icon: Upload, label: "رفع المشروع", desc: "رفع ومعاينة التسليمات", color: "#e35654", bg: "#fef2f2", badge: "3" },
-  { tab: "evaluations", icon: BarChart3, label: "التقييمات", desc: "تقييمات الحكام لمشروعك", color: "#f59e0b", bg: "#fffbeb", badge: "2" },
-  { tab: "certificates", icon: Award, label: "الشهادات", desc: "عرض وتحميل شهاداتك", color: "#8b5cf6", bg: "#f5f3ff", badge: "3" },
+  { tab: "team", icon: Users, label: "بيانات الفريق", desc: "التواصل مع أعضاء فريقك", color: "#10b981", bg: "#f0fdf4" },
+  { tab: "sessions", icon: Video, label: "الجلسات", desc: "الانضمام للجلسات المباشرة", color: "#06b6d4", bg: "#ecfeff" },
+  { tab: "submission", icon: Upload, label: "رفع المشروع", desc: "رفع ومعاينة التسليمات", color: "#e35654", bg: "#fef2f2" },
+  { tab: "evaluations", icon: BarChart3, label: "التقييمات", desc: "تقييمات الحكام لمشروعك", color: "#f59e0b", bg: "#fffbeb" },
+  { tab: "certificates", icon: Award, label: "الشهادات", desc: "عرض وتحميل شهاداتك", color: "#8b5cf6", bg: "#f5f3ff" },
 ];
 
 // ═══════════════════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════════════════
 export function ParticipantWorkspace() {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const hackathonId = searchParams.get("id");
-  const selectedHackathon = hackathonId ? myHackathons.find(h => h.id === Number(hackathonId)) : null;
 
-  // إذا لم يتم اختيار هاكاثون، اعرض القائمة
-  if (!hackathonId || !selectedHackathon) {
-    return <WorkspacesList />;
+  const [hackathons, setHackathons] = useState<UiMyHackathon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ items: ApiMyHackathon[] }>("/participants/my-hackathons")
+      .then((data) => {
+        if (cancelled) return;
+        setHackathons(data.items.map(toUiMyHackathon));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل مساحات العمل");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return <div className="min-h-screen bg-[#f7f7f6] flex items-center justify-center text-gray-500 text-sm">جاري تحميل مساحات العمل...</div>;
+  }
+  if (error) {
+    return <div className="min-h-screen bg-[#f7f7f6] flex items-center justify-center text-red-500 text-sm">{error}</div>;
   }
 
-  // إذا تم اختيار هاكاثون، اعرض مساحة العمل
+  const selectedHackathon = hackathonId ? hackathons.find((h) => h.id === Number(hackathonId)) : null;
+
+  if (!hackathonId || !selectedHackathon) {
+    return <WorkspacesList hackathons={hackathons} />;
+  }
+
   return <WorkspaceDetails hackathon={selectedHackathon} />;
 }
 
 // ═══════════════════════════════════════════════════════════
 // Workspaces List
 // ═══════════════════════════════════════════════════════════
-function WorkspacesList() {
+function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
   const navigate = useNavigate();
 
   const handleEnterWorkspace = (hackathonId: number) => {
@@ -302,28 +449,44 @@ function WorkspacesList() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        {hackathons.length === 0 ? (
+          <div className="text-center py-20 px-6 rounded-2xl border border-dashed border-gray-200 bg-white">
+            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+              ما عندك أي هاكاثونات مسجّل فيها بعد
+            </p>
+            <p className="text-gray-400 text-xs mt-1">
+              تصفّح الهاكاثونات وسجّل في أي واحد لتظهر هنا.
+            </p>
+            <button
+              onClick={() => navigate("/participant/hackathons")}
+              className="mt-4 px-5 py-2 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors"
+              style={{ fontWeight: 600 }}
+            >
+              تصفّح الهاكاثونات
+            </button>
+          </div>
+        ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {myHackathons.map((h) => (
+          {hackathons.map((h) => (
             <div
               key={h.id}
               className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all group flex flex-col h-full"
             >
-              {/* Image */}
-              <div className="relative h-48 overflow-hidden">
-                <img src={h.image} alt={h.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)" }} />
-                <div className="absolute bottom-4 right-4 left-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs px-3 py-1.5 rounded-full text-white shadow-md" style={{ background: "#e35654", fontWeight: 600 }}>
-                      {h.track}
-                    </span>
-                    <span
-                      className="text-xs px-3 py-1.5 rounded-full shadow-md"
-                      style={{ background: h.statusBg, color: h.statusColor, fontWeight: 600 }}
-                    >
-                      {h.status}
-                    </span>
-                  </div>
+              {/* Cover */}
+              <div className="h-48 relative overflow-hidden">
+                <HackathonCover branding={h.branding} id={h.id} />
+                <div className="absolute top-3 right-3 z-10">
+                  <span className="text-xs px-3 py-1.5 rounded-full text-white shadow-md" style={{ background: "#e35654", fontWeight: 600 }}>
+                    {h.track}
+                  </span>
+                </div>
+                <div className="absolute top-3 left-3 z-10">
+                  <span
+                    className="text-xs px-3 py-1.5 rounded-full shadow-md"
+                    style={{ background: h.statusBg, color: h.statusColor, fontWeight: 600 }}
+                  >
+                    {h.status}
+                  </span>
                 </div>
               </div>
 
@@ -360,6 +523,7 @@ function WorkspacesList() {
             </div>
           ))}
         </div>
+        )}
       </div>
     </div>
   );
@@ -368,9 +532,142 @@ function WorkspacesList() {
 // ═══════════════════════════════════════════════════════════
 // Workspace Details
 // ══════════════════════════════════════════════════════════
-function WorkspaceDetails({ hackathon }: { hackathon: typeof myHackathons[0] }) {
+// localStorage key prefix for the last count the user has acknowledged per tab.
+// Stored per hackathon so badges are independent across hackathons.
+const SEEN_STORAGE_PREFIX = "mumkin_workspace_seen_";
+
+function loadSeenCounts(hackathonId: number): Partial<Record<WorkspaceTab, number>> {
+  try {
+    const raw = localStorage.getItem(`${SEEN_STORAGE_PREFIX}${hackathonId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSeenCounts(hackathonId: number, seen: Partial<Record<WorkspaceTab, number>>) {
+  try {
+    localStorage.setItem(`${SEEN_STORAGE_PREFIX}${hackathonId}`, JSON.stringify(seen));
+  } catch {
+    /* localStorage not available — ignore silently */
+  }
+}
+
+function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("home");
+
+  // Real badge counts per tab
+  const [counts, setCounts] = useState<Record<WorkspaceTab, number>>({
+    home: 0,
+    team: 0,
+    sessions: 0,
+    submission: 0,
+    evaluations: 0,
+    certificates: 0,
+  });
+  // True only after counts have been loaded from the API (not initial zeros)
+  const [countsLoaded, setCountsLoaded] = useState(false);
+
+  // Last count the user has seen per tab — persisted in localStorage
+  const [seenCounts, setSeenCounts] = useState<Partial<Record<WorkspaceTab, number>>>(() =>
+    loadSeenCounts(hackathon.id)
+  );
+
+  const handleTabChange = (tab: WorkspaceTab) => {
+    setActiveTab(tab);
+    // Note: seen-counts are updated in the effect below (depends on activeTab + counts)
+    // to avoid saving a stale value if the tab is clicked before the API responds.
+  };
+
+  // Fetch real counts for each tab in parallel
+  useEffect(() => {
+    const hid = hackathon.id;
+    let cancelled = false;
+
+    interface TeamResp { team: { members: unknown[] } | null }
+    interface SessionsResp { items: { startAt: string; durationMinutes: number }[] }
+    interface SubmissionResp { files: unknown[] }
+    interface EvalResp { items: unknown[] }
+    interface CertResp { items: { hackathonId: number }[] }
+
+    Promise.allSettled([
+      apiGet<TeamResp>(`/participants/hackathons/${hid}/my-team`),
+      apiGet<SessionsResp>(`/participants/hackathons/${hid}/sessions`),
+      apiGet<SubmissionResp>(`/participants/hackathons/${hid}/submission`),
+      apiGet<EvalResp>(`/participants/hackathons/${hid}/evaluations`),
+      apiGet<CertResp>(`/participants/certificates`),
+    ]).then((results) => {
+      if (cancelled) return;
+      const next: Record<WorkspaceTab, number> = {
+        home: 0, team: 0, sessions: 0, submission: 0, evaluations: 0, certificates: 0,
+      };
+
+      // Team: number of members (if a team exists)
+      if (results[0].status === 'fulfilled') {
+        next.team = results[0].value.team?.members.length ?? 0;
+      }
+
+      // Sessions: count of sessions that haven't ended yet
+      if (results[1].status === 'fulfilled') {
+        const now = Date.now();
+        next.sessions = results[1].value.items.filter((s) => {
+          const end = new Date(s.startAt).getTime() + s.durationMinutes * 60_000;
+          return end > now;
+        }).length;
+      }
+
+      // Submission: number of uploaded files
+      if (results[2].status === 'fulfilled') {
+        next.submission = results[2].value.files.length;
+      }
+
+      // Evaluations: number of published evaluations
+      if (results[3].status === 'fulfilled') {
+        next.evaluations = results[3].value.items.length;
+      }
+
+      // Certificates: only those for this hackathon
+      if (results[4].status === 'fulfilled') {
+        next.certificates = results[4].value.items.filter((c) => c.hackathonId === hid).length;
+      }
+
+      setCounts(next);
+      setCountsLoaded(true);
+    });
+
+    return () => { cancelled = true; };
+  }, [hackathon.id]);
+
+  // Sync seen-counts after counts arrive from the API:
+  //   1) Active tab: seen = current count (user is viewing it, so it's "seen")
+  //   2) Other tabs: clamp seen down to count if it exceeds (e.g., a file was deleted)
+  useEffect(() => {
+    if (!countsLoaded) return;
+    setSeenCounts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      // Active tab: sync seen with current count
+      if (next[activeTab] !== counts[activeTab]) {
+        next[activeTab] = counts[activeTab];
+        changed = true;
+      }
+
+      // Other tabs: clamp seen down if higher than count
+      (Object.keys(counts) as WorkspaceTab[]).forEach((tab) => {
+        if (tab === activeTab) return;
+        const seen = next[tab];
+        if (seen !== undefined && seen > counts[tab]) {
+          next[tab] = counts[tab];
+          changed = true;
+        }
+      });
+
+      if (changed) saveSeenCounts(hackathon.id, next);
+      return changed ? next : prev;
+    });
+  }, [counts, countsLoaded, activeTab, hackathon.id]);
 
   return (
     <div className="min-h-screen bg-[#f7f7f6]">
@@ -455,10 +752,14 @@ function WorkspaceDetails({ hackathon }: { hackathon: typeof myHackathons[0] }) 
             {sidebarCards.map((card) => {
               const Icon = card.icon;
               const isActive = activeTab === card.tab;
+              const realCount = counts[card.tab];
+              const seen = seenCounts[card.tab] ?? 0;
+              // Show badge only when there are new items the user hasn't seen yet
+              const showBadge = realCount > seen;
               return (
                 <button
                   key={card.tab}
-                  onClick={() => setActiveTab(card.tab)}
+                  onClick={() => handleTabChange(card.tab)}
                   className="w-full text-right rounded-2xl p-4 transition-all hover:shadow-md group"
                   style={{
                     background: isActive
@@ -480,12 +781,12 @@ function WorkspaceDetails({ hackathon }: { hackathon: typeof myHackathons[0] }) 
                         <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
                           {card.label}
                         </p>
-                        {card.badge && (
+                        {showBadge && (
                           <span
                             className="text-white text-xs w-5 h-5 rounded-full flex items-center justify-center"
                             style={{ background: card.color, fontSize: "0.6rem", fontWeight: 700 }}
                           >
-                            {card.badge}
+                            {realCount}
                           </span>
                         )}
                       </div>
@@ -503,11 +804,11 @@ function WorkspaceDetails({ hackathon }: { hackathon: typeof myHackathons[0] }) 
           {/* ── Main Content ── */}
           <div className="lg:col-span-3 order-1 lg:order-2">
             {activeTab === "home" && <HomeTab hackathon={hackathon} />}
-            {activeTab === "team" && <TeamTab />}
-            {activeTab === "submission" && <SubmissionTab />}
-            {activeTab === "evaluations" && <EvaluationsTab />}
+            {activeTab === "team" && <TeamTab hackathonId={hackathon.id} hackathonHasTeam={hackathon.hasTeam} />}
+            {activeTab === "submission" && <SubmissionTab hackathonId={hackathon.id} />}
+            {activeTab === "evaluations" && <EvaluationsTab hackathonId={hackathon.id} />}
             {activeTab === "certificates" && <CertificatesTab />}
-            {activeTab === "sessions" && <SessionsTab />}
+            {activeTab === "sessions" && <SessionsTab hackathonId={hackathon.id} />}
           </div>
         </div>
       </div>
@@ -516,9 +817,9 @@ function WorkspaceDetails({ hackathon }: { hackathon: typeof myHackathons[0] }) 
 }
 
 // ═══════════════════════════════════════════════════════════
-// Tab: Home (الرئيسية)
+// Tab: Home
 // ═══════════════════════════════════════════════════════════
-function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
+function HomeTab({ hackathon }: { hackathon: UiMyHackathon }) {
   const [timeLeft, setTimeLeft] = useState({
     days: hackathon.daysLeft,
     hours: hackathon.hoursLeft,
@@ -531,10 +832,10 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
       setTimeLeft((prev) => {
         let { days, hours, minutes, seconds } = prev;
 
-        // تنقيص ثانية
+        // Decrement one second
         seconds--;
 
-        // تحديث العداد
+        // Update countdown
         if (seconds < 0) {
           seconds = 59;
           minutes--;
@@ -548,7 +849,7 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
           days--;
         }
         if (days < 0) {
-          // انتهى الوقت
+          // Time's up
           clearInterval(interval);
           return { days: 0, hours: 0, minutes: 0, seconds: 0 };
         }
@@ -625,7 +926,7 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
         </div>
 
         <div className="space-y-3">
-          {timeline.map((phase, idx) => (
+          {hackathon.timeline.map((phase, idx) => (
             <div key={idx} className="flex items-start gap-3">
               {/* Icon */}
               <div
@@ -677,120 +978,308 @@ function HomeTab({ hackathon }: { hackathon: typeof myHackathons[0] }) {
 // ═══════════════════════════════════════════════════════════
 // Tab: Team
 // ═══════════════════════════════════════════════════════════
-function TeamTab() {
-  const [message, setMessage] = useState("");
+interface ApiTeamDetail {
+  team: {
+    id: number;
+    name: string;
+    leaderId: number;
+    maxMembers: number;
+    members: Array<{
+      id: number;
+      fullName: string;
+      email: string;
+      isLeader: boolean;
+      isMe: boolean;
+    }>;
+  } | null;
+  participationType: "solo" | "team";
+}
+
+const TEAM_MEMBER_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#ec4899"];
+
+function TeamTab({ hackathonId, hackathonHasTeam }: { hackathonId: number; hackathonHasTeam: boolean }) {
+  const navigate = useNavigate();
+  const [data, setData] = useState<ApiTeamDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiGet<ApiTeamDetail>(`/participants/hackathons/${hackathonId}/my-team`)
+      .then((d) => {
+        if (cancelled) return;
+        setData(d);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات الفريق");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hackathonId, hackathonHasTeam]);
+
+  if (loading) {
+    return <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-500 text-sm">جاري تحميل بيانات الفريق...</div>;
+  }
+  if (error) {
+    return <div className="bg-white rounded-2xl border border-red-100 p-6 text-center text-red-500 text-sm">{error}</div>;
+  }
+
+  // Solo participation — no team
+  if (data?.participationType === "solo") {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+        <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+        <p className="text-gray-700 text-sm" style={{ fontWeight: 600 }}>
+          أنت مسجّل كمشارك فردي
+        </p>
+        <p className="text-gray-400 text-xs mt-1">
+          لا يوجد فريق لهذه المشاركة.
+        </p>
+      </div>
+    );
+  }
+
+  // Team mode but no team yet
+  if (!data?.team) {
+    return (
+      <div className="bg-white rounded-2xl border border-amber-100 bg-amber-50/30 p-12 text-center">
+        <Users className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+        <p className="text-gray-800 text-sm" style={{ fontWeight: 600 }}>
+          ما عندك فريق بعد
+        </p>
+        <p className="text-gray-500 text-xs mt-1 mb-4">
+          ابحث عن فريق متاح للانضمام، أو اطلب من قائد فريق إضافتك.
+        </p>
+        <button
+          onClick={() => navigate("/participant/matchmaking")}
+          className="px-5 py-2.5 rounded-xl bg-[#6366f1] text-white text-sm hover:bg-[#4f51d4] transition-colors"
+          style={{ fontWeight: 600 }}
+        >
+          ابحث عن فريق
+        </button>
+      </div>
+    );
+  }
+
+  const members = data.team.members;
 
   return (
     <div className="space-y-6">
       {/* Team Members */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Users className="w-5 h-5" style={{ color: "#10b981" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>أعضاء الفريق</h2>
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5" style={{ color: "#10b981" }} />
+            <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>{data.team.name}</h2>
+          </div>
+          <span className="text-gray-400 text-xs">
+            {members.length} / {data.team.maxMembers} أعضاء
+          </span>
         </div>
 
         <div className="grid gap-4">
-          {teamMembers.map((member, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
-            >
-              {/* Avatar */}
+          {members.map((member, i) => {
+            const color = TEAM_MEMBER_COLORS[i % TEAM_MEMBER_COLORS.length];
+            const initial = member.fullName.charAt(0) || "؟";
+            return (
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0"
-                style={{ background: member.color, fontWeight: 700, fontSize: "1.1rem" }}
+                key={member.id}
+                className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
               >
-                {member.initials}
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                    {member.name}
-                    {member.you && (
-                      <span className="text-xs text-gray-400 mr-2" style={{ fontWeight: 400 }}>
-                        (أنت)
-                      </span>
-                    )}
-                  </p>
-                  {member.online && (
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                  )}
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0"
+                  style={{ background: color, fontWeight: 700, fontSize: "1.1rem" }}
+                >
+                  {initial}
                 </div>
-                <p className="text-gray-400 text-xs">{member.role}</p>
-              </div>
 
-              {/* Badge */}
-              <span
-                className="text-xs px-3 py-1 rounded-full flex-shrink-0"
-                style={{
-                  background: member.online ? "#f0fdf4" : "#f9fafb",
-                  color: member.online ? "#10b981" : "#6b7280",
-                  fontWeight: 600,
-                }}
-              >
-                {member.online ? "نشط الآن" : "غير متصل"}
-              </span>
-            </div>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                      {member.fullName}
+                      {member.isMe && (
+                        <span className="text-xs text-gray-400 mr-2" style={{ fontWeight: 400 }}>
+                          (أنت)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-gray-400 text-xs" dir="ltr">{member.email}</p>
+                </div>
+
+                {member.isLeader && (
+                  <span
+                    className="text-xs px-3 py-1 rounded-full flex-shrink-0"
+                    style={{ background: "#fef2f2", color: "#e35654", fontWeight: 600 }}
+                  >
+                    قائد الفريق
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Team Chat */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <MessageSquare className="w-5 h-5" style={{ color: "#6366f1" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>محادثة الفريق</h2>
-        </div>
+      <TeamChat hackathonId={hackathonId} memberColors={members.map((m, i) => ({ id: m.id, color: TEAM_MEMBER_COLORS[i % TEAM_MEMBER_COLORS.length] }))} />
+    </div>
+  );
+}
 
-        {/* Messages */}
-        <div className="space-y-4 mb-4 max-h-80 overflow-y-auto">
-          {chatMessages.map((msg) => (
-            <div key={msg.id} className={`flex items-start gap-3 ${msg.mine ? "flex-row-reverse" : ""}`}>
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm flex-shrink-0"
-                style={{ background: msg.color, fontWeight: 700 }}
-              >
-                {msg.avatar}
-              </div>
-              <div className={`flex-1 ${msg.mine ? "text-left" : ""}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
-                    {msg.sender}
-                  </p>
-                  <span className="text-gray-300 text-xs">{msg.time}</span>
-                </div>
+// ─── Team Chat Component ──────────────────────────────────
+function TeamChat({
+  hackathonId,
+  memberColors,
+}: {
+  hackathonId: number;
+  memberColors: { id: number; color: string }[];
+}) {
+  const [messages, setMessages] = useState<ApiTeamMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  const colorFor = (memberId: number): string => {
+    const found = memberColors.find((m) => m.id === memberId);
+    return found?.color ?? "#6366f1";
+  };
+
+  const formatTime = (iso: string): string => {
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat("ar-SA", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  };
+
+  const fetchMessages = async (silent = false) => {
+    try {
+      const data = await apiGet<{ items: ApiTeamMessage[] }>(
+        `/participants/hackathons/${hackathonId}/team-messages`
+      );
+      setMessages(data.items);
+      if (!silent) setError(null);
+    } catch (e) {
+      if (!silent) setError(e instanceof ApiError ? e.message : "فشل تحميل الرسائل");
+    }
+  };
+
+  // Initial load + poll every 5 seconds
+  useEffect(() => {
+    fetchMessages();
+    const t = setInterval(() => fetchMessages(true), 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hackathonId]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages.length]);
+
+  const handleSend = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await apiPost(`/participants/hackathons/${hackathonId}/team-messages`, { text });
+      setDraft("");
+      await fetchMessages();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل إرسال الرسالة");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <MessageSquare className="w-5 h-5" style={{ color: "#6366f1" }} />
+        <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>محادثة الفريق</h2>
+      </div>
+
+      {/* Messages */}
+      <div ref={scrollRef} className="space-y-4 mb-4 max-h-80 overflow-y-auto pr-1">
+        {messages.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-10">
+            لا توجد رسائل بعد — ابدأ المحادثة مع فريقك
+          </p>
+        ) : (
+          messages.map((msg) => {
+            const initial = msg.senderName.charAt(0) || "؟";
+            const color = colorFor(msg.senderId);
+            return (
+              <div key={msg.id} className={`flex items-start gap-3 ${msg.isMine ? "flex-row-reverse" : ""}`}>
                 <div
-                  className="inline-block px-4 py-2.5 rounded-xl text-sm"
-                  style={{
-                    background: msg.mine ? "#e35654" : "#f9fafb",
-                    color: msg.mine ? "#fff" : "#374151",
-                  }}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm flex-shrink-0"
+                  style={{ background: color, fontWeight: 700 }}
                 >
-                  {msg.text}
+                  {initial}
+                </div>
+                <div className={`flex-1 ${msg.isMine ? "text-left" : ""}`}>
+                  <div className={`flex items-center gap-2 mb-1 ${msg.isMine ? "justify-end" : ""}`}>
+                    <p className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
+                      {msg.isMine ? "أنت" : msg.senderName}
+                    </p>
+                    <span className="text-gray-300 text-xs">{formatTime(msg.createdAt)}</span>
+                  </div>
+                  <div
+                    className="inline-block px-4 py-2.5 rounded-xl text-sm whitespace-pre-wrap break-words max-w-[80%]"
+                    style={{
+                      background: msg.isMine ? "#e35654" : "#f9fafb",
+                      color: msg.isMine ? "#fff" : "#374151",
+                    }}
+                  >
+                    {msg.text}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            );
+          })
+        )}
+      </div>
 
-        {/* Input */}
-        <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
-          <input
-            type="text"
-            placeholder="اكتب رسالتك..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] text-sm"
-          />
-          <button
-            className="w-11 h-11 rounded-xl flex items-center justify-center text-white transition-colors"
-            style={{ background: "#e35654" }}
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
+      {error && (
+        <p className="text-red-500 text-xs text-center mb-2">{error}</p>
+      )}
+
+      {/* Input */}
+      <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+        <input
+          type="text"
+          placeholder="اكتب رسالتك..."
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          disabled={sending}
+          className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] text-sm disabled:opacity-50"
+        />
+        <button
+          onClick={handleSend}
+          disabled={sending || !draft.trim()}
+          className="w-11 h-11 rounded-xl flex items-center justify-center text-white transition-colors disabled:opacity-50"
+          style={{ background: "#e35654" }}
+          title="إرسال"
+        >
+          <Send className="w-5 h-5" />
+        </button>
       </div>
     </div>
   );
@@ -799,7 +1288,74 @@ function TeamTab() {
 // ═══════════════════════════════════════════════════════════
 // Tab: Submission
 // ═══════════════════════════════════════════════════════════
-function SubmissionTab() {
+function SubmissionTab({ hackathonId }: { hackathonId: number }) {
+  const [data, setData] = useState<ApiSubmission | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const refetch = async () => {
+    try {
+      const fresh = await apiGet<ApiSubmission>(`/participants/hackathons/${hackathonId}/submission`);
+      setData(fresh);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات التسليم");
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<ApiSubmission>(`/participants/hackathons/${hackathonId}/submission`)
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات التسليم");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [hackathonId]);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        await apiUpload(`/participants/hackathons/${hackathonId}/submission/files`, file);
+      }
+      await refetch();
+    } catch (e) {
+      setUploadError(e instanceof ApiError ? e.message : "فشل رفع الملف");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (fileId: number) => {
+    try {
+      await apiDelete(`/participants/hackathons/${hackathonId}/submission/files/${fileId}`);
+      await refetch();
+    } catch (e) {
+      setUploadError(e instanceof ApiError ? e.message : "فشل حذف الملف");
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل التسليم...</div>;
+  }
+  if (error || !data) {
+    return (
+      <div className="bg-white rounded-2xl border border-red-100 p-6 text-center text-red-500 text-sm">
+        {error ?? "تعذّر تحميل التسليم"}
+      </div>
+    );
+  }
+
+  const maxBytes = data.maxFileSizeMb * 1024 * 1024;
+
   return (
     <div className="space-y-6">
       {/* Submission Requirements */}
@@ -809,33 +1365,21 @@ function SubmissionTab() {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>متطلبات التسليم</h2>
         </div>
 
-        <div className="space-y-3">
-          {submissionRequirements.map((req, i) => (
-            <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100">
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                style={{
-                  background: req.completed ? "#10b981" : "#e5e7eb",
-                  color: "#fff",
-                }}
-              >
-                {req.completed ? (
+        {data.requirements.length === 0 ? (
+          <p className="text-gray-400 text-sm text-center py-6">لم يحدّد المنظّم متطلبات بعد</p>
+        ) : (
+          <div className="space-y-3">
+            {data.requirements.map((req, i) => (
+              <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100">
+                <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                  style={{ background: "#f59e0b15", color: "#f59e0b" }}>
                   <CheckCircle className="w-3.5 h-3.5" />
-                ) : (
-                  <X className="w-3.5 h-3.5 text-gray-400" />
-                )}
+                </div>
+                <p className="text-gray-700 text-sm leading-relaxed flex-1">{req}</p>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 600 }}>
-                  {req.title}
-                </p>
-                <p className="text-gray-400 text-xs leading-relaxed">
-                  {req.description}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Upload Section */}
@@ -845,79 +1389,132 @@ function SubmissionTab() {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>رفع المشروع</h2>
         </div>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+
         {/* Upload Area */}
         <div
-          className="border-2 border-dashed rounded-2xl p-8 text-center mb-5 hover:border-[#e35654] hover:bg-[#fef2f4]/30 transition-all cursor-pointer"
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+          className={`border-2 border-dashed rounded-2xl p-8 text-center mb-5 transition-all ${
+            uploading ? "opacity-50 cursor-wait" : "cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30"
+          }`}
           style={{ borderColor: "#e5e7eb" }}
         >
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "#fef2f2" }}
-          >
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{ background: "#fef2f2" }}>
             <Upload className="w-8 h-8" style={{ color: "#e35654" }} />
           </div>
           <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-            اسحب الملفات هنا أو انقر للتحميل
+            {uploading ? "جاري الرفع..." : "اسحب الملفات هنا أو انقر للتحميل"}
           </h3>
           <p className="text-gray-400 text-sm">
-            PDF, ZIP, MP4 - الحد الأقصى 100 MB
+            الحد الأقصى لكل ملف: {data.maxFileSizeMb} MB
           </p>
         </div>
 
+        {uploadError && (
+          <p className="text-red-500 text-sm mb-3 text-center">{uploadError}</p>
+        )}
+
         <button
-          className="w-full py-3 rounded-xl text-white text-sm transition-colors"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50"
           style={{ background: "#e35654", fontWeight: 600 }}
         >
           <Plus className="w-4 h-4 inline-block ml-2" />
           إضافة ملفات
         </button>
+        <p className="text-gray-300 text-xs text-center mt-2">
+          أقصى حجم لكل ملف: {formatFileSize(maxBytes)}
+        </p>
       </div>
 
       {/* Uploaded Files */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-5">
           <FileText className="w-5 h-5" style={{ color: "#6366f1" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>الملفات المرفوعة</h2>
+          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+            الملفات المرفوعة ({data.files.length})
+          </h2>
         </div>
 
-        <div className="space-y-3">
-          {projectFiles.map((file, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group"
-            >
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: `${file.color}15` }}
-              >
-                <FileText className="w-5 h-5" style={{ color: file.color }} />
-              </div>
+        {data.files.length === 0 ? (
+          <div className="text-center py-10">
+            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لم يتم رفع أي ملف بعد</p>
+            <p className="text-gray-400 text-xs mt-1">الملفات اللي ترفعها بتظهر هنا</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {data.files.map((file, i) => {
+              const color = FILE_COLOR_PALETTE[i % FILE_COLOR_PALETTE.length];
+              const fullUrl = `${API_URL}${file.url}`;
+              return (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group"
+                >
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ background: `${color}15` }}>
+                    <FileText className="w-5 h-5" style={{ color }} />
+                  </div>
 
-              <div className="flex-1 min-w-0">
-                <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 600 }}>
-                  {file.name}
-                </p>
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <span>{file.size}</span>
-                  <span>•</span>
-                  <span>{file.date}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-900 text-sm mb-1 truncate" style={{ fontWeight: 600 }}>
+                      {file.name}
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <span>{formatFileSize(file.size)}</span>
+                      <span>•</span>
+                      <span>{formatDateAr(file.uploadedAt)}</span>
+                      {file.uploaderName && (
+                        <>
+                          <span>•</span>
+                          <span>{file.uploaderName}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a
+                      href={fullUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#6366f1] hover:bg-blue-50 transition-colors"
+                      title="معاينة"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </a>
+                    <a
+                      href={fullUrl}
+                      download={file.name}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#10b981] hover:bg-green-50 transition-colors"
+                      title="تحميل"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                    <button
+                      onClick={() => handleDelete(file.id)}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors"
+                      title="حذف"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#6366f1] hover:bg-blue-50 transition-colors">
-                  <Eye className="w-4 h-4" />
-                </button>
-                <button className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#10b981] hover:bg-green-50 transition-colors">
-                  <Download className="w-4 h-4" />
-                </button>
-                <button className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -926,7 +1523,34 @@ function SubmissionTab() {
 // ═══════════════════════════════════════════════════════════
 // Tab: Evaluations
 // ═══════════════════════════════════════════════════════════
-function EvaluationsTab() {
+function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
+  const [evaluations, setEvaluations] = useState<ApiEvaluation[]>([]);
+  const [hasTeam, setHasTeam] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ items: ApiEvaluation[]; teamId: number | null }>(
+      `/participants/hackathons/${hackathonId}/evaluations`
+    )
+      .then((data) => {
+        if (cancelled) return;
+        setEvaluations(data.items);
+        setHasTeam(data.teamId !== null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل التقييمات");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hackathonId]);
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -935,18 +1559,33 @@ function EvaluationsTab() {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>تقييمات المشروع</h2>
         </div>
 
-        {evaluations.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل التقييمات...</div>
+        ) : error ? (
+          <div className="text-center py-10 text-red-500 text-sm">{error}</div>
+        ) : !hasTeam ? (
+          <div className="text-center py-10">
+            <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+              التقييمات تظهر بعد الانضمام لفريق
+            </p>
+            <p className="text-gray-400 text-xs mt-1">
+              الحكّام يقيّمون مشاريع الفِرَق، لذا يجب الانضمام لفريق أولاً
+            </p>
+          </div>
+        ) : evaluations.length === 0 ? (
           <div className="text-center py-10">
             <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
               لم يتم نشر التقييمات بعد
             </p>
+            <p className="text-gray-400 text-xs mt-1">ستظهر هنا تقييمات الحكّام بعد التحكيم</p>
           </div>
         ) : (
           <div className="space-y-5">
-            {evaluations.map((ev, i) => (
+            {evaluations.map((ev) => (
               <div
-                key={i}
+                key={ev.id}
                 className="p-5 rounded-2xl border border-gray-100"
                 style={{ background: "linear-gradient(135deg, #fffbeb 0%, #fff 100%)" }}
               >
@@ -954,48 +1593,54 @@ function EvaluationsTab() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-gray-900 mb-1" style={{ fontWeight: 700 }}>
-                      {ev.judge}
+                      {ev.judgeName}
                     </h3>
-                    <p className="text-gray-400 text-sm">{ev.role}</p>
+                    {ev.judgeSpecialty && (
+                      <p className="text-gray-400 text-sm">{ev.judgeSpecialty}</p>
+                    )}
                   </div>
                   <div className="text-left">
                     <div
                       className="text-2xl mb-1"
                       style={{ fontWeight: 800, color: "#f59e0b" }}
                     >
-                      {ev.score}/{ev.maxScore}
+                      {ev.totalScore}/{ev.maxScore}
                     </div>
-                    <p className="text-gray-400 text-xs">{ev.date}</p>
+                    <p className="text-gray-400 text-xs">{formatDateAr(ev.evaluatedAt)}</p>
                   </div>
                 </div>
 
                 {/* Criteria */}
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {ev.criteria.map((c, idx) => (
-                    <div key={idx} className="bg-white rounded-xl p-3 border border-gray-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-gray-600 text-xs">{c.name}</p>
-                        <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#f59e0b" }}>
-                          {c.score}
-                        </span>
+                {ev.criteria.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    {ev.criteria.map((c, idx) => (
+                      <div key={idx} className="bg-white rounded-xl p-3 border border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-gray-600 text-xs">{c.name}</p>
+                          <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#f59e0b" }}>
+                            {c.score}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-full h-1.5">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{ width: `${c.score}%`, background: "#f59e0b" }}
+                          />
+                        </div>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full"
-                          style={{ width: `${c.score}%`, background: "#f59e0b" }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Comment */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100">
-                  <p className="text-gray-400 text-xs mb-2" style={{ fontWeight: 600 }}>
-                    تعليق الحكم:
-                  </p>
-                  <p className="text-gray-600 text-sm leading-relaxed">{ev.comment}</p>
-                </div>
+                {ev.comment && (
+                  <div className="bg-white rounded-xl p-4 border border-gray-100">
+                    <p className="text-gray-400 text-xs mb-2" style={{ fontWeight: 600 }}>
+                      تعليق الحكم:
+                    </p>
+                    <p className="text-gray-600 text-sm leading-relaxed">{ev.comment}</p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1009,6 +1654,35 @@ function EvaluationsTab() {
 // Tab: Certificates
 // ═══════════════════════════════════════════════════════════
 function CertificatesTab() {
+  const [certificates, setCertificates] = useState<ApiCertificate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ items: ApiCertificate[] }>("/participants/certificates")
+      .then((data) => {
+        if (cancelled) return;
+        setCertificates(data.items);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل الشهادات");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleDownload = (cert: ApiCertificate) => {
+    if (cert.fileUrl) {
+      window.open(cert.fileUrl, "_blank", "noopener,noreferrer");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -1017,42 +1691,61 @@ function CertificatesTab() {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>شهاداتي</h2>
         </div>
 
-        {certificates.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل الشهادات...</div>
+        ) : error ? (
+          <div className="text-center py-10 text-red-500 text-sm">{error}</div>
+        ) : certificates.length === 0 ? (
           <div className="text-center py-10">
             <Award className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لا توجد شهادات بعد</p>
+            <p className="text-gray-400 text-xs mt-1">ستظهر هنا شهاداتك بعد المشاركة في الهاكاثونات</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {certificates.map((cert) => (
-              <div
-                key={cert.id}
-                className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
-              >
+            {certificates.map((cert) => {
+              const style = CERT_TYPE_STYLE[cert.type];
+              return (
                 <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: `${cert.color}15` }}
+                  key={cert.id}
+                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
                 >
-                  <Award className="w-6 h-6" style={{ color: cert.color }} />
-                </div>
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: `${style.color}15` }}
+                  >
+                    <Award className="w-6 h-6" style={{ color: style.color }} />
+                  </div>
 
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
-                    {cert.title}
-                  </h3>
-                  <p className="text-gray-400 text-xs mb-1">{cert.hackathon}</p>
-                  <p className="text-gray-300 text-xs">{cert.date}</p>
-                </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                        {cert.title}
+                      </h3>
+                      <span
+                        className="text-[10px] px-2 py-0.5 rounded-full"
+                        style={{ background: `${style.color}15`, color: style.color, fontWeight: 600 }}
+                      >
+                        {style.label}
+                      </span>
+                    </div>
+                    <p className="text-gray-400 text-xs mb-1">{cert.hackathonTitle}</p>
+                    <p className="text-gray-300 text-xs">{formatDateAr(cert.issuedAt)}</p>
+                  </div>
 
-                <button
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white transition-colors"
-                  style={{ background: cert.color, fontWeight: 600 }}
-                >
-                  <Download className="w-4 h-4" />
-                  تحميل
-                </button>
-              </div>
-            ))}
+                  <button
+                    onClick={() => handleDownload(cert)}
+                    disabled={!cert.fileUrl}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ background: style.color, fontWeight: 600 }}
+                    title={cert.fileUrl ? "تحميل الشهادة" : "ملف الشهادة غير متاح"}
+                  >
+                    <Download className="w-4 h-4" />
+                    تحميل
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1061,9 +1754,47 @@ function CertificatesTab() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Tab: Sessions (الجلسات)
+// Tab: Sessions
 // ═══════════════════════════════════════════════════════════
-function SessionsTab() {
+function SessionsTab({ hackathonId }: { hackathonId: number }) {
+  const [sessions, setSessions] = useState<UiSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ items: ApiSession[] }>(`/participants/hackathons/${hackathonId}/sessions`)
+      .then((data) => {
+        if (cancelled) return;
+        setSessions(data.items.map(toUiSession));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : "فشل تحميل الجلسات");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hackathonId]);
+
+  // Status colors and labels
+  const statusStyle = (status: SessionStatus) => {
+    if (status === "live")      return { bg: "#fef2f2", color: "#e35654", label: "مباشر الآن" };
+    if (status === "soon")      return { bg: "#ecfeff", color: "#06b6d4", label: "قادم" };
+    if (status === "completed") return { bg: "#f0fdf4", color: "#10b981", label: "مكتمل" };
+    return { bg: "#fffbeb", color: "#f59e0b", label: "مجدول" };
+  };
+
+  const platformStyle = (type: SessionPlatform) => {
+    if (type === "zoom")  return { bg: "#ecfeff", color: "#06b6d4" };
+    if (type === "teams") return { bg: "#eef2ff", color: "#6366f1" };
+    if (type === "meet")  return { bg: "#f0fdf4", color: "#10b981" };
+    return { bg: "#f5f3ff", color: "#8b5cf6" };
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -1072,114 +1803,109 @@ function SessionsTab() {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>الجلسات المباشرة</h2>
         </div>
 
-        <div className="space-y-4">
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={`p-5 rounded-2xl border transition-all ${
-                session.status === "upcoming"
-                  ? "border-[#06b6d4]/30 bg-cyan-50/30"
-                  : session.status === "completed"
-                  ? "border-gray-100 bg-gray-50/30"
-                  : "border-gray-100"
-              }`}
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                      {session.title}
-                    </h3>
-                    <span
-                      className="text-xs px-2.5 py-0.5 rounded-full"
-                      style={{
-                        background:
-                          session.status === "upcoming"
-                            ? "#ecfeff"
-                            : session.status === "completed"
-                            ? "#f0fdf4"
-                            : "#fffbeb",
-                        color:
-                          session.status === "upcoming"
-                            ? "#06b6d4"
-                            : session.status === "completed"
-                            ? "#10b981"
-                            : "#f59e0b",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {session.status === "upcoming"
-                        ? "قادم"
-                        : session.status === "completed"
-                        ? "مكتمل"
-                        : "مجدول"}
-                    </span>
-                  </div>
-                  <p className="text-gray-500 text-xs mb-2">{session.description}</p>
-                </div>
-
-                {/* Platform Icon */}
+        {loading ? (
+          <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل الجلسات...</div>
+        ) : error ? (
+          <div className="text-center py-10 text-red-500 text-sm">{error}</div>
+        ) : sessions.length === 0 ? (
+          <div className="text-center py-10">
+            <Video className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لا توجد جلسات مجدولة</p>
+            <p className="text-gray-400 text-xs mt-1">ستظهر هنا جلسات الهاكاثون عند جدولتها</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {sessions.map((session) => {
+              const sStyle = statusStyle(session.status);
+              const pStyle = platformStyle(session.type);
+              const isJoinable = (session.status === "live" || session.status === "soon") && !!session.link;
+              return (
                 <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mr-3"
-                  style={{
-                    background: session.type === "zoom" ? "#ecfeff" : "#f5f3ff",
-                  }}
+                  key={session.id}
+                  className={`p-5 rounded-2xl border transition-all ${
+                    session.status === "soon" || session.status === "live"
+                      ? "border-[#06b6d4]/30 bg-cyan-50/30"
+                      : session.status === "completed"
+                      ? "border-gray-100 bg-gray-50/30"
+                      : "border-gray-100"
+                  }`}
                 >
-                  <Video
-                    className="w-5 h-5"
-                    style={{ color: session.type === "zoom" ? "#06b6d4" : "#8b5cf6" }}
-                  />
-                </div>
-              </div>
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                          {session.title}
+                        </h3>
+                        <span
+                          className="text-xs px-2.5 py-0.5 rounded-full"
+                          style={{ background: sStyle.bg, color: sStyle.color, fontWeight: 600 }}
+                        >
+                          {sStyle.label}
+                        </span>
+                      </div>
+                      {session.description && (
+                        <p className="text-gray-500 text-xs mb-2">{session.description}</p>
+                      )}
+                    </div>
 
-              {/* Details */}
-              <div className="flex items-center gap-4 text-xs text-gray-400 mb-4">
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>{session.date}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{session.time}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span>•</span>
-                  <span>{session.duration}</span>
-                </div>
-              </div>
+                    {/* Platform Icon */}
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mr-3"
+                      style={{ background: pStyle.bg }}
+                    >
+                      <Video className="w-5 h-5" style={{ color: pStyle.color }} />
+                    </div>
+                  </div>
 
-              {/* Action Button */}
-              {session.status === "upcoming" && (
-                <button
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm transition-colors"
-                  style={{ background: "#06b6d4", fontWeight: 600 }}
-                  onClick={() => window.open(session.link, "_blank")}
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  الانضمام للجلسة
-                </button>
-              )}
+                  {/* Details */}
+                  <div className="flex items-center gap-4 text-xs text-gray-400 mb-4">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>{session.date}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>{session.time}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span>•</span>
+                      <span>{session.duration}</span>
+                    </div>
+                  </div>
 
-              {session.status === "completed" && (
-                <div className="flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-100 text-gray-400 text-sm">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span style={{ fontWeight: 600 }}>تم الانتهاء</span>
+                  {/* Action Button */}
+                  {isJoinable && (
+                    <button
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm transition-colors"
+                      style={{ background: "#06b6d4", fontWeight: 600 }}
+                      onClick={() => session.link && window.open(session.link, "_blank", "noopener,noreferrer")}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      {session.status === "live" ? "انضم الآن" : "الانضمام للجلسة"}
+                    </button>
+                  )}
+
+                  {session.status === "completed" && (
+                    <div className="flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-100 text-gray-400 text-sm">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span style={{ fontWeight: 600 }}>تم الانتهاء</span>
+                    </div>
+                  )}
+
+                  {session.status === "scheduled" && (
+                    <div className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm"
+                      style={{ borderColor: "#f59e0b", color: "#f59e0b", fontWeight: 600 }}
+                    >
+                      <Calendar className="w-4 h-4" />
+                      مجدول لاحقاً
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {session.status === "scheduled" && (
-                <button
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm transition-colors"
-                  style={{ borderColor: "#06b6d4", color: "#06b6d4", fontWeight: 600 }}
-                >
-                  <Calendar className="w-4 h-4" />
-                  إضافة للتقويم
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
