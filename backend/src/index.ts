@@ -4,6 +4,7 @@ import { env } from './config/env';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
 import hackathonRoutes from './routes/hackathon.routes';
+import sponsorRoutes from './routes/sponsor.routes';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.get('/', (_req, res) => {
 app.use('/health', healthRoutes);
 app.use('/auth', authRoutes);
 app.use('/hackathons', hackathonRoutes);
+app.use('/sponsors', sponsorRoutes);
 
 app.listen(env.port, () => {
   console.log(`Server on http://localhost:${env.port}`);
