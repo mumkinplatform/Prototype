@@ -1,5 +1,36 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { apiGet } from "../../lib/api";
+
+type OpportunityResponse = {
+  items: Array<{
+    id: number;
+    title: string;
+    slug: string | null;
+    type: string | null;
+    startDate: string | null;
+    registrationDeadline: string | null;
+    org: string | null;
+    prizeTotal: number;
+    tags: string[];
+    packagesCount: number;
+  }>;
+};
+
+const COVER_GRADIENTS = [
+  "bg-gradient-to-br from-green-800 via-teal-700 to-cyan-600",
+  "bg-gradient-to-br from-blue-800 via-indigo-700 to-purple-600",
+  "bg-gradient-to-br from-red-800 via-rose-700 to-orange-600",
+  "bg-gradient-to-br from-purple-800 via-fuchsia-700 to-pink-600",
+];
+
+const TAG_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4"];
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+}
 import {
   Search,
   ArrowRight,
@@ -16,119 +47,29 @@ import {
   ChevronDown,
 } from "lucide-react";
 
-const hackathons = [
-  {
-    id: 1,
-    title: "هاكاثون شفاء التقني",
-    org: "وزارة الصحة",
-    tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#e35654", "#6366f1"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "01 يونيو 2025",
-    deadline: "15 مايو 2025",
-    prize: "75,000 ر.س",
-    viewers: 124,
-    teams: 48,
-    cover: "bg-gradient-to-br from-green-800 via-teal-700 to-cyan-600",
-    coverText: "HEALTH\nhackathon",
-    featured: true,
-  },
-  {
-    id: 2,
-    title: "هاكاثون مستقبل المال 2.0",
-    org: "ساب تك",
-    tags: ["التقنية المالية", "بلوكشين"],
-    tagColors: ["#10b981", "#f59e0b"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "12 يونيو 2025",
-    deadline: "28 مايو 2025",
-    prize: "100,000 ر.س",
-    viewers: 98,
-    teams: 62,
-    cover: "bg-gradient-to-br from-blue-800 via-indigo-700 to-purple-600",
-    coverText: "FINTECH\nhackathon",
-    featured: true,
-  },
-  {
-    id: 3,
-    title: "هاكاثون الدرع التقني 2025",
-    org: "مؤسسة ريادة",
-    tags: ["الأمن السيبراني", "تطبيقات الويب"],
-    tagColors: ["#06b6d4", "#8b5cf6"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "25 مايو 2025",
-    deadline: "10 مايو 2025",
-    prize: "16,000 ر.س",
-    viewers: 76,
-    teams: 31,
-    cover: "bg-gradient-to-br from-gray-800 via-slate-700 to-gray-900",
-    coverText: "CYBER\nSECURITY",
-    featured: false,
-  },
-  {
-    id: 4,
-    title: "هاكاثون NEOM للابتكار",
-    org: "مؤسسة نيوم",
-    tags: ["المدن الذكية", "الاستدامة"],
-    tagColors: ["#f59e0b", "#10b981"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "20 يوليو 2025",
-    deadline: "5 يوليو 2025",
-    prize: "200,000 ر.س",
-    viewers: 310,
-    teams: 85,
-    cover: "bg-gradient-to-br from-amber-700 via-orange-600 to-[#a93b39]",
-    coverText: "NEOM\n2025",
-    featured: true,
-  },
-  {
-    id: 5,
-    title: "هاكاثون الطاقة المتجددة",
-    org: "أرامكو السعودية",
-    tags: ["الطاقة", "الاستدامة", "IoT"],
-    tagColors: ["#10b981", "#06b6d4", "#8b5cf6"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "10 أغسطس 2025",
-    deadline: "25 يوليو 2025",
-    prize: "150,000 ر.س",
-    viewers: 189,
-    teams: 54,
-    cover: "bg-gradient-to-br from-emerald-700 via-green-600 to-teal-700",
-    coverText: "ENERGY\nHACK",
-    featured: false,
-  },
-  {
-    id: 6,
-    title: "قمة الذكاء الاصطناعي العالمية",
-    org: "STC",
-    tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#e35654"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "5 سبتمبر 2025",
-    deadline: "20 أغسطس 2025",
-    prize: "120,000 ر.س",
-    viewers: 241,
-    teams: 70,
-    cover: "bg-gradient-to-br from-violet-800 via-purple-700 to-indigo-800",
-    coverText: "AI\nSUMMIT",
-    featured: false,
-  },
-];
-
 const typeOptions = ["الكل", "حضوري", "إلكتروني", "هجين"];
 const sortOptions = ["الأحدث", "الجائزة الأكبر", "الأكثر مشاهدة"];
+
+type DisplayHackathon = {
+  id: number;
+  title: string;
+  slug: string | null;
+  org: string;
+  tags: string[];
+  tagColors: string[];
+  type: string;
+  typeColor: string;
+  typeBg: string;
+  date: string;
+  deadline: string;
+  prize: string;
+  viewers: number;
+  teams: number;
+  cover: string;
+  coverText: string;
+  featured: boolean;
+  packagesCount: number;
+};
 
 export function HackathonsExplore() {
   const navigate = useNavigate();
@@ -136,6 +77,38 @@ export function HackathonsExplore() {
   const [activeType, setActiveType] = useState("الكل");
   const [sort, setSort] = useState("الأحدث");
   const [onlyFeatured, setOnlyFeatured] = useState(false);
+  const [hackathons, setHackathons] = useState<DisplayHackathon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiGet<OpportunityResponse>("/sponsors/opportunities")
+      .then((res) => {
+        const mapped: DisplayHackathon[] = res.items.map((it, idx) => ({
+          id: it.id,
+          title: it.title,
+          slug: it.slug,
+          org: it.org ?? "—",
+          tags: it.tags,
+          tagColors: it.tags.map((_, i) => TAG_COLORS[i % TAG_COLORS.length]),
+          type: it.type ?? "—",
+          typeColor: "#e35654",
+          typeBg: "#fef2f2",
+          date: formatDate(it.startDate),
+          deadline: formatDate(it.registrationDeadline),
+          prize: `${it.prizeTotal.toLocaleString("ar-SA")} ر.س`,
+          viewers: 0,
+          teams: 0,
+          cover: COVER_GRADIENTS[idx % COVER_GRADIENTS.length],
+          coverText: it.title.slice(0, 20),
+          featured: false,
+          packagesCount: it.packagesCount,
+        }));
+        setHackathons(mapped);
+      })
+      .catch((err) => setLoadError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = hackathons
     .filter((h) => {
@@ -249,7 +222,13 @@ export function HackathonsExplore() {
 
       {/* Cards Grid */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-20 text-gray-500 text-sm">جاري تحميل الفرص...</div>
+        ) : loadError ? (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">
+            تعذّر تحميل الفرص: {loadError}
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-gray-300" />

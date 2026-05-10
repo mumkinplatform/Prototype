@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
 import {
   ArrowRight,
   Calendar,
   Trophy,
   Clock,
-  Users,
-  Eye,
   MapPin,
   Star,
   CheckCircle2,
@@ -15,304 +14,301 @@ import {
   Building2,
   Globe,
   Zap,
-  Shield,
   Crown,
   Medal,
   Award,
+  Loader2,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { apiGet, apiPost, ApiError } from "../../lib/api";
+import { SponsorApplyDialog } from "./sponsor-apply/SponsorApplyDialog";
 
-const hackathonsData = [
-  {
-    id: 1,
-    title: "هاكاثون شفاء التقني",
-    org: "وزارة الصحة",
-    orgLogo: "ص",
-    orgColor: "#e35654",
-    tags: ["بيانات ضخمة", "الصحة الرقمية"],
-    tagColors: ["#e35654", "#6366f1"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "01 يونيو 2025",
-    deadline: "15 مايو 2025",
-    prize: "75,000 ر.س",
-    viewers: 124,
-    teams: 48,
-    cover: "from-green-800 via-teal-700 to-cyan-600",
-    coverText: "HEALTH\nhackathon",
-    featured: true,
-    location: "الرياض، المملكة العربية السعودية",
-    duration: "48 ساعة",
-    participants: 230,
-    desc: "هاكاثون وطني متخصص في ابتكار حلول تقنية لقطاع الصحة، يجمع أفضل العقول التقنية لتطوير منصات وأدوات رقمية تُحسّن جودة الرعاية الصحية في المملكة. الحدث يُقام بالشراكة مع وزارة الصحة ضمن مبادرات رؤية 2030.",
-    timeline: [
-      { date: "15 مايو", label: "آخر موعد للتسجيل", done: true },
-      { date: "22 مايو", label: "الإعلان عن الفرق المقبولة", done: true },
-      { date: "01 يونيو", label: "انطلاق الهاكاثون", done: false },
-      { date: "03 يونيو", label: "التسليم النهائي", done: false },
-      { date: "05 يونيو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 2,
-    title: "هاكاثون مستقبل المال 2.0",
-    org: "ساب تك",
-    orgLogo: "س",
-    orgColor: "#6366f1",
-    tags: ["التقنية المالية", "بلوكشين"],
-    tagColors: ["#10b981", "#f59e0b"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "12 يونيو 2025",
-    deadline: "28 مايو 2025",
-    prize: "100,000 ر.س",
-    viewers: 98,
-    teams: 62,
-    cover: "from-blue-800 via-indigo-700 to-purple-600",
-    coverText: "FINTECH\nhackathon",
-    featured: true,
-    location: "جدة + إلكتروني",
-    duration: "72 ساعة",
-    participants: 310,
-    desc: "منافسة تقنية مالية تجمع شركات الناشئة والمطورين المستقلين لبناء حلول مبتكرة في مجالات المدفوعات الرقمية والبلوكشين والتمويل اللامركزي. تُقدم ساب تك دعمًا تقنيًا ومرشدين متخصصين طوال فترة الهاكاثون.",
-    timeline: [
-      { date: "28 مايو", label: "آخر موعد للتسجيل", done: true },
-      { date: "04 يونيو", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "12 يونيو", label: "انطلاق الهاكاثون", done: false },
-      { date: "15 يونيو", label: "التسليم النهائي", done: false },
-      { date: "18 يونيو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 3,
-    title: "هاكاثون الدرع التقني 2025",
-    org: "مؤسسة ريادة",
-    orgLogo: "ر",
-    orgColor: "#06b6d4",
-    tags: ["الأمن السيبراني", "تطبيقات الويب"],
-    tagColors: ["#06b6d4", "#8b5cf6"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "25 مايو 2025",
-    deadline: "10 مايو 2025",
-    prize: "16,000 ر.س",
-    viewers: 76,
-    teams: 31,
-    cover: "from-gray-800 via-slate-700 to-gray-900",
-    coverText: "CYBER\nSECURITY",
-    featured: false,
-    location: "إلكتروني بالكامل",
-    duration: "36 ساعة",
-    participants: 155,
-    desc: "هاكاثون متخصص في اكتشاف ثغرات الأمن السيبراني وبناء حلول دفاعية للتطبيقات والأنظمة. يستهدف المطورين المتخصصين في الأمن الرقمي واختبار الاختراق.",
-    timeline: [
-      { date: "10 مايو", label: "آخر موعد للتسجيل", done: true },
-      { date: "18 مايو", label: "الإعلان عن الفرق المقبولة", done: true },
-      { date: "25 مايو", label: "انطلاق الهاكاثون", done: false },
-      { date: "26 مايو", label: "التسليم النهائي", done: false },
-      { date: "28 مايو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 4,
-    title: "هاكاثون NEOM للابتكار",
-    org: "مؤسسة نيوم",
-    orgLogo: "ن",
-    orgColor: "#f59e0b",
-    tags: ["المدن الذكية", "الاستدامة"],
-    tagColors: ["#f59e0b", "#10b981"],
-    type: "حضوري",
-    typeColor: "#e35654",
-    typeBg: "#fef2f2",
-    date: "20 يوليو 2025",
-    deadline: "5 يوليو 2025",
-    prize: "200,000 ر.س",
-    viewers: 310,
-    teams: 85,
-    cover: "from-amber-700 via-orange-600 to-[#a93b39]",
-    coverText: "NEOM\n2025",
-    featured: true,
-    location: "نيوم، تبوك",
-    duration: "72 ساعة",
-    participants: 425,
-    desc: "أضخم هاكاثون في المملكة لعام 2025، يُقام في قلب مدينة نيوم المستقبلية. يستهدف المبتكرين من مجالات البناء الذكي، والطاقة المستدامة، والمواصلات المستقبلية. الفائز الأول يحصل على عقد تنفيذ مشروعه في نيوم.",
-    timeline: [
-      { date: "5 يوليو", label: "آخر موعد للتسجيل", done: false },
-      { date: "12 يوليو", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "20 يوليو", label: "انطلاق الهاكاثون", done: false },
-      { date: "23 يوليو", label: "التسليم النهائي", done: false },
-      { date: "25 يوليو", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 5,
-    title: "هاكاثون الطاقة المتجددة",
-    org: "أرامكو السعودية",
-    orgLogo: "أ",
-    orgColor: "#10b981",
-    tags: ["الطاقة", "الاستدامة", "IoT"],
-    tagColors: ["#10b981", "#06b6d4", "#8b5cf6"],
-    type: "هجين",
-    typeColor: "#6366f1",
-    typeBg: "#eef2ff",
-    date: "10 أغسطس 2025",
-    deadline: "25 يوليو 2025",
-    prize: "150,000 ر.س",
-    viewers: 189,
-    teams: 54,
-    cover: "from-emerald-700 via-green-600 to-teal-700",
-    coverText: "ENERGY\nHACK",
-    featured: false,
-    location: "الظهران + إلكتروني",
-    duration: "48 ساعة",
-    participants: 270,
-    desc: "هاكاثون تنظمه أرامكو السعودية لاستقطاب أفضل العقول التقنية لتطوير حلول مستدامة في قطاع الطاقة المتجددة والإنترنت الصناعي للأشياء.",
-    timeline: [
-      { date: "25 يوليو", label: "آخر موعد للتسجيل", done: false },
-      { date: "1 أغسطس", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "10 أغسطس", label: "انطلاق الهاكاثون", done: false },
-      { date: "12 أغسطس", label: "التسليم النهائي", done: false },
-      { date: "15 أغسطس", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-  {
-    id: 6,
-    title: "قمة الذكاء الاصطناعي العالمية",
-    org: "STC",
-    orgLogo: "STC",
-    orgColor: "#8b5cf6",
-    tags: ["ذكاء اصطناعي", "تعلم آلي"],
-    tagColors: ["#8b5cf6", "#e35654"],
-    type: "إلكتروني",
-    typeColor: "#10b981",
-    typeBg: "#f0fdf4",
-    date: "5 سبتمبر 2025",
-    deadline: "20 أغسطس 2025",
-    prize: "120,000 ر.س",
-    viewers: 241,
-    teams: 70,
-    cover: "from-violet-800 via-purple-700 to-indigo-800",
-    coverText: "AI\nSUMMIT",
-    featured: false,
-    location: "إلكتروني بالكامل",
-    duration: "48 ساعة",
-    participants: 350,
-    desc: "قمة تقنية عالمية لتطوير حلول الذكاء الاصطناعي والتعلم الآلي. تجمع المطورين والباحثين من أكثر من 20 دولة لبناء نماذج ذكاء اصطناعي تحل مشكلات حقيقية.",
-    timeline: [
-      { date: "20 أغسطس", label: "آخر موعد للتسجيل", done: false },
-      { date: "28 أغسطس", label: "الإعلان عن الفرق المقبولة", done: false },
-      { date: "5 سبتمبر", label: "انطلاق الهاكاثون", done: false },
-      { date: "7 سبتمبر", label: "التسليم النهائي", done: false },
-      { date: "10 سبتمبر", label: "حفل التكريم والجوائز", done: false },
-    ],
-  },
-];
+// ── Types ────────────────────────────────────────────────────
 
-const sponsorPackages = [
-  {
-    id: "platinum",
-    name: "بلاتينية",
-    nameEn: "Platinum",
-    icon: Crown,
-    color: "#6366f1",
-    bg: "#eef2ff",
-    borderColor: "#6366f1",
-    price: "50,000 ر.س",
-    slots: 1,
-    slotsLeft: 1,
-    highlight: true,
-    badge: "الأكثر تأثيراً",
-    perks: [
-      "الشعار الرئيسي في جميع المواد الترويجية",
-      "شاشة عملاقة خلال حفل الافتتاح والختام",
-      "جناح رسمي مخصص في مكان الحدث",
-      "3 تذاكر VIP لحضور الحدث كاملاً",
-      "خطاب ترحيبي من ممثل شركتك أمام المشاركين",
-      "تقرير تفصيلي عن أثر الرعاية بعد الحدث",
-      "ذكر في جميع الإعلانات الرسمية وبيانات الصحافة",
-    ],
-  },
-  {
-    id: "gold",
-    name: "ذهبية",
-    nameEn: "Gold",
-    icon: Medal,
-    color: "#f59e0b",
-    bg: "#fffbeb",
-    borderColor: "#f59e0b",
-    price: "25,000 ر.س",
-    slots: 2,
-    slotsLeft: 1,
-    highlight: false,
-    badge: "الأكثر طلباً",
-    perks: [
-      "الشعار في المواد الترويجية الرئيسية",
-      "شاشة خلال حفل الختام والتوزيع",
-      "طاولة عرض في منطقة الراعين",
-      "تذكرتان VIP لحضور الحدث",
-      "ذكر في منصات التواصل الاجتماعي الرسمية",
-      "تقرير مختصر عن أثر الرعاية",
-    ],
-  },
-  {
-    id: "silver",
-    name: "فضية",
-    nameEn: "Silver",
-    icon: Award,
-    color: "#64748b",
-    bg: "#f8fafc",
-    borderColor: "#94a3b8",
-    price: "10,000 ر.س",
-    slots: 4,
-    slotsLeft: 2,
-    highlight: false,
-    badge: null,
-    perks: [
-      "الشعار في المواد الترويجية الثانوية",
-      "ذكر في منصة المُمكّن طوال فترة الهاكاثون",
-      "تذكرة حضور واحدة للحدث",
-      "ذكر في منصات التواصل الاجتماعي",
-    ],
-  },
-  {
-    id: "bronze",
-    name: "برونزية",
-    nameEn: "Bronze",
-    icon: Zap,
-    color: "#92400e",
-    bg: "#fef3c7",
-    borderColor: "#d97706",
-    price: "5,000 ر.س",
-    slots: 6,
-    slotsLeft: 4,
-    highlight: false,
-    badge: null,
-    perks: [
-      "الشعار في صفحة الهاكاثون الرسمية",
-      "ذكر في المنصة كراعٍ داعم",
-      "دعوة إلكترونية لحضور حفل التكريم",
-    ],
-  },
-];
+interface ApiHackathon {
+  id: number;
+  title: string;
+  slug: string | null;
+  type: string | null;
+  description: string | null;
+  startDate: string | null;
+  registrationDeadline: string | null;
+  org: string | null;
+}
+
+interface ApiTrack {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+interface ApiPrize {
+  position: string;
+  amount: string | null;
+  sortOrder: number;
+}
+
+interface ApiPackage {
+  id: number;
+  name: string;
+  type: string;
+  description: string | null;
+  duration: string | null;
+  price: number | null;
+  sponsorOffer: string | null;
+  resources: string | null;
+  benefits: string[];
+  hasApplied: boolean;
+}
+
+interface OpportunityDetail {
+  hackathon: ApiHackathon;
+  tracks: ApiTrack[];
+  prizes: ApiPrize[];
+  packages: ApiPackage[];
+  myApplicationPackageId: number | null;
+}
+
+interface ApplyResponse {
+  id: number;
+  sponsorId: number;
+  packageId: number;
+  status: "pending" | "accepted" | "rejected";
+}
+
+// Shape that the rich UI expects (mapped from API + visual defaults)
+interface DisplayPackage {
+  id: number;
+  name: string;
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+  borderColor: string;
+  price: string;
+  badge: string | null;
+  perks: string[];
+  hasApplied: boolean;
+}
+
+interface DisplayTimeline {
+  date: string;
+  label: string;
+  done: boolean;
+}
+
+// ── Visual helpers ───────────────────────────────────────────
+
+const PACKAGE_VISUALS: Record<
+  string,
+  { icon: LucideIcon; color: string; bg: string; borderColor: string }
+> = {
+  financial: { icon: Crown, color: "#6366f1", bg: "#eef2ff", borderColor: "#6366f1" },
+  technical: { icon: Medal, color: "#f59e0b", bg: "#fffbeb", borderColor: "#f59e0b" },
+  logistic: { icon: Award, color: "#10b981", bg: "#f0fdf4", borderColor: "#10b981" },
+  hospitality: { icon: Award, color: "#06b6d4", bg: "#ecfeff", borderColor: "#06b6d4" },
+  media: { icon: Star, color: "#e35654", bg: "#fef2f2", borderColor: "#e35654" },
+  other: { icon: Zap, color: "#64748b", bg: "#f8fafc", borderColor: "#94a3b8" },
+};
+
+const TAG_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4"];
+
+function formatPrice(value: number | null): string {
+  if (value === null || value === 0) return "حسب التفاوض";
+  return `${value.toLocaleString("ar-SA")} ر.س`;
+}
+
+function formatTimelineDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ar-SA", { day: "numeric", month: "long" });
+}
+
+function buildTimeline(h: ApiHackathon): DisplayTimeline[] {
+  const now = Date.now();
+  const items: { iso: string | null; label: string }[] = [
+    { iso: h.registrationDeadline, label: "آخر موعد للتسجيل" },
+    { iso: h.startDate, label: "انطلاق الهاكاثون" },
+  ];
+  return items
+    .filter((i) => i.iso)
+    .map((i) => ({
+      date: formatTimelineDate(i.iso),
+      label: i.label,
+      done: i.iso ? new Date(i.iso).getTime() < now : false,
+    }));
+}
+
+function totalPrizes(prizes: ApiPrize[]): string {
+  const total = prizes.reduce((sum, p) => {
+    const num = p.amount ? Number(String(p.amount).replace(/[^\d.]/g, "")) : 0;
+    return sum + (Number.isFinite(num) ? num : 0);
+  }, 0);
+  if (total === 0) return "حسب الإعلان";
+  return `${total.toLocaleString("ar-SA")} ر.س`;
+}
+
+function firstChar(text: string | null): string {
+  if (!text) return "م";
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed[0] : "م";
+}
+
+// ── Component ────────────────────────────────────────────────
 
 export function HackathonDetails() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
 
-  const hackathon = hackathonsData.find((h) => h.id === Number(id)) || hackathonsData[0];
+  const [data, setData] = useState<OpportunityDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+  const [confirmingApply, setConfirmingApply] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleStartNegotiation = () => {
-    if (!selectedPackage) return;
-    navigate("/sponsor/negotiation", {
-      state: {
-        hackathon: hackathon.title,
-        package: sponsorPackages.find((p) => p.id === selectedPackage)?.name,
-      },
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    apiGet<OpportunityDetail>(`/sponsors/opportunities/${id}`)
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          err instanceof ApiError ? err.message : "تعذّر تحميل بيانات الهاكاثون"
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Map API packages to the shape the rich UI expects
+  const displayPackages: DisplayPackage[] = useMemo(() => {
+    if (!data) return [];
+    return data.packages.map((p, idx) => {
+      const visual = PACKAGE_VISUALS[p.type] ?? PACKAGE_VISUALS.other;
+      return {
+        id: p.id,
+        name: p.name,
+        icon: visual.icon,
+        color: visual.color,
+        bg: visual.bg,
+        borderColor: visual.borderColor,
+        price: formatPrice(p.price),
+        badge: idx === 0 ? "الأكثر تأثيراً" : null,
+        perks: p.benefits,
+        hasApplied: p.hasApplied,
+      };
     });
+  }, [data]);
+
+  const handleApplyClick = () => {
+    if (selectedPackage === null) return;
+    setConfirmingApply(true);
   };
+
+  const handleConfirmApply = async () => {
+    if (selectedPackage === null) return;
+    const target = displayPackages.find((p) => p.id === selectedPackage);
+    if (!target || !data) return;
+
+    setSubmitting(true);
+    try {
+      await apiPost<ApplyResponse>("/sponsors/applications", {
+        packageId: selectedPackage,
+      });
+      toast.success(`تم تقديم طلبك على ${target.name} بنجاح`, {
+        description: "سيتم نقلك لمرحلة التفاوض مع المنظم.",
+      });
+      // Navigate to negotiation page with hackathon + package context
+      navigate("/sponsor/negotiation", {
+        state: {
+          hackathonId: data.hackathon.id,
+          hackathonTitle: data.hackathon.title,
+          packageId: selectedPackage,
+          packageName: target.name,
+        },
+      });
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError ? err.message : "حدث خطأ، حاول لاحقاً";
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Render guards ──────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div
+        dir="rtl"
+        className="min-h-screen flex items-center justify-center text-gray-500 text-sm"
+      >
+        <Loader2 className="w-5 h-5 animate-spin ml-2" />
+        جاري تحميل بيانات الهاكاثون...
+      </div>
+    );
+  }
+
+  if (loadError || !data) {
+    return (
+      <div
+        dir="rtl"
+        className="min-h-screen flex items-center justify-center px-4"
+      >
+        <div className="max-w-md bg-red-50 border border-red-200 text-red-700 rounded-2xl p-6 text-center">
+          <p className="text-sm font-semibold">
+            {loadError ?? "تعذّر تحميل البيانات"}
+          </p>
+          <button
+            onClick={() => navigate("/sponsor/opportunities")}
+            className="mt-4 text-sm text-[#e35654] hover:underline"
+          >
+            رجوع لقائمة الفرص
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Mapped values for the rich UI ──────────────────────────
+  const apiHackathon = data.hackathon;
+  const orgName = apiHackathon.org ?? "—";
+  const hackathon = {
+    title: apiHackathon.title,
+    org: orgName,
+    orgLogo: firstChar(orgName),
+    orgColor: "#e35654",
+    tags: data.tracks.map((t) => t.name),
+    tagColors: data.tracks.map((_, i) => TAG_COLORS[i % TAG_COLORS.length]),
+    type: apiHackathon.type ?? "—",
+    typeColor: "#e35654",
+    typeBg: "#ffffff",
+    date: formatTimelineDate(apiHackathon.startDate),
+    deadline: formatTimelineDate(apiHackathon.registrationDeadline),
+    prize: totalPrizes(data.prizes),
+    teams: 0,
+    location: apiHackathon.type ?? "—",
+    duration: "حسب الإعلان",
+    participants: 0,
+    viewers: 0,
+    desc: apiHackathon.description ?? "",
+    timeline: buildTimeline(apiHackathon),
+    cover: "from-[#e35654] via-[#cc4a48] to-[#a83d3b]",
+    coverText: "HACKATHON",
+    featured: false,
+  };
+  const sponsorPackages = displayPackages;
+  const selectedPackageData = sponsorPackages.find(
+    (p) => p.id === selectedPackage
+  );
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#f7f7f6]">
@@ -388,9 +384,9 @@ export function HackathonDetails() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { icon: Trophy, label: "إجمالي الجوائز", value: hackathon.prize, color: "#f59e0b" },
-              { icon: Users, label: "فرق مشاركة", value: `${hackathon.teams} فريق`, color: "#10b981" },
-              { icon: Clock, label: "مدة الهاكاثون", value: hackathon.duration, color: "#6366f1" },
               { icon: Calendar, label: "تاريخ الانطلاق", value: hackathon.date, color: "#e35654" },
+              { icon: Clock, label: "آخر تسجيل", value: hackathon.deadline, color: "#10b981" },
+              { icon: Building2, label: "نوع الهاكاثون", value: hackathon.type, color: "#6366f1" },
             ].map((stat, i) => (
               <div key={i} className="bg-white/10 backdrop-blur-sm rounded-2xl p-3.5 border border-white/10">
                 <stat.icon className="w-4 h-4 mb-2" style={{ color: stat.color }} />
@@ -416,22 +412,29 @@ export function HackathonDetails() {
                 عن الهاكاثون
               </h2>
               <p className="text-gray-600 leading-relaxed" style={{ fontSize: "0.9rem" }}>
-                {hackathon.desc}
+                {hackathon.desc || "—"}
               </p>
 
-              <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-gray-100">
-                {[
-                  { label: "المشاركون", value: hackathon.participants, icon: Users, color: "#6366f1" },
-                  { label: "المشاهدات", value: hackathon.viewers, icon: Eye, color: "#e35654" },
-                  { label: "الفرق المسجلة", value: hackathon.teams, icon: Shield, color: "#10b981" },
-                ].map((s, i) => (
-                  <div key={i} className="text-center p-3 rounded-xl bg-gray-50">
-                    <s.icon className="w-4 h-4 mx-auto mb-1.5" style={{ color: s.color }} />
-                    <p className="text-gray-900" style={{ fontWeight: 800, fontSize: "1.2rem" }}>{s.value}</p>
-                    <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>{s.label}</p>
+              {hackathon.tags.length > 0 && (
+                <div className="mt-5 pt-5 border-t border-gray-100">
+                  <p className="text-gray-500 text-xs mb-2">المسارات</p>
+                  <div className="flex flex-wrap gap-2">
+                    {hackathon.tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="text-xs px-3 py-1 rounded-full"
+                        style={{
+                          background: hackathon.tagColors[i % hackathon.tagColors.length] + "15",
+                          color: hackathon.tagColors[i % hackathon.tagColors.length],
+                          fontWeight: 600,
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Timeline */}
@@ -500,83 +503,116 @@ export function HackathonDetails() {
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
-                {sponsorPackages.map((pkg) => {
-                  const isSelected = selectedPackage === pkg.id;
-                  const isFull = pkg.slotsLeft === 0;
-                  return (
-                    <button
-                      key={pkg.id}
-                      onClick={() => !isFull && setSelectedPackage(pkg.id)}
-                      disabled={isFull}
-                      className={`relative text-right p-4 rounded-2xl border-2 transition-all duration-200 ${
-                        isFull
-                          ? "opacity-50 cursor-not-allowed border-gray-100 bg-gray-50"
-                          : isSelected
-                          ? "shadow-lg cursor-pointer"
-                          : "border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm cursor-pointer"
-                      }`}
-                      style={{
-                        borderColor: isSelected ? pkg.borderColor : undefined,
-                        background: isSelected ? pkg.bg : undefined,
-                      }}
-                    >
-                      {/* Badge */}
-                      {pkg.badge && !isFull && (
-                        <div
-                          className="absolute -top-2.5 left-3 text-white text-xs px-2.5 py-0.5 rounded-full"
-                          style={{ background: pkg.color, fontWeight: 600, fontSize: "0.65rem" }}
-                        >
-                          {pkg.badge}
-                        </div>
-                      )}
-
-                      {/* Selected indicator */}
-                      {isSelected && (
-                        <div
-                          className="absolute top-3 left-3 w-5 h-5 rounded-full flex items-center justify-center"
-                          style={{ background: pkg.color }}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                        </div>
-                      )}
-
-                      <div className="flex items-start gap-3 mb-3">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{ background: pkg.bg }}
-                        >
-                          <pkg.icon className="w-5 h-5" style={{ color: pkg.color }} />
-                        </div>
-                        <div>
-                          <p className="text-gray-900" style={{ fontWeight: 700, fontSize: "0.9rem" }}>
-                            باقة {pkg.name}
-                          </p>
-                          <p className="text-gray-400" style={{ fontSize: "0.7rem" }}>
-                            {pkg.slotsLeft}/{pkg.slots} مقاعد متاحة
-                          </p>
-                        </div>
-                      </div>
-
-                      <p className="mb-3" style={{ fontWeight: 800, fontSize: "1.1rem", color: pkg.color }}>
-                        {pkg.price}
-                      </p>
-
-                      <ul className="space-y-1.5">
-                        {pkg.perks.slice(0, 3).map((perk, i) => (
-                          <li key={i} className="flex items-start gap-1.5 text-gray-500" style={{ fontSize: "0.72rem" }}>
-                            <CheckCircle2 className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: pkg.color }} />
-                            {perk}
-                          </li>
-                        ))}
-                        {pkg.perks.length > 3 && (
-                          <li className="text-gray-400" style={{ fontSize: "0.7rem", fontWeight: 500 }}>
-                            +{pkg.perks.length - 3} مزايا إضافية...
-                          </li>
+                {sponsorPackages.length === 0 ? (
+                  <p className="col-span-2 text-center text-gray-500 text-sm py-8">
+                    لا توجد باقات متاحة لهذا الهاكاثون حالياً.
+                  </p>
+                ) : (
+                  sponsorPackages.map((pkg) => {
+                    const isSelected = selectedPackage === pkg.id;
+                    const isApplied = pkg.hasApplied;
+                    const isLocked =
+                      data.myApplicationPackageId !== null && !isApplied;
+                    const isDisabled = isApplied || isLocked;
+                    return (
+                      <button
+                        key={pkg.id}
+                        onClick={() => !isDisabled && setSelectedPackage(pkg.id)}
+                        disabled={isDisabled}
+                        className={`relative text-right p-4 rounded-2xl border-2 transition-all duration-200 ${
+                          isApplied
+                            ? "cursor-not-allowed"
+                            : isLocked
+                            ? "cursor-not-allowed opacity-60"
+                            : isSelected
+                            ? "shadow-lg cursor-pointer"
+                            : "border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm cursor-pointer"
+                        }`}
+                        style={{
+                          borderColor: isApplied
+                            ? "#10b981"
+                            : isLocked
+                            ? "#e5e7eb"
+                            : isSelected
+                            ? pkg.borderColor
+                            : undefined,
+                          background: isApplied
+                            ? "#f0fdf4"
+                            : isLocked
+                            ? "#fafafa"
+                            : isSelected
+                            ? pkg.bg
+                            : undefined,
+                        }}
+                      >
+                        {/* Badge */}
+                        {pkg.badge && !isApplied && !isLocked && (
+                          <div
+                            className="absolute -top-2.5 left-3 text-white text-xs px-2.5 py-0.5 rounded-full"
+                            style={{ background: pkg.color, fontWeight: 600, fontSize: "0.65rem" }}
+                          >
+                            {pkg.badge}
+                          </div>
                         )}
-                      </ul>
-                    </button>
-                  );
-                })}
+
+                        {/* Applied or Locked or Selected indicator */}
+                        {isApplied ? (
+                          <div className="absolute top-3 left-3 flex items-center gap-1 bg-[#10b981] text-white text-xs px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3" />
+                            تم التقديم
+                          </div>
+                        ) : isLocked ? (
+                          <div className="absolute top-3 left-3 bg-gray-400 text-white text-[10px] px-2 py-0.5 rounded-full">
+                            غير متاحة — قدّمت على باقة أخرى
+                          </div>
+                        ) : (
+                          isSelected && (
+                            <div
+                              className="absolute top-3 left-3 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ background: pkg.color }}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                            </div>
+                          )
+                        )}
+
+                        <div className="flex items-start gap-3 mb-3">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ background: pkg.bg }}
+                          >
+                            <pkg.icon className="w-5 h-5" style={{ color: pkg.color }} />
+                          </div>
+                          <div>
+                            <p className="text-gray-900" style={{ fontWeight: 700, fontSize: "0.9rem" }}>
+                              {pkg.name}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="mb-3" style={{ fontWeight: 800, fontSize: "1.1rem", color: pkg.color }}>
+                          {pkg.price}
+                        </p>
+
+                        {pkg.perks.length > 0 && (
+                          <ul className="space-y-1.5">
+                            {pkg.perks.slice(0, 3).map((perk, i) => (
+                              <li key={i} className="flex items-start gap-1.5 text-gray-500" style={{ fontSize: "0.72rem" }}>
+                                <CheckCircle2 className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: pkg.color }} />
+                                {perk}
+                              </li>
+                            ))}
+                            {pkg.perks.length > 3 && (
+                              <li className="text-gray-400" style={{ fontSize: "0.7rem", fontWeight: 500 }}>
+                                +{pkg.perks.length - 3} مزايا إضافية...
+                              </li>
+                            )}
+                          </ul>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -590,27 +626,38 @@ export function HackathonDetails() {
                 ابدأ رعايتك الآن
               </h3>
               <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-                اختر الباقة المناسبة لشركتك من القائمة، ثم انقر لبدء التفاوض مع المنظم
+                اختر الباقة المناسبة لشركتك من القائمة، ثم اضغط على زر التقديم
               </p>
 
               {/* Selected Package Preview */}
-              {selectedPackage ? (
+              {selectedPackageData ? (
                 <div
                   className="rounded-xl p-3.5 mb-4 border"
                   style={{
-                    background: sponsorPackages.find((p) => p.id === selectedPackage)?.bg,
-                    borderColor: sponsorPackages.find((p) => p.id === selectedPackage)?.borderColor + "50",
+                    background: selectedPackageData.bg,
+                    borderColor: selectedPackageData.borderColor + "50",
                   }}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-gray-500 text-xs">الباقة المختارة</span>
-                    <button onClick={() => setSelectedPackage(null)} className="text-gray-400 text-xs hover:text-gray-600">✕</button>
+                    <button
+                      onClick={() => setSelectedPackage(null)}
+                      className="text-gray-400 text-xs hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
                   </div>
                   <p className="text-gray-900" style={{ fontWeight: 700 }}>
-                    باقة {sponsorPackages.find((p) => p.id === selectedPackage)?.name}
+                    {selectedPackageData.name}
                   </p>
-                  <p style={{ fontWeight: 800, color: sponsorPackages.find((p) => p.id === selectedPackage)?.color, fontSize: "1.05rem" }}>
-                    {sponsorPackages.find((p) => p.id === selectedPackage)?.price}
+                  <p
+                    style={{
+                      fontWeight: 800,
+                      color: selectedPackageData.color,
+                      fontSize: "1.05rem",
+                    }}
+                  >
+                    {selectedPackageData.price}
                   </p>
                 </div>
               ) : (
@@ -621,22 +668,26 @@ export function HackathonDetails() {
               )}
 
               <button
-                onClick={handleStartNegotiation}
-                disabled={!selectedPackage}
+                onClick={handleApplyClick}
+                disabled={!selectedPackageData || selectedPackageData.hasApplied}
                 className={`w-full py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 ${
-                  selectedPackage
+                  selectedPackageData && !selectedPackageData.hasApplied
                     ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/25"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed"
                 }`}
                 style={{ fontWeight: 600 }}
               >
                 <Handshake className="w-4 h-4" />
-                ابدأ التفاوض
-                {selectedPackage && <ChevronLeft className="w-4 h-4" />}
+                {selectedPackageData?.hasApplied
+                  ? "تم التقديم على هذه الباقة"
+                  : "أتقدم على هذه الباقة"}
+                {selectedPackageData && !selectedPackageData.hasApplied && (
+                  <ChevronLeft className="w-4 h-4" />
+                )}
               </button>
 
               <p className="text-center text-gray-400 mt-3" style={{ fontSize: "0.7rem" }}>
-                سيتم توجيهك لمراجعة الشروط وإتمام العقد
+                سيراجع المنظم طلبك ويتم إشعارك بالنتيجة
               </p>
             </div>
 
@@ -681,7 +732,7 @@ export function HackathonDetails() {
               <ul className="space-y-2 text-xs text-white/80">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-white" />
-                  وصول مباشر لـ {hackathon.participants}+ مشارك متميز
+                  وصول مباشر لمشاركين متميزين من خلفيات تقنية متنوعة
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-white" />
@@ -700,6 +751,16 @@ export function HackathonDetails() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      {confirmingApply && selectedPackageData && (
+        <SponsorApplyDialog
+          packageName={selectedPackageData.name}
+          submitting={submitting}
+          onConfirm={handleConfirmApply}
+          onCancel={() => setConfirmingApply(false)}
+        />
+      )}
     </div>
   );
 }
