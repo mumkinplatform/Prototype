@@ -1,5 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
+import { apiGet, apiPut, ApiError } from "../../lib/api";
+
+type SponsorMeResponse = {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  bio: string | null;
+  brandName: string | null;
+  crNumber: string | null;
+};
 import {
   User,
   Mail,
@@ -30,19 +43,44 @@ export function SponsorProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState<"info" | "stats" | "security">("info");
 
-  const [profileData, setProfileData] = useState({
-    companyName: "شركة التقنية المتقدمة",
-    contactName: "عبدالله محمد الشهري",
-    email: "info@advancedtech.sa",
-    phone: "+966 11 234 5678",
-    position: "مدير تطوير الأعمال",
-    commercialRegister: "1010987654",
-    location: "الرياض، المملكة العربية السعودية",
-    website: "www.advancedtech.sa",
-    industry: "تقنية المعلومات والاتصالات",
-    bio: "شركة رائدة في مجال التقنية والابتكار، ندعم المواهب الشابة من خلال رعاية الفاليات التقنية والهاكاثونات. نؤمن بأن الاستثمار في الشباب هو أفضل استثمار للمستقبل.",
-    joinDate: "مارس 2023",
-  });
+  const initialProfile = {
+    companyName: "",
+    contactName: "",
+    email: "",
+    phone: "—",
+    position: "—",
+    commercialRegister: "",
+    location: "—",
+    website: "—",
+    industry: "—",
+    bio: "",
+    joinDate: "—",
+  };
+
+  const [profileData, setProfileData] = useState(initialProfile);
+  const [snapshotData, setSnapshotData] = useState(initialProfile);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiGet<SponsorMeResponse>("/sponsors/me")
+      .then((data) => {
+        const next = {
+          ...initialProfile,
+          companyName: data.brandName ?? "",
+          contactName: data.fullName,
+          email: data.email,
+          commercialRegister: data.crNumber ?? "",
+          bio: data.bio ?? "",
+        };
+        setProfileData(next);
+        setSnapshotData(next);
+      })
+      .catch((err) => setLoadError(err.message))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stats = [
     { label: "إجمالي الرعايات", value: "12", icon: Handshake, color: "#e35654", bg: "#fef2f2" },
@@ -66,8 +104,50 @@ export function SponsorProfile() {
     { title: "مستثمر رائد", desc: "استثمار أكثر من 500K ر.س", icon: "🚀", earned: false },
   ];
 
-  const handleSave = () => setIsEditing(false);
-  const handleCancel = () => setIsEditing(false);
+  const handleCancel = () => {
+    setProfileData(snapshotData);
+    setIsEditing(false);
+  };
+
+  const handleSave = async () => {
+    // التحقق من المدخلات قبل الإرسال
+    if (!profileData.contactName.trim() || profileData.contactName.trim().length < 2) {
+      toast.error("الاسم الكامل مطلوب (حرفين على الأقل)");
+      return;
+    }
+    const cr = profileData.commercialRegister.trim();
+    if (cr && !/^\d{10}$/.test(cr)) {
+      toast.error("السجل التجاري يجب أن يكون 10 أرقام بالضبط");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updated = await apiPut<SponsorMeResponse>("/sponsors/me", {
+        fullName: profileData.contactName.trim(),
+        bio: profileData.bio.trim() || null,
+        brandName: profileData.companyName.trim() || null,
+        crNumber: cr || null,
+      });
+
+      const next = {
+        ...profileData,
+        companyName: updated.brandName ?? "",
+        contactName: updated.fullName,
+        commercialRegister: updated.crNumber ?? "",
+        bio: updated.bio ?? "",
+      };
+      setProfileData(next);
+      setSnapshotData(next);
+      setIsEditing(false);
+      toast.success("تم حفظ التعديلات بنجاح");
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : "تعذّر الحفظ، حاول لاحقاً";
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const tabs = [
     { id: "info" as const, label: "معلومات الشركة" },
@@ -79,6 +159,19 @@ export function SponsorProfile() {
     <>
       {/* Profile Banner */}
       <div className="h-28" style={{ background: "linear-gradient(135deg, #e35654 0%, #cc4a48 100%)" }} />
+
+      {loading && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 text-sm text-gray-500">
+          جاري تحميل الملف الشخصي...
+        </div>
+      )}
+      {loadError && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
+            تعذّر تحميل الملف: {loadError}
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
         {/* Profile Header Card */}
@@ -137,14 +230,16 @@ export function SponsorProfile() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleSave}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
+                      disabled={saving}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                       style={{ fontWeight: 600 }}
                     >
                       <Save className="w-4 h-4" />
-                      حفظ
+                      {saving ? "جاري الحفظ..." : "حفظ"}
                     </button>
                     <button
                       onClick={handleCancel}
+                      disabled={saving}
                       className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
                       style={{ fontWeight: 600 }}
                     >
@@ -205,22 +300,25 @@ export function SponsorProfile() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {[
-                  { label: "اسم الشركة", key: "companyName", icon: Building2, type: "text" },
-                  { label: "اسم المسؤول", key: "contactName", icon: User, type: "text" },
-                  { label: "البريد الإلكتروني", key: "email", icon: Mail, type: "email" },
-                  { label: "رقم الهاتف", key: "phone", icon: Phone, type: "tel" },
-                  { label: "المسمى الوظيفي", key: "position", icon: Award, type: "text" },
-                  { label: "السجل التجاري", key: "commercialRegister", icon: Shield, type: "text" },
-                  { label: "الموقع", key: "location", icon: MapPin, type: "text" },
-                  { label: "الموقع الإلكتروني", key: "website", icon: Globe, type: "url" },
-                  { label: "القطاع", key: "industry", icon: Target, type: "text" },
+                  { label: "اسم الشركة", key: "companyName", icon: Building2, type: "text", editable: true },
+                  { label: "اسم المسؤول", key: "contactName", icon: User, type: "text", editable: true },
+                  { label: "البريد الإلكتروني", key: "email", icon: Mail, type: "email", editable: false },
+                  { label: "رقم الهاتف", key: "phone", icon: Phone, type: "tel", editable: false },
+                  { label: "المسمى الوظيفي", key: "position", icon: Award, type: "text", editable: false },
+                  { label: "السجل التجاري", key: "commercialRegister", icon: Shield, type: "text", editable: true },
+                  { label: "الموقع", key: "location", icon: MapPin, type: "text", editable: false },
+                  { label: "الموقع الإلكتروني", key: "website", icon: Globe, type: "url", editable: false },
+                  { label: "القطاع", key: "industry", icon: Target, type: "text", editable: false },
                 ].map((field) => (
                   <div key={field.key}>
                     <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                       <field.icon className="w-4 h-4 text-gray-400" />
                       {field.label}
+                      {!field.editable && isEditing && (
+                        <span className="text-[10px] text-gray-400 mr-1">(غير قابل للتعديل)</span>
+                      )}
                     </label>
-                    {isEditing ? (
+                    {isEditing && field.editable ? (
                       <input
                         type={field.type}
                         value={(profileData as any)[field.key]}
@@ -231,7 +329,7 @@ export function SponsorProfile() {
                       />
                     ) : (
                       <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm">
-                        {(profileData as any)[field.key]}
+                        {(profileData as any)[field.key] || "—"}
                       </p>
                     )}
                   </div>
