@@ -2341,40 +2341,7 @@ export function CreateHackathon() {
                       <p className="text-xs text-gray-500 mt-2">تظهر في صفحة الهاكاثون وتؤثر على الأشكال الجاهزة</p>
                     </div>
 
-                    {/* Visible Sections */}
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1" style={{ fontWeight: 600 }}>
-                        الأقسام المرئية في مساحة عمل المشارك
-                      </label>
-                      <p className="text-xs text-gray-500 mb-3">
-                        تظهر هذه الأقسام للمشارك بعد قبوله في الهاكاثون داخل مساحة عمله الخاصة.
-                      </p>
-                      <div className="space-y-2">
-                        {([
-                          { id: 'about', label: 'قسم نبذة عن الهاكاثون', desc: 'يعرض الوصف والنظرة العامة' },
-                          { id: 'timeline', label: 'قسم الجدول الزمني', desc: 'يعرض المواعيد والأحداث المهمة' },
-                          { id: 'sponsors', label: 'قسم الرعاة', desc: 'يعرض شعارات الرعاة ومعلوماتهم' },
-                          { id: 'faq', label: 'قسم الأسئلة الشائعة', desc: 'يعرض الأسئلة والأجوبة' },
-                          { id: 'announcements', label: 'قسم الإعلانات', desc: 'للنشر والتحديثات أثناء الهاكاثون' },
-                          { id: 'judges', label: 'قسم لجنة التحكيم', desc: 'يعرض قائمة المحكمين' },
-                          { id: 'submissions', label: 'قسم التسليم', desc: 'منطقة رفع وإدارة المشاريع' },
-                          { id: 'prizes', label: 'قسم الجوائز', desc: 'يعرض معلومات الجوائز والمكافآت' },
-                        ] as const).map((s) => (
-                          <label key={s.id} className="flex items-start gap-3 p-4 rounded-xl border border-gray-200 cursor-pointer hover:bg-gray-50 transition-all">
-                            <input
-                              type="checkbox"
-                              className="mt-1"
-                              checked={branding.visibleSections[s.id]}
-                              onChange={() => toggleVisibleSection(s.id)}
-                            />
-                            <div className="flex-1">
-                              <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{s.label}</div>
-                              <div className="text-xs text-gray-500 mt-0.5">{s.desc}</div>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                    {/* "Visible sections" toggles removed — workspace layout is fixed for now */}
                   </div>
                 </div>
               )}

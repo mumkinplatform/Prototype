@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 interface BannerPatternProps {
   pattern: string;
   colorPalette: string;
@@ -16,17 +18,23 @@ const colorPalettes = {
 
 export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {
   const colors = colorPalettes[colorPalette as keyof typeof colorPalettes] || colorPalettes.red;
+  // useId() returns a unique stable ID per component instance — prevents two BannerPattern
+  // SVGs on the same page from colliding on the same `<linearGradient id="grad1">` and
+  // causing the browser to apply the last-defined gradient to all of them. Manifested
+  // earlier as: switching color palette in one hackathon's draft visually shifted the
+  // color of another hackathon's banner on the same listing page.
+  const uid = useId().replace(/:/g, '');
 
   const patterns = {
     'pattern-1': (
       <svg viewBox="0 0 1920 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id={`${uid}-grad1`} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
           </linearGradient>
         </defs>
-        <rect width="1920" height="400" fill="url(#grad1)" />
+        <rect width="1920" height="400" fill={`url(#${uid}-grad1)`} />
         <path
           d="M0,200 Q480,100 960,200 T1920,200 L1920,400 L0,400 Z"
           fill={colors.light}
@@ -42,12 +50,12 @@ export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {
     'pattern-2': (
       <svg viewBox="0 0 1920 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient id={`${uid}-grad2`} x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
           </linearGradient>
         </defs>
-        <rect width="1920" height="400" fill="url(#grad2)" />
+        <rect width="1920" height="400" fill={`url(#${uid}-grad2)`} />
         <circle cx="1600" cy="100" r="200" fill={colors.light} opacity="0.2" />
         <circle cx="300" cy="300" r="150" fill={colors.light} opacity="0.15" />
         <circle cx="1200" cy="350" r="120" fill={colors.secondary} opacity="0.25" />
@@ -56,12 +64,12 @@ export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {
     'pattern-3': (
       <svg viewBox="0 0 1920 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="grad3" x1="0%" y1="100%" x2="100%" y2="0%">
+          <linearGradient id={`${uid}-grad3`} x1="0%" y1="100%" x2="100%" y2="0%">
             <stop offset="0%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
           </linearGradient>
         </defs>
-        <rect width="1920" height="400" fill="url(#grad3)" />
+        <rect width="1920" height="400" fill={`url(#${uid}-grad3)`} />
         <polygon
           points="0,400 400,0 800,400"
           fill={colors.light}
@@ -77,12 +85,12 @@ export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {
     'pattern-4': (
       <svg viewBox="0 0 1920 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="grad4" x1="0%" y1="0%" x2="0%" y2="100%">
+          <linearGradient id={`${uid}-grad4`} x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
           </linearGradient>
         </defs>
-        <rect width="1920" height="400" fill="url(#grad4)" />
+        <rect width="1920" height="400" fill={`url(#${uid}-grad4)`} />
         <rect x="0" y="0" width="600" height="400" fill={colors.light} opacity="0.2" />
         <rect x="800" y="0" width="400" height="400" fill={colors.secondary} opacity="0.15" />
         <rect x="1400" y="0" width="520" height="400" fill={colors.light} opacity="0.1" />
@@ -91,13 +99,13 @@ export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {
     'pattern-5': (
       <svg viewBox="0 0 1920 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="grad5" x1="0%" y1="50%" x2="100%" y2="50%">
+          <linearGradient id={`${uid}-grad5`} x1="0%" y1="50%" x2="100%" y2="50%">
             <stop offset="0%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
             <stop offset="50%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
           </linearGradient>
         </defs>
-        <rect width="1920" height="400" fill="url(#grad5)" />
+        <rect width="1920" height="400" fill={`url(#${uid}-grad5)`} />
         <path
           d="M0,0 L500,400 L1000,0 L1500,400 L1920,0 L1920,400 L0,400 Z"
           fill={colors.light}
@@ -108,16 +116,16 @@ export function BannerPattern({ pattern, colorPalette }: BannerPatternProps) {
     'pattern-6': (
       <svg viewBox="0 0 1920 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="grad6" x1="100%" y1="0%" x2="0%" y2="100%">
+          <linearGradient id={`${uid}-grad6`} x1="100%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" style={{ stopColor: colors.primary, stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: colors.secondary, stopOpacity: 1 }} />
           </linearGradient>
-          <pattern id="dots" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
+          <pattern id={`${uid}-dots`} x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
             <circle cx="50" cy="50" r="20" fill={colors.light} opacity="0.3" />
           </pattern>
         </defs>
-        <rect width="1920" height="400" fill="url(#grad6)" />
-        <rect width="1920" height="400" fill="url(#dots)" />
+        <rect width="1920" height="400" fill={`url(#${uid}-grad6)`} />
+        <rect width="1920" height="400" fill={`url(#${uid}-dots)`} />
         <circle cx="200" cy="100" r="80" fill={colors.secondary} opacity="0.15" />
         <circle cx="1700" cy="300" r="100" fill={colors.light} opacity="0.2" />
       </svg>
