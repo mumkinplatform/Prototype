@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { apiGet, apiPost, ApiError } from "../../lib/api";
 import {
   Sparkles,
@@ -122,6 +122,10 @@ type Phase = "skills" | "loading" | "results";
 
 export function SmartMatchmaking() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const incomingHackathonId =
+    (location.state as { hackathonId?: number } | null)?.hackathonId ?? null;
+
   const [phase, setPhase] = useState<Phase>("skills");
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -129,7 +133,7 @@ export function SmartMatchmaking() {
   const [joined, setJoined] = useState(false);
 
   const [myHackathons, setMyHackathons] = useState<ApiMyHackathon[]>([]);
-  const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(null);
+  const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(incomingHackathonId);
   const [teams, setTeams] = useState<UiTeam[]>([]);
   const [hackathonsError, setHackathonsError] = useState<string | null>(null);
   const [teamsError, setTeamsError] = useState<string | null>(null);
@@ -140,14 +144,19 @@ export function SmartMatchmaking() {
     apiGet<{ items: ApiMyHackathon[] }>("/participants/my-hackathons")
       .then((data) => {
         setMyHackathons(data.items);
-        if (data.items.length > 0) {
+        if (!incomingHackathonId && data.items.length > 0) {
           setSelectedHackathonId(data.items[0].id);
         }
       })
       .catch((e) => {
         setHackathonsError(e instanceof ApiError ? e.message : "فشل تحميل الهاكاثونات");
       });
-  }, []);
+  }, [incomingHackathonId]);
+
+  const selectedHackathon = useMemo(
+    () => myHackathons.find((h) => h.id === selectedHackathonId) ?? null,
+    [myHackathons, selectedHackathonId]
+  );
 
   const selectedSkillLabels = useMemo(
     () =>
@@ -317,32 +326,7 @@ export function SmartMatchmaking() {
               })}
             </div>
 
-            {/* Hackathon Select */}
-            <div className="mb-6">
-              <label className="text-gray-700 text-sm block mb-2" style={{ fontWeight: 500 }}>
-                الهاكاثون المستهدف
-              </label>
-              {hackathonsError ? (
-                <p className="text-red-500 text-sm">{hackathonsError}</p>
-              ) : myHackathons.length === 0 ? (
-                <div className="px-4 py-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
-                  لا توجد هاكاثونات مسجّل فيها بعد. سجّل في هاكاثون أولاً.
-                </div>
-              ) : (
-                <select
-                  value={selectedHackathonId ?? ""}
-                  onChange={(e) => setSelectedHackathonId(Number(e.target.value))}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
-                >
-                  {myHackathons.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.title}
-                      {h.myTeamId !== null ? " (لديك فريق بالفعل)" : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
+            
 
             <div className="flex items-center justify-between">
               <p className="text-gray-400 text-sm">

@@ -8,10 +8,8 @@ import {
   Eye,
   Users,
   Clock,
-  Star,
   ChevronDown,
   Play,
-  Sparkles,
   MapPin,
 } from "lucide-react";
 import { apiGet, ApiError } from "../../lib/api";
@@ -48,10 +46,8 @@ interface HackathonCard {
   date: string;
   deadline: string;
   prize: string;
-  viewers: number;
   teams: number;
   branding: BrandingPayload | null;
-  featured: boolean;
   location: string;
   skills: string[];
   maxTeam: number;
@@ -95,10 +91,8 @@ function toCard(h: ApiHackathon): HackathonCard {
     date: formatDateAr(h.startDate),
     deadline: formatDateAr(h.registrationDeadline),
     prize: formatPrize(h.prizeTotal),
-    viewers: 0,
     teams: h.applicantsCount,
     branding: h.branding,
-    featured: false,
     location: h.location ?? "—",
     skills: h.skills ?? [],
     maxTeam: h.teamMax,
@@ -107,14 +101,13 @@ function toCard(h: ApiHackathon): HackathonCard {
 }
 
 const typeOptions = ["الكل", "حضوري", "عبر الإنترنت"];
-const sortOptions = ["الأحدث", "الجائزة الأكبر", "الأكثر مشاهدة"];
+const sortOptions = ["الأحدث", "الجائزة الأكبر"];
 
 export function ParticipantHackathons() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [activeType, setActiveType] = useState("الكل");
   const [sort, setSort] = useState("الأحدث");
-  const [onlyFeatured, setOnlyFeatured] = useState(false);
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [hackathons, setHackathons] = useState<HackathonCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,14 +139,12 @@ export function ParticipantHackathons() {
         h.org.includes(search) ||
         h.tags.some((t) => t.includes(search));
       const matchType = activeType === "الكل" || h.type === activeType;
-      const matchFeatured = !onlyFeatured || h.featured;
       const matchOpen = !onlyOpen || h.registrationOpen;
-      return matchSearch && matchType && matchFeatured && matchOpen;
+      return matchSearch && matchType && matchOpen;
     })
     .sort((a, b) => {
       if (sort === "الجائزة الأكبر")
         return parseInt(b.prize.replace(/\D/g, "")) - parseInt(a.prize.replace(/\D/g, ""));
-      if (sort === "الأكثر مشاهدة") return b.viewers - a.viewers;
       return b.id - a.id;
     });
 
@@ -227,18 +218,6 @@ export function ParticipantHackathons() {
           {/* Quick Toggles */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
-              onClick={() => setOnlyFeatured(!onlyFeatured)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs border transition-all ${
-                onlyFeatured
-                  ? "bg-[#e35654] text-white border-[#e35654]"
-                  : "bg-white text-gray-500 border-gray-200 hover:border-[#e35654]/40"
-              }`}
-              style={{ fontWeight: 600 }}
-            >
-              <Star className="w-3.5 h-3.5" />
-              المميزة فقط
-            </button>
-            <button
               onClick={() => setOnlyOpen(!onlyOpen)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs border transition-all ${
                 onlyOpen
@@ -281,17 +260,6 @@ export function ParticipantHackathons() {
                 {/* Cover */}
                 <div className="h-44 relative overflow-hidden">
                   <HackathonCover branding={h.branding} id={h.id} />
-                  {h.featured && (
-                    <div className="absolute top-3 right-3 z-10">
-                      <span
-                        className="flex items-center gap-1 bg-[#e35654] text-white text-xs px-2.5 py-1 rounded-full"
-                        style={{ fontWeight: 600 }}
-                      >
-                        <Star className="w-3 h-3" />
-                        مميز
-                      </span>
-                    </div>
-                  )}
                   {/* Registration status */}
                   <div className="absolute top-3 left-3 z-10">
                     <span
@@ -370,7 +338,7 @@ export function ParticipantHackathons() {
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
                       <Users className="w-3.5 h-3.5 flex-shrink-0" />
-                      {h.teams} فريق • حتى {h.maxTeam} أعضاء
+                      {h.teams} متقدم • حتى {h.maxTeam} أعضاء
                     </div>
                   </div>
 
