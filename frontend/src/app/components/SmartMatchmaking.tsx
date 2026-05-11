@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
-import { apiGet, apiPost, ApiError } from "../../lib/api";
+import { useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import {
   Sparkles,
   Brain,
@@ -18,11 +17,13 @@ import {
   Star,
   MessageCircle,
 } from "lucide-react";
+import { apiPost, ApiError } from "../../lib/api";
+import { toast } from "sonner";
 
 const skillOptions = [
   { id: "frontend", label: "Frontend", icon: Code, color: "#6366f1" },
   { id: "backend", label: "Backend", icon: Database, color: "#10b981" },
-  { id: "ai", label: "AI / ML", icon: Cpu, color: "#f59e0b" },
+  { id: "ai", label: "AI/ML", icon: Cpu, color: "#f59e0b" },
   { id: "uiux", label: "UI/UX", icon: Layers, color: "#e35654" },
   { id: "mobile", label: "Mobile", icon: Smartphone, color: "#8b5cf6" },
   { id: "devops", label: "DevOps", icon: Globe, color: "#06b6d4" },
@@ -30,92 +31,27 @@ const skillOptions = [
   { id: "blockchain", label: "Blockchain", icon: Zap, color: "#f97316" },
 ];
 
-interface ApiMyHackathon {
-  id: number;
-  title: string;
-  status: string;
-  registrationDeadline: string | null;
-  hackathonStartDate: string | null;
-  teamMin: number;
-  teamMax: number;
-  myTeamId: number | null;
-}
+const palette = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#ec4899", "#f97316"];
+const teamColors = ["#e35654", "#6366f1", "#f97316", "#10b981", "#8b5cf6"];
 
 interface ApiTeamMember {
   id: number;
   fullName: string;
-  isLeader: boolean;
   skills: string[];
+  matchScore: number;
 }
 
 interface ApiTeam {
-  id: number;
-  name: string;
-  leaderId: number;
-  leaderName: string;
-  membersCount: number;
-  tags: string[];
-  members: ApiTeamMember[];
-}
-
-interface UiTeamMember {
-  name: string;
-  skill: string;
-  avatar: string;
-  color: string;
-  level: number;
-}
-
-interface UiTeam {
-  id: number;
-  name: string;
+  id: string;
   score: number;
-  members: UiTeamMember[];
+  members: ApiTeamMember[];
   tags: string[];
   reason: string;
-  color: string;
 }
 
-const TEAM_COLOR_PALETTE = ["#e35654", "#6366f1", "#f97316", "#10b981", "#06b6d4", "#8b5cf6"];
-const MEMBER_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#ec4899", "#f97316"];
-
-function colorByIndex(palette: string[], i: number): string {
-  return palette[i % palette.length];
-}
-
-function computeMatchScore(teamTags: string[], selectedSkillLabels: string[]): number {
-  if (selectedSkillLabels.length === 0) return 0;
-  const teamLower = teamTags.map((t) => t.toLowerCase());
-  let matches = 0;
-  for (const s of selectedSkillLabels) {
-    if (teamLower.some((t) => t.includes(s.toLowerCase()) || s.toLowerCase().includes(t))) {
-      matches += 1;
-    }
-  }
-  return Math.round((matches / selectedSkillLabels.length) * 100);
-}
-
-function toUiTeam(t: ApiTeam, index: number, score: number): UiTeam {
-  const teamColor = colorByIndex(TEAM_COLOR_PALETTE, index);
-  return {
-    id: t.id,
-    name: t.name,
-    score,
-    color: teamColor,
-    tags: t.tags,
-    reason: score >= 70
-      ? "نسبة توافق عالية مع مهاراتك المحددة."
-      : score >= 30
-      ? "بعض مهاراتك متطابقة مع تخصصات الفريق."
-      : "فريق متاح للانضمام إذا تبحث عن خبرات جديدة.",
-    members: t.members.map((m, mi) => ({
-      name: m.fullName,
-      skill: m.skills[0] ?? (m.isLeader ? "قائد الفريق" : "—"),
-      avatar: m.fullName.charAt(0) || "؟",
-      color: colorByIndex(MEMBER_COLOR_PALETTE, mi),
-      level: 80,
-    })),
-  };
+interface ApiResponse {
+  candidatesCount: number;
+  suggestedTeams: ApiTeam[];
 }
 
 type Phase = "skills" | "loading" | "results";
@@ -123,48 +59,59 @@ type Phase = "skills" | "loading" | "results";
 export function SmartMatchmaking() {
   const navigate = useNavigate();
   const location = useLocation();
-  const incomingHackathonId =
-    (location.state as { hackathonId?: number } | null)?.hackathonId ?? null;
+  const [searchParams] = useSearchParams();
+
+  const urlHackathonId = searchParams.get("hackathonId");
+  const stateHackathonId = (location.state as { hackathonId?: number } | null)?.hackathonId ?? null;
+  const fixedHackathonId =
+    stateHackathonId && Number.isInteger(stateHackathonId)
+      ? stateHackathonId
+      : urlHackathonId && /^\d+$/.test(urlHackathonId)
+      ? Number(urlHackathonId)
+      : null;
 
   const [phase, setPhase] = useState<Phase>("skills");
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [suggestedTeams, setSuggestedTeams] = useState<ApiTeam[]>([]);
+  const [candidatesCount, setCandidatesCount] = useState(0);
 
-  const [myHackathons, setMyHackathons] = useState<ApiMyHackathon[]>([]);
-  const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(incomingHackathonId);
-  const [teams, setTeams] = useState<UiTeam[]>([]);
-  const [hackathonsError, setHackathonsError] = useState<string | null>(null);
-  const [teamsError, setTeamsError] = useState<string | null>(null);
-  const [joinError, setJoinError] = useState<string | null>(null);
-
-  // Load hackathons the participant is registered in
-  useEffect(() => {
-    apiGet<{ items: ApiMyHackathon[] }>("/participants/my-hackathons")
-      .then((data) => {
-        setMyHackathons(data.items);
-        if (!incomingHackathonId && data.items.length > 0) {
-          setSelectedHackathonId(data.items[0].id);
-        }
-      })
-      .catch((e) => {
-        setHackathonsError(e instanceof ApiError ? e.message : "فشل تحميل الهاكاثونات");
+  const handleJoinTeam = async (team: ApiTeam) => {
+    if (!fixedHackathonId || joining) return;
+    setJoining(true);
+    try {
+      const memberIds = team.members.map((m) => m.id);
+      const result = await apiPost<{
+        teamId: number;
+        teamName: string;
+        addedMemberIds: number[];
+        skippedMemberIds: number[];
+      }>("/matchmaking/create-team-from-suggestion", {
+        hackathonId: fixedHackathonId,
+        memberIds,
       });
-  }, [incomingHackathonId]);
-
-  const selectedHackathon = useMemo(
-    () => myHackathons.find((h) => h.id === selectedHackathonId) ?? null,
-    [myHackathons, selectedHackathonId]
-  );
-
-  const selectedSkillLabels = useMemo(
-    () =>
-      selectedSkills
-        .map((id) => skillOptions.find((s) => s.id === id)?.label)
-        .filter((l): l is string => Boolean(l)),
-    [selectedSkills]
-  );
+      setJoined(true);
+      if (result.skippedMemberIds.length > 0) {
+        toast.success(
+          `تم إنشاء "${result.teamName}". تم تجاوز ${result.skippedMemberIds.length} عضواً لم يعد متاحاً.`
+        );
+      } else {
+        toast.success(`تم إنشاء "${result.teamName}" وانضممت إليه!`);
+      }
+      setTimeout(() => {
+        localStorage.setItem("hackathon_registered", "team");
+        navigate(-1);
+      }, 1400);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : "تعذّر إنشاء الفريق. حاول مجدداً.";
+      toast.error(msg);
+      setJoining(false);
+    }
+  };
 
   const toggleSkill = (id: string) => {
     setSelectedSkills((prev) =>
@@ -173,53 +120,46 @@ export function SmartMatchmaking() {
   };
 
   const startAnalysis = async () => {
-    if (!selectedHackathonId) return;
-    setTeamsError(null);
+    if (!fixedHackathonId) {
+      toast.error("الرجاء فتح خدمة الماتشنق من داخل صفحة الهاكاثون.");
+      return;
+    }
+
     setPhase("loading");
     setLoadingProgress(0);
 
     const interval = setInterval(() => {
-      setLoadingProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 8;
-      });
+      setLoadingProgress((prev) => (prev >= 90 ? 90 : prev + 6));
     }, 150);
 
+    const skillLabels = selectedSkills
+      .map((id) => skillOptions.find((o) => o.id === id)?.label)
+      .filter((l): l is string => Boolean(l));
+
     try {
-      const data = await apiGet<{ items: ApiTeam[] }>(
-        `/participants/hackathons/${selectedHackathonId}/teams`
-      );
-      const ranked = data.items
-        .map((t, i) => ({ team: t, index: i, score: computeMatchScore(t.tags, selectedSkillLabels) }))
-        .sort((a, b) => b.score - a.score)
-        .map(({ team, index, score }) => toUiTeam(team, index, score));
-      setTeams(ranked);
-    } catch (e) {
-      setTeamsError(e instanceof ApiError ? e.message : "فشل تحميل الفرق");
-      setTeams([]);
-    } finally {
-      // Let the progress bar reach 100% before transitioning
-      setTimeout(() => setPhase("results"), 400);
+      const data = await apiPost<ApiResponse>("/matchmaking/suggest-teams", {
+        skills: skillLabels,
+        hackathonId: fixedHackathonId,
+        teamSize: 3,
+        numTeams: 3,
+      });
+      setSuggestedTeams(data.suggestedTeams);
+      setCandidatesCount(data.candidatesCount);
+      clearInterval(interval);
+      setLoadingProgress(100);
+      setTimeout(() => setPhase("results"), 300);
+    } catch (err) {
+      clearInterval(interval);
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : "تعذّر جلب الاقتراحات. حاول مجدداً.";
+      toast.error(msg);
+      setPhase("skills");
     }
   };
 
-  const handleJoinTeam = async (teamId: number) => {
-    if (!selectedHackathonId) return;
-    setJoinError(null);
-    try {
-      await apiPost(`/participants/hackathons/${selectedHackathonId}/join-team`, { teamId });
-      setJoined(true);
-      setTimeout(() => {
-        localStorage.setItem("hackathon_registered", "team");
-        navigate(-1);
-      }, 1400);
-    } catch (e) {
-      setJoinError(e instanceof ApiError ? e.message : "فشل الانضمام للفريق");
-    }
-  };
+  const colorForIndex = (i: number) => palette[i % palette.length];
 
   const steps = [
     "تحليل مهاراتك...",
@@ -255,6 +195,12 @@ export function SmartMatchmaking() {
           أخبرنا بمهاراتك، وسيقترح الذكاء الاصطناعي لك أفضل الفرق المتكاملة خلال ثوانٍ.
         </p>
       </div>
+
+      {!fixedHackathonId && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center text-amber-800 text-sm">
+          ⚠️ خدمة الماتشنق متاحة فقط داخل صفحة هاكاثون محدد. الرجاء فتحها من زر "AI Matching" في صفحة الهاكاثون.
+        </div>
+      )}
 
       {/* Skills Phase */}
       {phase === "skills" && (
@@ -326,8 +272,6 @@ export function SmartMatchmaking() {
               })}
             </div>
 
-            
-
             <div className="flex items-center justify-between">
               <p className="text-gray-400 text-sm">
                 {selectedSkills.length > 0
@@ -336,9 +280,9 @@ export function SmartMatchmaking() {
               </p>
               <button
                 onClick={startAnalysis}
-                disabled={selectedSkills.length === 0 || !selectedHackathonId}
+                disabled={selectedSkills.length === 0 || !fixedHackathonId}
                 className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-white text-sm transition-all duration-200 ${
-                  selectedSkills.length > 0 && selectedHackathonId
+                  selectedSkills.length > 0 && fixedHackathonId
                     ? "bg-[#e35654] hover:bg-[#cc4a48] shadow-lg shadow-[#e35654]/25"
                     : "bg-gray-200 cursor-not-allowed"
                 }`}
@@ -389,7 +333,7 @@ export function SmartMatchmaking() {
           </div>
 
           <div className="mt-8 flex flex-wrap justify-center gap-2">
-            {["تحليل المهارات ✓", "قاعدة بيانات المشاركين ✓", "خوارزمية التوافق ✓"].map((item, i) => (
+            {["تحليل المهارات ✓", "مشاركو الهاكاثون ✓", "خوارزمية التوافق ✓"].map((item, i) => (
               <span
                 key={i}
                 className={`text-xs px-3 py-1.5 rounded-full transition-all duration-500 ${
@@ -414,7 +358,9 @@ export function SmartMatchmaking() {
               <h2 className="text-gray-900 text-xl" style={{ fontWeight: 700 }}>
                 🎉 الفرق المقترحة لك
               </h2>
-              <p className="text-gray-400 text-sm">بناءً على تحليل مهاراتك وخبراتك</p>
+              <p className="text-gray-400 text-sm">
+                بناءً على تحليل {candidatesCount} مشاركاً متاحاً في هذا الهاكاثون
+              </p>
             </div>
             <button
               onClick={() => { setPhase("skills"); setSelectedTeam(null); setJoined(false); }}
@@ -425,23 +371,22 @@ export function SmartMatchmaking() {
             </button>
           </div>
 
-          {teamsError ? (
-            <div className="text-center py-12 text-red-500 text-sm">{teamsError}</div>
-          ) : teams.length === 0 ? (
-            <div className="text-center py-12 px-6 rounded-2xl border border-dashed border-gray-200 bg-gray-50">
-              <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
-                لا توجد فرق متاحة للانضمام في هذا الهاكاثون بعد.
+          {suggestedTeams.length === 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+              <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-700" style={{ fontWeight: 600 }}>
+                لا يوجد مرشحون مناسبون حالياً
               </p>
-              <p className="text-gray-400 text-xs mt-1">
-                جرّب لاحقاً، أو ارجع لصفحة الهاكاثون لإنشاء فريق جديد.
+              <p className="text-gray-400 text-sm mt-1">
+                جرّب اختيار مهارات مختلفة، أو انتظر انضمام مشاركين جدد لهذا الهاكاثون.
               </p>
             </div>
-          ) : (
+          )}
+
           <div className="space-y-4">
-            {joinError && (
-              <p className="text-red-500 text-sm" style={{ fontWeight: 500 }}>{joinError}</p>
-            )}
-            {teams.map((team) => (
+            {suggestedTeams.map((team, teamIndex) => {
+              const teamColor = teamColors[teamIndex % teamColors.length];
+              return (
               <div
                 key={team.id}
                 className={`bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all duration-200 cursor-pointer ${
@@ -451,19 +396,19 @@ export function SmartMatchmaking() {
                 }`}
                 onClick={() => setSelectedTeam(team.id)}
               >
-                <div className="h-1" style={{ background: team.color }} />
+                <div className="h-1" style={{ background: teamColor }} />
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div
                         className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                        style={{ background: team.color + "15" }}
+                        style={{ background: teamColor + "15" }}
                       >
-                        <Users className="w-6 h-6" style={{ color: team.color }} />
+                        <Users className="w-6 h-6" style={{ color: teamColor }} />
                       </div>
                       <div>
                         <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-                          {team.name}
+                          فريق مقترح #{teamIndex + 1}
                         </h3>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {team.tags.map((tag, i) => (
@@ -471,8 +416,8 @@ export function SmartMatchmaking() {
                               key={i}
                               className="text-xs px-2 py-0.5 rounded-full"
                               style={{
-                                background: team.color + "15",
-                                color: team.color,
+                                background: teamColor + "15",
+                                color: teamColor,
                                 fontWeight: 500,
                               }}
                             >
@@ -485,7 +430,7 @@ export function SmartMatchmaking() {
                     <div className="text-right">
                       <div
                         className="text-2xl"
-                        style={{ color: team.color, fontWeight: 800 }}
+                        style={{ color: teamColor, fontWeight: 800 }}
                       >
                         {team.score}%
                       </div>
@@ -499,42 +444,46 @@ export function SmartMatchmaking() {
 
                   {/* Members */}
                   <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {team.members.map((member, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
-                      >
+                    {team.members.map((member, i) => {
+                      const memberColor = colorForIndex(i);
+                      const initial = member.fullName.trim().charAt(0) || "?";
+                      return (
                         <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm flex-shrink-0"
-                          style={{ background: member.color, fontWeight: 700 }}
+                          key={member.id}
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
                         >
-                          {member.avatar}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-gray-900 text-sm truncate" style={{ fontWeight: 500 }}>
-                            {member.name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span
-                              className="text-xs"
-                              style={{ color: member.color, fontWeight: 500 }}
-                            >
-                              {member.skill}
-                            </span>
-                            <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${member.level}%`,
-                                  background: member.color,
-                                }}
-                              />
+                          <div
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm flex-shrink-0"
+                            style={{ background: memberColor, fontWeight: 700 }}
+                          >
+                            {initial}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-gray-900 text-sm truncate" style={{ fontWeight: 500 }}>
+                              {member.fullName}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span
+                                className="text-xs truncate"
+                                style={{ color: memberColor, fontWeight: 500 }}
+                              >
+                                {member.skills.slice(0, 3).join(" • ")}
+                              </span>
+                              <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${member.matchScore}%`,
+                                    background: memberColor,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-xs text-gray-400">{member.matchScore}%</span>
                             </div>
-                            <span className="text-xs text-gray-400">{member.level}%</span>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {selectedTeam === team.id && (
@@ -549,11 +498,14 @@ export function SmartMatchmaking() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleJoinTeam(team.id);
+                          handleJoinTeam(team);
                         }}
+                        disabled={joining || joined}
                         className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm transition-all duration-200 flex-1 justify-center ${
                           joined
                             ? "bg-green-100 text-green-700"
+                            : joining
+                            ? "bg-gray-300 text-gray-600 cursor-wait"
                             : "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20"
                         }`}
                         style={{ fontWeight: 600 }}
@@ -562,6 +514,11 @@ export function SmartMatchmaking() {
                           <>
                             <CheckCircle2 className="w-4 h-4" />
                             انضممت إلى الفريق! 🎉
+                          </>
+                        ) : joining ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            جارٍ الإنشاء...
                           </>
                         ) : (
                           <>
@@ -574,9 +531,9 @@ export function SmartMatchmaking() {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
-          )}
 
           {/* How it works info */}
           <div className="mt-8 bg-gradient-to-br from-[#e35654]/5 to-[#e35654]/10 rounded-2xl p-6 border border-[#e35654]/10">
@@ -591,7 +548,7 @@ export function SmartMatchmaking() {
             <div className="grid sm:grid-cols-3 gap-4">
               {[
                 { icon: Cpu, title: "تحليل المهارات", desc: "يحلل النظام مهاراتك وخبراتك وأسلوب عملك" },
-                { icon: Brain, title: "خوارزمية التوافق", desc: "يطابق بياناتك مع آلاف المشاركين لإيجاد التوافق المثالي" },
+                { icon: Brain, title: "خوارزمية التوافق", desc: "يطابق بياناتك مع المشاركين الأفراد داخل الهاكاثون لإيجاد التوافق المثالي" },
                 { icon: Star, title: "فرق متوازنة", desc: "يقترح فرقًا تجمع مهارات تكميلية لتحقيق أفضل النتائج" },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3">

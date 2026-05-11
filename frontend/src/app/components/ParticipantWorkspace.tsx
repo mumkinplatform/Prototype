@@ -301,6 +301,16 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+const SUBMISSION_FIELD_LABELS: Record<string, string> = {
+  title: "عنوان المشروع",
+  desc: "وصف المشروع",
+  video: "فيديو توضيحي",
+  demo: "رابط النسخة التجريبية",
+  github: "رابط GitHub",
+  presentation: "عرض تقديمي (PDF)",
+  images: "صور المشروع",
+};
+
 const FILE_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
 
 
@@ -1300,28 +1310,79 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
 
   return (
     <div className="space-y-6">
-      {/* Submission Requirements */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-5">
           <ListChecks className="w-5 h-5" style={{ color: "#f59e0b" }} />
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>متطلبات التسليم</h2>
         </div>
 
-        {data.requirements.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-6">لم يحدّد المنظّم متطلبات بعد</p>
-        ) : (
-          <div className="space-y-3">
-            {data.requirements.map((req, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                  style={{ background: "#f59e0b15", color: "#f59e0b" }}>
-                  <CheckCircle className="w-3.5 h-3.5" />
-                </div>
-                <p className="text-gray-700 text-sm leading-relaxed flex-1">{req}</p>
-              </div>
-            ))}
+        {data.submissionDeadline && (
+          <div className="flex items-start gap-3 p-3 rounded-xl mb-5"
+            style={{ background: "#fef2f4", border: "1px solid #fecaca" }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: "#e35654", color: "#fff" }}>
+              <ListChecks className="w-4 h-4" />
+            </div>
+            <div className="flex-1">
+              <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                موعد إغلاق التسليم
+              </p>
+              <p className="text-gray-600 text-sm mt-0.5">{formatDateAr(data.submissionDeadline)}</p>
+              {data.allowLateSubmission && (
+                <p className="text-amber-600 text-xs mt-1">يسمح المنظّم بالتسليم المتأخر</p>
+              )}
+            </div>
           </div>
         )}
+
+        {data.submissionFields.length > 0 && (
+          <div className="mb-5">
+            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
+              الحقول المطلوبة في التسليم
+            </p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {data.submissionFields.map((fieldId) => (
+                <div key={fieldId}
+                  className="flex items-center gap-3 p-3 rounded-xl border border-gray-100">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ background: "#10b98115", color: "#10b981" }}>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-gray-700 text-sm flex-1">
+                    {SUBMISSION_FIELD_LABELS[fieldId] ?? fieldId}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {data.requirements.length > 0 && (
+          <div>
+            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
+              الشروط الإضافية
+            </p>
+            <div className="space-y-2">
+              {data.requirements.map((req, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                    style={{ background: "#f59e0b15", color: "#f59e0b" }}>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-gray-700 text-sm leading-relaxed flex-1">{req}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {data.submissionFields.length === 0 && data.requirements.length === 0 && !data.submissionDeadline && (
+          <p className="text-gray-400 text-sm text-center py-6">لم يحدّد المنظّم متطلبات بعد</p>
+        )}
+
+        <p className="text-gray-400 text-xs mt-5 pt-4 border-t border-gray-100">
+          الحد الأقصى لحجم الملف الواحد: <span style={{ fontWeight: 600, color: "#374151" }}>{data.maxFileSizeMb} MB</span>
+        </p>
       </div>
 
       {/* Upload Section */}

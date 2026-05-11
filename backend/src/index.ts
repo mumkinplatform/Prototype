@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes';
 import hackathonRoutes from './routes/hackathon.routes';
 import sponsorRoutes from './routes/sponsor.routes';
 import participantRoutes from './routes/participant.routes';
+import matchmakingRoutes from './routes/matchmaking.routes';
 import { getInvitationByToken, acceptInvitation } from './controllers/hackathon.controller';
 import { requireAuth } from './middleware/auth.middleware';
 
@@ -29,6 +30,7 @@ app.use('/auth', authRoutes);
 app.use('/hackathons', hackathonRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use('/participants', participantRoutes);
+app.use('/matchmaking', matchmakingRoutes);
 // Public invitation lookup — no auth, used by /invite/:token landing page.
 app.get('/invitations/:token', getInvitationByToken);
 // Accept an invitation — requires the logged-in user's email to match the invite email.

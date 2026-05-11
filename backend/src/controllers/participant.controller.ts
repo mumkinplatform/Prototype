@@ -1519,7 +1519,7 @@ interface SubmissionFileRow extends RowDataPacket {
 }
 
 interface HackathonSubmissionMetaRow extends RowDataPacket {
-  H_Submission_Fields: string | null;
+  H_Submission_Fields: string | string[] | null;
   H_Project_Requirements: string | null;
   H_Submission_Deadline: Date | null;
   H_Allow_Late_Submission: number;
@@ -1643,9 +1643,12 @@ export const getMySubmission = async (req: Request, res: Response) => {
   const meta = metaRows[0];
 
   let submissionFields: string[] = [];
-  if (meta?.H_Submission_Fields) {
+  const rawFields = meta?.H_Submission_Fields;
+  if (Array.isArray(rawFields)) {
+    submissionFields = rawFields.filter((x): x is string => typeof x === 'string');
+  } else if (typeof rawFields === 'string' && rawFields.trim()) {
     try {
-      const parsed = JSON.parse(meta.H_Submission_Fields);
+      const parsed = JSON.parse(rawFields);
       if (Array.isArray(parsed)) submissionFields = parsed.filter((x) => typeof x === 'string');
     } catch {
       submissionFields = [];
