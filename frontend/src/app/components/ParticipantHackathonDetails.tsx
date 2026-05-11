@@ -271,10 +271,20 @@ function RegistrationModal({
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // Map UI's teamMethod ("email" | "ai") to backend's enum ('manual' | 'ai').
+      // The "email" UI option corresponds to a manually-formed team.
+      const backendTeamMethod =
+        participationType === "team"
+          ? teamMethod === "ai"
+            ? "ai"
+            : "manual"
+          : undefined;
+
       await apiPost(`/participants/hackathons/${hackathonId}/register`, {
         ideaTitle: trimmedTitle,
         ideaDescription: trimmedDesc,
         participationType,
+        ...(backendTeamMethod ? { teamMethod: backendTeamMethod } : {}),
       });
 
       if (participationType === "team" && teamMethod === "ai") {

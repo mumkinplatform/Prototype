@@ -28,6 +28,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { apiGet, apiDelete, ApiError } from "../../lib/api";
+import { HackathonCover, BrandingPayload } from "./HackathonCover";
+import { LogoPattern } from "./LogoPatterns";
 
 // ── API Types ────────────────────────────────────────────────
 
@@ -46,6 +48,7 @@ interface ApiApplication {
     title: string;
     status: string;
     startDate: string | null;
+    branding: BrandingPayload | null;
   };
 }
 
@@ -75,6 +78,7 @@ interface DisplaySponsorship {
   actionSecondary: string;
   urgent: boolean;
   contractSigned: boolean;
+  branding: BrandingPayload | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -150,6 +154,7 @@ function mapApplicationToDisplay(app: ApiApplication): DisplaySponsorship {
     actionSecondary: "تفاصيل الباقة",
     urgent: false,
     contractSigned: app.status === "accepted",
+    branding: app.hackathon.branding,
   };
 }
 
@@ -482,48 +487,79 @@ export function SponsorSponsorships() {
                 sp.urgent ? "border-orange-200" : "border-gray-100"
               }`}
             >
-              {/* Card Header */}
-              <div className="px-5 pt-5 pb-4 border-b border-gray-50">
-                <div className="flex items-start justify-between gap-2 mb-3">
+              {/* Card Header — banner background from organizer's branding, with
+                  name + logo/badge + package chip overlaid. Dark gradient at the
+                  bottom keeps the title legible across any banner image/pattern. */}
+              <div className="relative h-36 overflow-hidden border-b border-gray-50">
+                <HackathonCover branding={sp.branding} id={sp.hackathonId} />
+                {/* Bottom-up gradient — strong at bottom, faint at top — so the
+                    status chip (top) stays readable on bright banners and the
+                    title (bottom) sits on enough contrast. */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10 pointer-events-none" />
+
+                {/* Status chip (top-right). The package indicator is rendered as
+                    a chip at the bottom of the banner next to the title — no need
+                    for a redundant top-left badge. */}
+                <div className="relative z-10 flex items-start justify-end gap-2 px-4 pt-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     {sp.urgent && (
-                      <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-500" style={{ fontWeight: 600 }}>
+                      <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-500 shadow-sm" style={{ fontWeight: 600 }}>
                         <AlertCircle className="w-3 h-3" />
                         قيد التقديم
                       </span>
                     )}
                     <span
-                      className="text-xs px-2.5 py-1 rounded-full"
+                      className="text-xs px-2.5 py-1 rounded-full shadow-sm"
                       style={{ background: sp.statusBg, color: sp.statusColor, fontWeight: 600 }}
                     >
                       ● {sp.status}
                     </span>
                   </div>
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: sp.packageBg }}
-                  >
-                    <span className="text-xs" style={{ color: sp.packageColor, fontWeight: 800 }}>
-                      {sp.package[0]}
-                    </span>
-                  </div>
                 </div>
 
-                <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700, fontSize: "0.95rem" }}>
-                  {sp.name}
-                </h3>
+                {/* Organizer logo + title + package chip (bottom of banner) */}
+                <div className="absolute bottom-0 inset-x-0 px-4 pb-3 z-10 flex items-end gap-3">
+                  {/* Organizer logo: uploaded image → preset pattern → letter fallback */}
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/95 shadow-md flex-shrink-0 flex items-center justify-center">
+                    {sp.branding?.logoMode === "upload" && sp.branding.logoUploadDataUrl ? (
+                      <img
+                        src={sp.branding.logoUploadDataUrl}
+                        alt=""
+                        aria-hidden
+                        className="w-full h-full object-cover"
+                      />
+                    ) : sp.branding?.logoMode === "pattern" && sp.branding.logoPattern ? (
+                      <LogoPattern
+                        pattern={sp.branding.logoPattern}
+                        colorPalette={sp.branding.colorPalette || "red"}
+                      />
+                    ) : (
+                      <span
+                        className="text-base"
+                        style={{ color: "#e35654", fontWeight: 800 }}
+                      >
+                        {sp.name.trim()[0] ?? "م"}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5" />
-                    {sp.payDate}
-                  </span>
-                  <span
-                    className="text-xs px-2 py-0.5 rounded-md text-white"
-                    style={{ background: sp.packageColor, fontWeight: 600 }}
-                  >
-                    {sp.package}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white mb-1.5 drop-shadow-md truncate" style={{ fontWeight: 700, fontSize: "0.95rem" }}>
+                      {sp.name}
+                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-md text-white shadow-sm"
+                        style={{ background: sp.packageColor, fontWeight: 600 }}
+                      >
+                        {sp.package}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs text-white/90 drop-shadow">
+                        <Calendar className="w-3.5 h-3.5" />
+                        {sp.payDate}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 

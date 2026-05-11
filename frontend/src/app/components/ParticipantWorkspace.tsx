@@ -65,6 +65,10 @@ interface ApiMyHackathon {
   teamMax: number;
   myTeamId: number | null;
   participationType: "solo" | "team";
+  applicationStatus: "pending" | "accepted" | "rejected";
+  myIdeaTitle: string | null;
+  myIdeaDescription: string | null;
+  appliedAt: string | null;
   tags: string[];
   branding: BrandingPayload | null;
 }
@@ -98,6 +102,10 @@ interface UiMyHackathon {
   submissionDeadlineRaw: string | null;
   hasTeam: boolean;
   participationType: "solo" | "team";
+  applicationStatus: "pending" | "accepted" | "rejected";
+  myIdeaTitle: string | null;
+  myIdeaDescription: string | null;
+  appliedAt: string | null;
   teamMin: number;
   teamMax: number;
   hackathonStatus: string;
@@ -178,18 +186,44 @@ function buildTimeline(h: ApiMyHackathon): UiTimelinePhase[] {
 
 function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
   const cd = computeCountdown(h.submissionDeadline);
-  const note = h.myTeamId
-    ? "تم القبول في فريقك. يمكنك البدء في العمل على المشروع."
-    : h.participationType === "team"
-    ? "تسجيلك لم يكتمل — تبقى إيجاد فريق."
-    : "أنت مسجّل بشكل فردي. ابدأ في إعداد مشروعك.";
+
+  // Status badge derives from application_status first — pending/rejected take
+  // precedence over team-state messaging because the participant has no access
+  // to the workspace until the organizer accepts.
+  let status: string;
+  let statusColor: string;
+  let statusBg: string;
+  let note: string;
+  if (h.applicationStatus === "pending") {
+    status = "قيد المراجعة";
+    statusColor = "#f59e0b";
+    statusBg = "#fffbeb";
+    note = "طلب تسجيلك قيد المراجعة من قِبل المنظم. ستتلقى إيميلاً عند اتخاذ القرار.";
+  } else if (h.applicationStatus === "rejected") {
+    status = "مرفوض";
+    statusColor = "#ef4444";
+    statusBg = "#fef2f2";
+    note = "نأسف، لم يتم قبول طلب مشاركتك في هذا الهاكاثون.";
+  } else if (h.myTeamId || h.participationType === "solo") {
+    status = "مقبول";
+    statusColor = "#10b981";
+    statusBg = "#f0fdf4";
+    note = h.myTeamId
+      ? "تم القبول في فريقك. يمكنك البدء في العمل على المشروع."
+      : "أنت مسجّل بشكل فردي. ابدأ في إعداد مشروعك.";
+  } else {
+    status = "بانتظار فريق";
+    statusColor = "#f59e0b";
+    statusBg = "#fffbeb";
+    note = "تم قبولك. تبقى إيجاد فريق لإكمال مشاركتك.";
+  }
 
   return {
     id: h.id,
     name: h.title,
-    status: h.myTeamId || h.participationType === "solo" ? "مقبول" : "بانتظار فريق",
-    statusColor: h.myTeamId || h.participationType === "solo" ? "#10b981" : "#f59e0b",
-    statusBg: h.myTeamId || h.participationType === "solo" ? "#f0fdf4" : "#fffbeb",
+    status,
+    statusColor,
+    statusBg,
     note,
     branding: h.branding,
     track: h.tags[0] ?? (h.type ?? "هاكاثون"),
@@ -206,6 +240,10 @@ function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
     submissionDeadlineRaw: h.submissionDeadline,
     hasTeam: h.myTeamId !== null,
     participationType: h.participationType,
+    applicationStatus: h.applicationStatus,
+    myIdeaTitle: h.myIdeaTitle,
+    myIdeaDescription: h.myIdeaDescription,
+    appliedAt: h.appliedAt,
     teamMin: h.teamMin,
     teamMax: h.teamMax,
     hackathonStatus: h.status,
@@ -376,6 +414,7 @@ export function ParticipantWorkspace() {
 // ═══════════════════════════════════════════════════════════
 function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
   const navigate = useNavigate();
+  const [viewingRegistration, setViewingRegistration] = useState<UiMyHackathon | null>(null);
 
   const handleEnterWorkspace = (hackathonId: number) => {
     navigate(`/participant/workspace?id=${hackathonId}`);
@@ -468,20 +507,140 @@ function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
 
                 <p className="text-gray-400 text-sm mb-4 line-clamp-2">{h.note}</p>
 
-                <button
-                  onClick={() => handleEnterWorkspace(h.id)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors shadow-md shadow-[#e35654]/20 mt-auto"
-                  style={{ fontWeight: 600 }}
-                >
-                  <Play className="w-4 h-4" />
-                  دخول مساحة العمل
-                </button>
+                <div className="mt-auto space-y-2">
+                  {h.applicationStatus === "accepted" ? (
+                    <button
+                      onClick={() => handleEnterWorkspace(h.id)}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-colors shadow-md shadow-[#e35654]/20"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <Play className="w-4 h-4" />
+                      دخول مساحة العمل
+                    </button>
+                  ) : h.applicationStatus === "pending" ? (
+                    <button
+                      disabled
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-50 text-amber-700 text-sm cursor-not-allowed border border-amber-200"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <Clock className="w-4 h-4" />
+                      قيد المراجعة
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-600 text-sm cursor-not-allowed border border-red-200"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <X className="w-4 h-4" />
+                      تم رفض طلبك
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setViewingRegistration(h)}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-gray-200 text-gray-600 text-xs hover:bg-gray-50 transition-colors"
+                    style={{ fontWeight: 600 }}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    عرض طلب التسجيل
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
         )}
       </div>
+
+      {/* Registration details modal — read-only view of what the participant
+          submitted at registration time. No editing for now (deferred). */}
+      {viewingRegistration && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <p className="text-gray-900 text-base" style={{ fontWeight: 700 }}>
+                  طلب التسجيل
+                </p>
+                <p className="text-gray-400 text-xs mt-0.5 truncate max-w-[280px]">
+                  {viewingRegistration.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewingRegistration(null)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-400 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className="text-xs px-3 py-1 rounded-full"
+                  style={{
+                    background: viewingRegistration.statusBg,
+                    color: viewingRegistration.statusColor,
+                    fontWeight: 600,
+                  }}
+                >
+                  {viewingRegistration.status}
+                </span>
+                <span className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-700" style={{ fontWeight: 600 }}>
+                  {viewingRegistration.participationType === "team" ? "مشاركة جماعية" : "مشاركة فردية"}
+                </span>
+                {viewingRegistration.appliedAt && (
+                  <span className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-600">
+                    تاريخ التسجيل: {formatDateAr(viewingRegistration.appliedAt)}
+                  </span>
+                )}
+              </div>
+
+              {viewingRegistration.myIdeaTitle ? (
+                <div>
+                  <p className="text-gray-500 text-xs mb-1.5" style={{ fontWeight: 600 }}>
+                    عنوان الفكرة
+                  </p>
+                  <p className="text-gray-900 text-sm leading-relaxed" style={{ fontWeight: 600 }}>
+                    {viewingRegistration.myIdeaTitle}
+                  </p>
+                </div>
+              ) : null}
+
+              {viewingRegistration.myIdeaDescription ? (
+                <div>
+                  <p className="text-gray-500 text-xs mb-1.5" style={{ fontWeight: 600 }}>
+                    نبذة عن الفكرة
+                  </p>
+                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
+                    {viewingRegistration.myIdeaDescription}
+                  </p>
+                </div>
+              ) : null}
+
+              {!viewingRegistration.myIdeaTitle && !viewingRegistration.myIdeaDescription && (
+                <p className="text-gray-400 text-sm text-center py-6">
+                  لا توجد بيانات إضافية لطلب التسجيل.
+                </p>
+              )}
+
+              <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 leading-relaxed">
+                هذه نسخة للقراءة فقط من طلب تسجيلك. لا يمكن التعديل بعد إرسال الطلب.
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setViewingRegistration(null)}
+                className="w-full px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm hover:bg-gray-200 transition-colors"
+                style={{ fontWeight: 600 }}
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -513,6 +672,66 @@ function saveSeenCounts(hackathonId: number, seen: Partial<Record<WorkspaceTab, 
 function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("home");
+
+  // Gate the workspace by application status. Backend already 403s every
+  // workspace endpoint for non-accepted participants, but we render a clean
+  // status screen here so the participant gets a clear explanation instead of
+  // a wall of failing tabs.
+  if (hackathon.applicationStatus !== "accepted") {
+    const isPending = hackathon.applicationStatus === "pending";
+    return (
+      <div className="min-h-screen bg-[#f7f7f6] flex flex-col">
+        <div className="bg-white border-b border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate("/participant/workspace")}
+                className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 text-gray-600 hover:bg-gray-100 transition-all"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+              <div>
+                <h1 className="text-2xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
+                  {hackathon.name}
+                </h1>
+                <p className="text-sm text-gray-500">{hackathon.organizer}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-gray-100 p-8 text-center shadow-sm">
+            <div
+              className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+              style={{ background: isPending ? "#fffbeb" : "#fef2f2" }}
+            >
+              {isPending ? (
+                <Clock className="w-8 h-8" style={{ color: "#f59e0b" }} />
+              ) : (
+                <X className="w-8 h-8" style={{ color: "#ef4444" }} />
+              )}
+            </div>
+            <h2 className="text-gray-900 text-lg mb-2" style={{ fontWeight: 700 }}>
+              {isPending ? "طلبك قيد المراجعة" : "تم رفض طلبك"}
+            </h2>
+            <p className="text-gray-500 text-sm leading-relaxed mb-6">
+              {isPending
+                ? "طلب مشاركتك قيد المراجعة من قِبل المنظم. ستتلقى إيميلاً فور اتخاذ القرار."
+                : "نأسف، لم يتم قبول طلبك للمشاركة في هذا الهاكاثون. نشكرك على اهتمامك ونتمنى لك التوفيق في الفعاليات القادمة."}
+            </p>
+            <button
+              onClick={() => navigate("/participant/workspace")}
+              className="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm hover:bg-gray-200 transition-colors"
+              style={{ fontWeight: 600 }}
+            >
+              العودة لقائمة الهاكاثونات
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Real badge counts per tab
   const [counts, setCounts] = useState<Record<WorkspaceTab, number>>({

@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { pool } from '../db/pool';
 import { hashPassword, verifyPassword } from '../lib/password';
+import { extractBranding } from '../lib/branding';
 import { UPLOADS_DIR, AVATARS_DIR } from '../middleware/upload.middleware';
 
 interface ParticipantProfileRow extends RowDataPacket {
@@ -53,35 +54,7 @@ interface HackathonListRow extends RowDataPacket {
 }
 
 /** Extracts banner + logo fields from H_Branding to keep response payload small. */
-function extractBranding(raw: string | null): {
-  bannerMode: 'upload' | 'pattern' | null;
-  bannerUploadDataUrl: string | null;
-  bannerPattern: string | null;
-  logoMode: 'upload' | 'pattern' | null;
-  logoUploadDataUrl: string | null;
-  logoPattern: string | null;
-  colorPalette: string | null;
-} | null {
-  if (!raw) return null;
-  try {
-    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (!obj || typeof obj !== 'object') return null;
-    const b = obj as Record<string, unknown>;
-    const bMode = b.bannerMode === 'upload' || b.bannerMode === 'pattern' ? b.bannerMode : null;
-    const lMode = b.logoMode === 'upload' || b.logoMode === 'pattern' ? b.logoMode : null;
-    return {
-      bannerMode: bMode,
-      bannerUploadDataUrl: bMode === 'upload' && typeof b.bannerUploadDataUrl === 'string' ? b.bannerUploadDataUrl : null,
-      bannerPattern: bMode === 'pattern' && typeof b.bannerPattern === 'string' ? b.bannerPattern : null,
-      logoMode: lMode,
-      logoUploadDataUrl: lMode === 'upload' && typeof b.logoUploadDataUrl === 'string' ? b.logoUploadDataUrl : null,
-      logoPattern: lMode === 'pattern' && typeof b.logoPattern === 'string' ? b.logoPattern : null,
-      colorPalette: typeof b.colorPalette === 'string' ? b.colorPalette : null,
-    };
-  } catch {
-    return null;
-  }
-}
+// extractBranding moved to ../lib/branding (shared with sponsor controller).
 
 interface HackathonDetailRow extends RowDataPacket {
   id: number;
@@ -119,6 +92,7 @@ interface TrackDetailRow extends RowDataPacket {
 
 interface IsRegisteredRow extends RowDataPacket {
   participation_type: 'solo' | 'team';
+  application_status: 'pending' | 'accepted' | 'rejected';
   T_ID: number | null;
 }
 
@@ -142,6 +116,10 @@ interface MyHackathonRow extends RowDataPacket {
   org: string | null;
   myTeamId: number | null;
   participationType: 'solo' | 'team';
+  applicationStatus: 'pending' | 'accepted' | 'rejected';
+  myIdeaTitle: string | null;
+  myIdeaDescription: string | null;
+  appliedAt: Date | null;
   tagsRaw: string | null;
   brandingRaw: string | null;
 }
@@ -200,6 +178,63 @@ function ensureParticipant(req: Request, res: Response): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * Workspace gate: a participant can only use workspace endpoints (team, sessions,
+ * evaluations, messages, submission, etc.) after the organizer has accepted them
+ * AND sent the decision notification email. The notification email is the formal
+ * announcement — before it, the participant should remain in "pending" state
+ * regardless of the internal decision the organizer made. Returns true only when
+ * both conditions hold; otherwise responds with 404 (not registered) or 403
+ * (rejected / still pending from the participant's POV). Endpoints should
+ * `return` immediately when this returns false.
+ */
+async function ensureAcceptedParticipant(
+  req: Request,
+  res: Response,
+  hackathonId: number,
+): Promise<boolean> {
+  const memberId = req.user!.memberId;
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT application_status, notification_sent_at
+       FROM applies_hackathon WHERE hackathon_ID = ? AND PM_ID = ?`,
+    [hackathonId, memberId],
+  );
+  if (rows.length === 0) {
+    res.status(404).json({ error: 'لم تسجّل في هذا الهاكاثون', reason: 'not_registered' });
+    return false;
+  }
+  const row = rows[0] as {
+    application_status: 'pending' | 'accepted' | 'rejected';
+    notification_sent_at: Date | string | null;
+  };
+  // Until the participant has been notified, treat them as pending — the
+  // organizer's internal decision is private. The participant only "sees"
+  // the decision once their notification email has been sent.
+  if (row.notification_sent_at === null) {
+    res.status(403).json({
+      error: 'طلب مشاركتك قيد المراجعة من قِبل المنظم',
+      reason: 'pending',
+    });
+    return false;
+  }
+  if (row.application_status === 'accepted') return true;
+  if (row.application_status === 'rejected') {
+    res.status(403).json({
+      error: 'تم رفض طلب مشاركتك في هذا الهاكاثون',
+      reason: 'rejected',
+    });
+    return false;
+  }
+  // Defensive: status='pending' should never coexist with notification_sent_at
+  // IS NOT NULL (we don't send for pending), but if a manual DB edit produces
+  // that state, treat as still-pending to the participant.
+  res.status(403).json({
+    error: 'طلب مشاركتك قيد المراجعة من قِبل المنظم',
+    reason: 'pending',
+  });
+  return false;
 }
 
 /**
@@ -618,7 +653,13 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
   );
 
   const [registeredRows] = await pool.query<IsRegisteredRow[]>(
-    'SELECT participation_type, T_ID FROM applies_hackathon WHERE hackathon_ID = ? AND PM_ID = ?',
+    `SELECT participation_type,
+            CASE WHEN notification_sent_at IS NULL THEN 'pending'
+                 ELSE application_status
+            END AS application_status,
+            T_ID
+       FROM applies_hackathon
+      WHERE hackathon_ID = ? AND PM_ID = ?`,
     [id, memberId]
   );
   const myReg = registeredRows[0] ?? null;
@@ -686,6 +727,7 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
     registrationOpen,
     isRegistered: myReg !== null,
     participationType: myReg?.participation_type ?? null,
+    applicationStatus: myReg?.application_status ?? null,
     hasTeam: myReg?.T_ID !== null && myReg?.T_ID !== undefined,
   });
 };
@@ -704,6 +746,20 @@ export const registerForHackathon = async (req: Request, res: Response) => {
   const rawParticipationType = String(req.body?.participationType ?? 'team').trim();
   const participationType: 'solo' | 'team' =
     rawParticipationType === 'solo' ? 'solo' : 'team';
+
+  // Team formation method — only meaningful for team participation. Lets the
+  // organizer later filter "AI-formed teams" vs "manually-formed teams".
+  const rawTeamMethod = req.body?.teamMethod;
+  let teamMethod: 'ai' | 'manual' | null = null;
+  if (participationType === 'team') {
+    if (rawTeamMethod === 'ai' || rawTeamMethod === 'manual') {
+      teamMethod = rawTeamMethod;
+    } else {
+      return res.status(400).json({
+        error: 'يجب اختيار طريقة تكوين الفريق (ذكاء اصطناعي أو يدوي)',
+      });
+    }
+  }
 
   if (!ideaTitle || !ideaDescription) {
     return res.status(400).json({ error: 'عنوان الفكرة ونبذتها مطلوبان' });
@@ -738,9 +794,9 @@ export const registerForHackathon = async (req: Request, res: Response) => {
 
   try {
     await pool.execute(
-      `INSERT INTO applies_hackathon (PM_ID, hackathon_ID, idea_title, idea_description, participation_type)
-       VALUES (?, ?, ?, ?, ?)`,
-      [memberId, id, ideaTitle, ideaDescription, participationType]
+      `INSERT INTO applies_hackathon (PM_ID, hackathon_ID, idea_title, idea_description, participation_type, team_method)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [memberId, id, ideaTitle, ideaDescription, participationType, teamMethod]
     );
   } catch (err: any) {
     if (err?.code === 'ER_DUP_ENTRY') {
@@ -755,6 +811,7 @@ export const registerForHackathon = async (req: Request, res: Response) => {
     ideaTitle,
     ideaDescription,
     participationType,
+    teamMethod,
     appliedAt: new Date().toISOString(),
   });
 };
@@ -790,6 +847,16 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
        op.ORG_Name               AS org,
        a.T_ID                    AS myTeamId,
        a.participation_type      AS participationType,
+       -- Effective status for the participant: hide the internal decision
+       -- until the organizer has sent the notification email. Anything before
+       -- notification_sent_at is set should look like "pending" to the
+       -- participant — that's the formal announcement gate.
+       CASE WHEN a.notification_sent_at IS NULL THEN 'pending'
+            ELSE a.application_status
+       END                       AS applicationStatus,
+       a.idea_title              AS myIdeaTitle,
+       a.idea_description        AS myIdeaDescription,
+       a.applied_at              AS appliedAt,
        (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
           FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw
        FROM applies_hackathon a
@@ -836,6 +903,10 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
       teamMax: r.teamMax,
       myTeamId: r.myTeamId,
       participationType: r.participationType,
+      applicationStatus: r.applicationStatus,
+      myIdeaTitle: r.myIdeaTitle,
+      myIdeaDescription: r.myIdeaDescription,
+      appliedAt: r.appliedAt,
       tags: r.tagsRaw ? r.tagsRaw.split('|||') : [],
       branding: extractBranding(brandingById.get(r.id) ?? null),
     };
@@ -854,6 +925,8 @@ export const getMyTeamInHackathon = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
+
+  if (!(await ensureAcceptedParticipant(req, res, id))) return;
 
   const memberId = req.user!.memberId;
 
@@ -928,16 +1001,7 @@ export const listHackathonTeams = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  const memberId = req.user!.memberId;
-
-  // Verify the participant is registered in this hackathon
-  const [appRows] = await pool.query<RowDataPacket[]>(
-    'SELECT 1 FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
-    [memberId, id]
-  );
-  if (appRows.length === 0) {
-    return res.status(403).json({ error: 'يجب التسجيل في الهاكاثون أولاً' });
-  }
+  if (!(await ensureAcceptedParticipant(req, res, id))) return;
 
   const [teamRows] = await pool.query<TeamListRow[]>(
     `SELECT
@@ -1019,16 +1083,17 @@ export const joinTeam = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الفريق غير صالح' });
   }
 
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
   const memberId = req.user!.memberId;
 
-  // 1) Verify participant is registered in this hackathon
+  // 1) Verify participant already has a team slot row (existence already
+  //    guaranteed by ensureAcceptedParticipant; we still need T_ID to detect
+  //    "already in a team")
   const [appRows] = await pool.query<MyApplicationRow[]>(
     'SELECT PM_ID, T_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
     [memberId, hackathonId]
   );
-  if (appRows.length === 0) {
-    return res.status(403).json({ error: 'يجب التسجيل في الهاكاثون أولاً' });
-  }
   if (appRows[0].T_ID !== null) {
     return res.status(409).json({ error: 'أنت بالفعل في فريق لهذا الهاكاثون' });
   }
@@ -1210,6 +1275,8 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
   const memberId = req.user!.memberId;
 
   // Find the participant's team in this hackathon
@@ -1217,9 +1284,6 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
     'SELECT T_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
     [memberId, hackathonId]
   );
-  if (appRows.length === 0) {
-    return res.status(403).json({ error: 'يجب التسجيل في الهاكاثون أولاً' });
-  }
   const teamId = appRows[0].T_ID;
 
   // Filter by team (if in a team) or by solo participant (PM_ID)
@@ -1312,16 +1376,7 @@ export const listHackathonSessions = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  const memberId = req.user!.memberId;
-
-  // Verify the participant is registered in this hackathon
-  const [appRows] = await pool.query<ParticipationRow[]>(
-    'SELECT PM_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
-    [memberId, hackathonId]
-  );
-  if (appRows.length === 0) {
-    return res.status(403).json({ error: 'يجب التسجيل في الهاكاثون أولاً' });
-  }
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
 
   const [rows] = await pool.query<SessionRow[]>(
     `SELECT
@@ -1422,6 +1477,8 @@ export const listTeamMessages = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
   const teamId = await requireMyTeam(req, res, hackathonId);
   if (teamId === null) return;
 
@@ -1463,6 +1520,8 @@ export const sendTeamMessage = async (req: Request, res: Response) => {
   if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
+
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
 
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   if (text.length === 0) {
@@ -1610,6 +1669,8 @@ export const getMySubmission = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
 
@@ -1694,6 +1755,8 @@ export const updateMySubmission = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
 
@@ -1729,6 +1792,11 @@ export const uploadSubmissionFile = async (req: Request, res: Response) => {
   if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
     if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
+  }
+
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) {
+    if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
+    return;
   }
 
   const target = await requireSubmissionTarget(req, res, hackathonId);
@@ -1775,6 +1843,8 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الملف غير صالح' });
   }
 
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
 
@@ -1812,6 +1882,8 @@ export const confirmSubmission = async (req: Request, res: Response) => {
   if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
+
+  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
 
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;

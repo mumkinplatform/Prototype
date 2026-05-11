@@ -21,6 +21,7 @@ import {
   replaceSponsorPackages,
   listHackathonRegistrations,
   updateRegistrationStatus,
+  notifyRegistrationDecision,
 } from '../controllers/hackathon.controller';
 
 const router = Router();
@@ -47,5 +48,6 @@ router.put('/:id/prizes', requireAuth, replacePrizes);
 router.put('/:id/sponsor-packages', requireAuth, replaceSponsorPackages);
 router.get('/:id/registrations', requireAuth, listHackathonRegistrations);
 router.put('/:id/registrations/:pmId/status', requireAuth, updateRegistrationStatus);
+router.post('/:id/registrations/notify', requireAuth, notifyRegistrationDecision);
 
 export default router;

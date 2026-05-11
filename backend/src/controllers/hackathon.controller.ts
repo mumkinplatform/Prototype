@@ -8,7 +8,7 @@ import {
   SECTION_LABELS,
   type Section,
 } from '../lib/permissions';
-import { sendCoManagerInviteEmail } from '../lib/mail';
+import { sendCoManagerInviteEmail, sendRegistrationDecisionEmail } from '../lib/mail';
 import { env } from '../config/env';
 
 interface HackathonRow extends RowDataPacket {
@@ -453,6 +453,12 @@ export const getHackathon = async (req: Request, res: Response) => {
     );
     const pendingRegistrations = (pendingCountRows[0] as { pendingCount: number } | undefined)?.pendingCount ?? 0;
 
+    // Announcement metadata for the registrations page — drives the countdown
+    // banner and the lock state of the "مراسلة" button.
+    const announceMs = h.H_Announcement_Date ? new Date(h.H_Announcement_Date).getTime() : null;
+    const notificationsUnlocked =
+      announceMs !== null && Number.isFinite(announceMs) && Date.now() >= announceMs;
+
     return res.json({
       hackathon: h,
       tracks,
@@ -462,6 +468,10 @@ export const getHackathon = async (req: Request, res: Response) => {
       sponsorPackages,
       myAccess,
       counts: { pendingRegistrations },
+      notifications: {
+        announcementDate: h.H_Announcement_Date,
+        unlocked: notificationsUnlocked,
+      },
     });
   } catch (err) {
     console.error('getHackathon error:', err);
@@ -1881,11 +1891,13 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
          m.M_Email              AS email,
          m.avatar_url           AS avatarUrl,
          a.participation_type   AS type,
+         a.team_method          AS teamMethod,
          a.idea_title           AS ideaTitle,
          a.idea_description     AS ideaDescription,
          a.applied_at           AS registrationDate,
          a.application_status   AS status,
          a.reviewed_at          AS reviewedAt,
+         a.notification_sent_at AS notificationSentAt,
          a.T_ID                 AS teamId,
          (SELECT GROUP_CONCAT(P_skills SEPARATOR '|||')
             FROM participant_skills WHERE PM_ID = a.PM_ID) AS skillsRaw,
@@ -1904,11 +1916,13 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
       email: string;
       avatarUrl: string | null;
       type: 'solo' | 'team';
+      teamMethod: 'ai' | 'manual' | null;
       ideaTitle: string;
       ideaDescription: string;
       registrationDate: string;
       status: 'pending' | 'accepted' | 'rejected';
       reviewedAt: string | null;
+      notificationSentAt: string | null;
       teamId: number | null;
       skillsRaw: string | null;
       trackName: string | null;
@@ -1918,11 +1932,13 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
       email: r.email,
       avatarUrl: r.avatarUrl,
       type: r.type,
+      teamMethod: r.teamMethod,
       ideaTitle: r.ideaTitle,
       ideaDescription: r.ideaDescription,
       registrationDate: r.registrationDate,
       status: r.status,
       reviewedAt: r.reviewedAt,
+      notificationSentAt: r.notificationSentAt,
       teamId: r.teamId,
       skills: r.skillsRaw ? r.skillsRaw.split('|||').filter(Boolean) : [],
       // Hackathon-level track. Multiple tracks (if any) joined with " · " to display.
@@ -1971,6 +1987,136 @@ export const updateRegistrationStatus = async (req: Request, res: Response) => {
     return res.json({ status });
   } catch (err) {
     console.error('updateRegistrationStatus error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/registrations/notify
+// Body: { pmIds: number[], decision: 'accepted' | 'rejected' }
+// Sends an individual email to each PM_ID whose current application_status
+// matches the decision. Skips PM_IDs that were already notified (notification_sent_at
+// IS NOT NULL) — once notified, never re-notified. Each email is sent in its
+// own sendMail call (no bulk CC/BCC) so recipients don't see each other.
+export const notifyRegistrationDecision = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'registrations'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const decision = req.body?.decision;
+  if (decision !== 'accepted' && decision !== 'rejected') {
+    return res.status(400).json({ error: 'invalid decision' });
+  }
+  const rawPmIds = Array.isArray(req.body?.pmIds) ? req.body.pmIds : [];
+  const pmIds = rawPmIds
+    .map((x: unknown) => Number(x))
+    .filter((n: number): n is number => Number.isInteger(n) && n > 0);
+  if (pmIds.length === 0) {
+    return res.status(400).json({ error: 'pmIds is required' });
+  }
+
+  try {
+    // Resolve hackathon title + organizer name + announcement date once
+    const [hackRows] = await pool.query<RowDataPacket[]>(
+      `SELECT h.H_title AS title,
+              h.H_Announcement_Date AS announcementDate,
+              op.ORG_Name AS organizerName
+         FROM hackathon h
+         LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
+        WHERE h.hackathon_ID = ?`,
+      [id],
+    );
+    if (hackRows.length === 0) return res.status(404).json({ error: 'hackathon not found' });
+    const hackathon = hackRows[0] as {
+      title: string;
+      announcementDate: Date | string | null;
+      organizerName: string | null;
+    };
+
+    // Gate: cannot send notifications before the hackathon's announcement date.
+    // This is the formal "إعلان النتائج" moment — emails go out only then.
+    if (!hackathon.announcementDate) {
+      return res.status(400).json({
+        error: 'تاريخ إعلان النتائج غير محدد لهذا الهاكاثون',
+        reason: 'no_announcement_date',
+      });
+    }
+    const announceMs = new Date(hackathon.announcementDate).getTime();
+    if (Number.isFinite(announceMs) && Date.now() < announceMs) {
+      return res.status(400).json({
+        error: 'لم يحن موعد إعلان النتائج بعد',
+        reason: 'before_announcement',
+        announcementDate: hackathon.announcementDate,
+      });
+    }
+
+    // Find all eligible recipients: current status matches decision AND not yet notified
+    const placeholders = pmIds.map(() => '?').join(',');
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT a.PM_ID, m.M_Email AS email, m.M_FName AS firstName, m.M_LName AS lastName
+         FROM applies_hackathon a
+         JOIN member m ON m.M_ID = a.PM_ID
+        WHERE a.hackathon_ID = ?
+          AND a.PM_ID IN (${placeholders})
+          AND a.application_status = ?
+          AND a.notification_sent_at IS NULL`,
+      [id, ...pmIds, decision],
+    );
+
+    const eligible = rows as Array<{
+      PM_ID: number;
+      email: string;
+      firstName: string;
+      lastName: string;
+    }>;
+
+    const workspaceUrl = `${env.frontendUrl}/participant/workspace?id=${id}`;
+    const sent: number[] = [];
+    const failed: Array<{ pmId: number; reason: string }> = [];
+
+    for (const r of eligible) {
+      try {
+        await sendRegistrationDecisionEmail({
+          to: r.email,
+          participantName: `${r.firstName} ${r.lastName}`.trim() || r.email,
+          hackathonTitle: hackathon.title,
+          organizerName: hackathon.organizerName ?? '—',
+          workspaceUrl,
+          decision,
+        });
+        await pool.execute(
+          `UPDATE applies_hackathon
+              SET notification_sent_at = NOW()
+            WHERE hackathon_ID = ? AND PM_ID = ?`,
+          [id, r.PM_ID],
+        );
+        sent.push(r.PM_ID);
+      } catch (mailErr) {
+        console.error(`notifyRegistrationDecision: failed to send to ${r.email}`, mailErr);
+        failed.push({
+          pmId: r.PM_ID,
+          reason: mailErr instanceof Error ? mailErr.message : 'send failed',
+        });
+      }
+    }
+
+    const skipped = pmIds.filter((p: number) => !eligible.some((e) => e.PM_ID === p));
+
+    return res.json({
+      sent,
+      skipped,        // not in matching status, or already notified
+      failed,         // attempted to send but mail server rejected
+      sentCount: sent.length,
+      skippedCount: skipped.length,
+      failedCount: failed.length,
+    });
+  } catch (err) {
+    console.error('notifyRegistrationDecision error:', err);
     return res.status(500).json({
       error: 'internal server error',
       detail: err instanceof Error ? err.message : String(err),

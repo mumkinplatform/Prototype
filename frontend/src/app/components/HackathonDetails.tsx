@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { apiGet, apiPost, ApiError } from "../../lib/api";
 import { SponsorApplyDialog } from "./sponsor-apply/SponsorApplyDialog";
+import { HackathonCover, BrandingPayload } from "./HackathonCover";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ interface ApiHackathon {
   startDate: string | null;
   registrationDeadline: string | null;
   org: string | null;
+  branding: BrandingPayload | null;
 }
 
 interface ApiTrack {
@@ -282,6 +284,7 @@ export function HackathonDetails() {
   const apiHackathon = data.hackathon;
   const orgName = apiHackathon.org ?? "—";
   const hackathon = {
+    id: apiHackathon.id,
     title: apiHackathon.title,
     org: orgName,
     orgLogo: firstChar(orgName),
@@ -301,8 +304,7 @@ export function HackathonDetails() {
     viewers: 0,
     desc: apiHackathon.description ?? "",
     timeline: buildTimeline(apiHackathon),
-    cover: "from-[#e35654] via-[#cc4a48] to-[#a83d3b]",
-    coverText: "HACKATHON",
+    branding: apiHackathon.branding,
     featured: false,
   };
   const sponsorPackages = displayPackages;
@@ -312,16 +314,12 @@ export function HackathonDetails() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#f7f7f6]">
-      {/* ── Hero Cover ── */}
-      <div className={`bg-gradient-to-br ${hackathon.cover} relative overflow-hidden`}>
-        {/* Decorative overlay */}
-        <div className="absolute inset-0 bg-black/30" />
-        <div
-          className="absolute inset-0 opacity-10 select-none pointer-events-none flex items-center justify-center"
-          style={{ fontFamily: "monospace", fontWeight: 900, fontSize: "10rem", color: "white", letterSpacing: "-0.05em" }}
-        >
-          {hackathon.coverText.split("\n")[0]}
-        </div>
+      {/* ── Hero Cover — uses organizer-uploaded image/pattern/palette from branding ── */}
+      <div className="relative overflow-hidden min-h-[320px]">
+        {/* HackathonCover renders absolute-positioned cover behind everything */}
+        <HackathonCover branding={hackathon.branding} id={hackathon.id} />
+        {/* Dark overlay so text on top stays readable across any banner image/pattern */}
+        <div className="absolute inset-0 bg-black/40 pointer-events-none" />
 
         {/* Back Button */}
         <div className="relative max-w-6xl mx-auto px-4 sm:px-8 pt-5">

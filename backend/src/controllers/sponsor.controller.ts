@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../db/pool';
+import { extractBranding } from '../lib/branding';
 
 interface SponsorProfileRow extends RowDataPacket {
   M_ID: number;
@@ -23,6 +24,7 @@ interface OpportunityRow extends RowDataPacket {
   prizeTotal: string | null;
   tagsRaw: string | null;
   packagesCount: number;
+  brandingRaw: string | null;
 }
 
 interface PackageExistsRow extends RowDataPacket {
@@ -49,6 +51,7 @@ interface OpportunityDetailHackathonRow extends RowDataPacket {
   startDate: Date | null;
   registrationDeadline: Date | null;
   org: string | null;
+  brandingRaw: string | null;
 }
 
 interface SponsorPackageRow extends RowDataPacket {
@@ -91,6 +94,7 @@ interface MyApplicationDetailRow extends RowDataPacket {
   hackathonTitle: string;
   hackathonStatus: string;
   hackathonStartDate: Date | null;
+  brandingRaw: string | null;
 }
 
 /**
@@ -148,6 +152,10 @@ export const listOpportunities = async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'sponsor role required' });
   }
 
+  // Two-step query — same pattern as participant.listHackathons / listMyRegistered.
+  // ORDER BY + H_Branding (large JSON / image data URLs) blows MySQL's sort_buffer
+  // once an organizer uploads a banner image, so we sort small columns first and
+  // fetch branding in a follow-up IN(...) query.
   const [rows] = await pool.query<OpportunityRow[]>(
     `SELECT
        h.hackathon_ID AS id,
@@ -168,6 +176,19 @@ export const listOpportunities = async (req: Request, res: Response) => {
       ORDER BY h.H_created_at DESC`
   );
 
+  const brandingById = new Map<number, string | null>();
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map(() => '?').join(',');
+    const [brandingRows] = await pool.query<RowDataPacket[]>(
+      `SELECT hackathon_ID, H_Branding FROM hackathon WHERE hackathon_ID IN (${placeholders})`,
+      ids,
+    );
+    for (const b of brandingRows as Array<{ hackathon_ID: number; H_Branding: string | null }>) {
+      brandingById.set(b.hackathon_ID, b.H_Branding ?? null);
+    }
+  }
+
   const items = rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -179,6 +200,7 @@ export const listOpportunities = async (req: Request, res: Response) => {
     prizeTotal: r.prizeTotal ? Number(r.prizeTotal) : 0,
     tags: r.tagsRaw ? r.tagsRaw.split('|||') : [],
     packagesCount: r.packagesCount,
+    branding: extractBranding(brandingById.get(r.id) ?? null),
   }));
 
   return res.json({ items });
@@ -194,7 +216,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
 
   const sponsorId = req.user!.memberId;
 
-  // 1) معلومات الهاكاثون الأساسية
+  // 1) معلومات الهاكاثون الأساسية (مع التخصيص)
   const [hackathonRows] = await pool.query<OpportunityDetailHackathonRow[]>(
     `SELECT
        h.hackathon_ID AS id,
@@ -204,7 +226,8 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
        h.H_description AS description,
        h.H_Hackathon_StartDate AS startDate,
        h.H_Registration_EndDate AS registrationDeadline,
-       op.ORG_Name AS org
+       op.ORG_Name AS org,
+       h.H_Branding AS brandingRaw
        FROM hackathon h
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE h.hackathon_ID = ? AND h.H_status = 'published'`,
@@ -214,6 +237,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
   if (hackathonRows.length === 0) {
     return res.status(404).json({ error: 'الهاكاثون غير موجود أو غير منشور' });
   }
+  const hk = hackathonRows[0];
 
   // 2) الباقات المتاحة لهذا الهاكاثون
   const [packageRows] = await pool.query<SponsorPackageRow[]>(
@@ -282,7 +306,17 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
   const myApplicationPackageId = appliedRows.length > 0 ? appliedRows[0].SP_ID : null;
 
   return res.json({
-    hackathon: hackathonRows[0],
+    hackathon: {
+      id: hk.id,
+      title: hk.title,
+      slug: hk.slug,
+      type: hk.type,
+      description: hk.description,
+      startDate: hk.startDate,
+      registrationDeadline: hk.registrationDeadline,
+      org: hk.org,
+      branding: extractBranding(hk.brandingRaw),
+    },
     tracks: trackRows.map((t) => ({
       id: t.HT_ID,
       name: t.HT_Name,
@@ -303,6 +337,8 @@ export const listMyApplications = async (req: Request, res: Response) => {
 
   const sponsorId = req.user!.memberId;
 
+  // Two-step query — H_Branding can be a large data URL; sorting on it would
+  // blow MySQL's sort_buffer. Sort small columns first, then fetch branding.
   const [rows] = await pool.query<MyApplicationDetailRow[]>(
     `SELECT
        sa.SA_ID         AS applicationId,
@@ -324,6 +360,19 @@ export const listMyApplications = async (req: Request, res: Response) => {
     [sponsorId]
   );
 
+  const brandingById = new Map<number, string | null>();
+  if (rows.length > 0) {
+    const hackathonIds = Array.from(new Set(rows.map((r) => r.hackathonId)));
+    const placeholders = hackathonIds.map(() => '?').join(',');
+    const [brandingRows] = await pool.query<RowDataPacket[]>(
+      `SELECT hackathon_ID, H_Branding FROM hackathon WHERE hackathon_ID IN (${placeholders})`,
+      hackathonIds,
+    );
+    for (const b of brandingRows as Array<{ hackathon_ID: number; H_Branding: string | null }>) {
+      brandingById.set(b.hackathon_ID, b.H_Branding ?? null);
+    }
+  }
+
   const items = rows.map((r) => ({
     id: r.applicationId,
     status: r.status,
@@ -339,6 +388,7 @@ export const listMyApplications = async (req: Request, res: Response) => {
       title: r.hackathonTitle,
       status: r.hackathonStatus,
       startDate: r.hackathonStartDate,
+      branding: extractBranding(brandingById.get(r.hackathonId) ?? null),
     },
   }));
 

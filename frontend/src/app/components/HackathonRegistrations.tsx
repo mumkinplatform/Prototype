@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ArrowRight, FileDown, Search, RefreshCw, Check, X, Eye, Mail, Filter, TrendingUp, Calendar, Pencil, AlertCircle } from 'lucide-react';
+import { ArrowRight, FileDown, Search, RefreshCw, Check, X, Eye, Mail, Filter, TrendingUp, Calendar, Pencil, AlertCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiGet, apiPut, ApiError } from '../../lib/api';
+import { apiGet, apiPut, apiPost, ApiError } from '../../lib/api';
+
+// Display label for the registration "type" column — combines participation_type
+// with team_method to produce a clear, filterable category.
+type RegistrationType = 'فردي' | 'فريق يدوي' | 'فريق بالذكاء الاصطناعي';
 
 interface Registration {
   id: number;
   name: string;
   email: string;
   avatar: string;
-  type: 'فردي' | 'فريق (أساس)' | 'فريق (رفيقة)';
+  type: RegistrationType;
   track: string;
   registrationDate: string;
   status: 'قيد الانتظار' | 'تم القبول' | 'تم الرفض';
   skills: string[];
   ideaTitle: string;
   ideaDescription: string;
+  notificationSentAt: string | null;
 }
 
 interface ApiRegistration {
@@ -24,11 +29,13 @@ interface ApiRegistration {
   email: string;
   avatarUrl: string | null;
   type: 'solo' | 'team';
+  teamMethod: 'ai' | 'manual' | null;
   ideaTitle: string;
   ideaDescription: string;
   registrationDate: string;
   status: 'pending' | 'accepted' | 'rejected';
   reviewedAt: string | null;
+  notificationSentAt: string | null;
   teamId: number | null;
   skills: string[];
   trackName: string | null;
@@ -44,10 +51,16 @@ const STATUS_TO_EN: Record<Registration['status'], ApiRegistration['status']> = 
   'تم القبول': 'accepted',
   'تم الرفض': 'rejected',
 };
-const TYPE_TO_AR: Record<ApiRegistration['type'], Registration['type']> = {
-  solo: 'فردي',
-  team: 'فريق (أساس)',
-};
+
+// Derive the UI type label from participation_type + team_method.
+// Defensive: solo → "فردي". Team without an explicit method (legacy rows that
+// existed before migration 016) falls back to "فريق يدوي" so it appears under
+// the manual filter rather than dropping out of every category.
+function deriveType(r: ApiRegistration): RegistrationType {
+  if (r.type === 'solo') return 'فردي';
+  if (r.teamMethod === 'ai') return 'فريق بالذكاء الاصطناعي';
+  return 'فريق يدوي';
+}
 
 function formatDateAr(iso: string | null): string {
   if (!iso) return '—';
@@ -63,7 +76,7 @@ function toUiRegistration(r: ApiRegistration): Registration {
     name: r.name,
     email: r.email,
     avatar: r.avatarUrl ?? '',
-    type: TYPE_TO_AR[r.type] ?? 'فردي',
+    type: deriveType(r),
     // Hackathon currently has a single track at most — every applicant maps to it.
     track: r.trackName ?? '—',
     registrationDate: formatDateAr(r.registrationDate),
@@ -71,6 +84,7 @@ function toUiRegistration(r: ApiRegistration): Registration {
     skills: r.skills,
     ideaTitle: r.ideaTitle,
     ideaDescription: r.ideaDescription,
+    notificationSentAt: r.notificationSentAt,
   };
 }
 
@@ -233,9 +247,19 @@ export function HackathonRegistrations() {
   const [editRegEnd, setEditRegEnd] = useState('');
   const [savingDates, setSavingDates] = useState(false);
 
+  // Notification gate metadata from getHackathon. Drives the countdown banner
+  // and the locked/unlocked state of the "مراسلة" button.
+  const [notifyGate, setNotifyGate] = useState<{
+    announcementDate: string | null;
+    unlocked: boolean;
+  }>({ announcementDate: null, unlocked: false });
+
   useEffect(() => {
     if (!id) return;
-    apiGet<{ hackathon: Record<string, string | null | undefined> }>(`/hackathons/${id}`)
+    apiGet<{
+      hackathon: Record<string, string | null | undefined>;
+      notifications?: { announcementDate: string | null; unlocked: boolean };
+    }>(`/hackathons/${id}`)
       .then((data) => {
         const h = data.hackathon ?? {};
         setRegWindow({
@@ -244,22 +268,52 @@ export function HackathonRegistrations() {
           hackathonStart: (h.H_StartDate as string) ?? null,
           hackathonEnd: (h.H_EndDate as string) ?? null,
         });
+        if (data.notifications) {
+          setNotifyGate({
+            announcementDate: data.notifications.announcementDate,
+            unlocked: data.notifications.unlocked,
+          });
+        }
       })
       .catch(() => {/* silent — banner just shows '—' */});
   }, [id]);
 
+  // Live countdown to the announcement date — re-renders every second so the
+  // organizer sees the clock tick. We stop the interval once the timer hits
+  // zero (the banner then becomes the "unlocked" variant on the next tick).
+  const [nowTs, setNowTs] = useState(Date.now());
+  useEffect(() => {
+    if (!notifyGate.announcementDate) return;
+    const announceMs = new Date(notifyGate.announcementDate).getTime();
+    if (!Number.isFinite(announceMs)) return;
+    if (announceMs <= Date.now()) {
+      // Already unlocked — flip the local flag so the UI matches without waiting
+      // for a server refresh.
+      if (!notifyGate.unlocked) setNotifyGate((g) => ({ ...g, unlocked: true }));
+      return;
+    }
+    const tick = setInterval(() => {
+      const now = Date.now();
+      setNowTs(now);
+      if (now >= announceMs) {
+        setNotifyGate((g) => ({ ...g, unlocked: true }));
+        clearInterval(tick);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [notifyGate.announcementDate, notifyGate.unlocked]);
+
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [filterTrack, setFilterTrack] = useState('الكل');
   const [filterType, setFilterType] = useState('الكل');
   const [filterStatus, setFilterStatus] = useState<'all' | 'قيد الانتظار' | 'تم القبول' | 'تم الرفض'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailSubject, setEmailSubject] = useState('');
-  const [emailMessage, setEmailMessage] = useState('');
-  const [emailType, setEmailType] = useState<'accept' | 'reject' | 'custom'>('custom');
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Which template the organizer is previewing. Sending only targets selected
+  // participants whose current status matches this decision.
+  const [notifyDecision, setNotifyDecision] = useState<'accepted' | 'rejected'>('accepted');
+  const [notifyLoading, setNotifyLoading] = useState(false);
   
   const itemsPerPage = 5;
 
@@ -274,10 +328,9 @@ export function HackathonRegistrations() {
   // Filter registrations
   const filteredRegistrations = registrations.filter(reg => {
     const matchSearch = reg.name.includes(searchQuery) || reg.email.includes(searchQuery);
-    const matchTrack = filterTrack === 'الكل' || reg.track === filterTrack;
     const matchType = filterType === 'الكل' || reg.type === filterType;
     const matchStatus = filterStatus === 'all' || reg.status === filterStatus;
-    return matchSearch && matchTrack && matchType && matchStatus;
+    return matchSearch && matchType && matchStatus;
   });
 
   // Pagination
@@ -286,26 +339,28 @@ export function HackathonRegistrations() {
   const endIndex = startIndex + itemsPerPage;
   const currentRegistrations = filteredRegistrations.slice(startIndex, endIndex);
 
-  // Calculate skill stats
-  const skillStats: { [key: string]: number } = {};
-  registrations.forEach(reg => {
-    reg.skills.forEach(skill => {
-      if (skill.toLowerCase().includes('python') || skill.toLowerCase().includes('machine learning')) {
-        skillStats['Python / Machine Learning'] = (skillStats['Python / Machine Learning'] || 0) + 1;
-      } else if (skill.toLowerCase().includes('ui') || skill.toLowerCase().includes('ux') || skill.toLowerCase().includes('design')) {
-        skillStats['UI/UX Design'] = (skillStats['UI/UX Design'] || 0) + 1;
-      } else if (skill.toLowerCase().includes('frontend') || skill.toLowerCase().includes('react') || skill.toLowerCase().includes('vue')) {
-        skillStats['Frontend (React/Vue)'] = (skillStats['Frontend (React/Vue)'] || 0) + 1;
-      }
+  // Skill frequency across all registrations. Counts each skill once per
+  // participant (case-insensitive, trimmed). Percentage is "share of participants
+  // who listed this skill" — never exceeds 100%.
+  const skillStats: { [key: string]: { count: number; display: string } } = {};
+  registrations.forEach((reg) => {
+    const seenForThisParticipant = new Set<string>();
+    reg.skills.forEach((skill) => {
+      const norm = skill.trim().toLowerCase();
+      if (!norm || seenForThisParticipant.has(norm)) return;
+      seenForThisParticipant.add(norm);
+      if (!skillStats[norm]) skillStats[norm] = { count: 0, display: skill.trim() };
+      skillStats[norm].count += 1;
     });
   });
 
-  const topSkills = Object.entries(skillStats)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([skill, count]) => ({
-      skill,
-      percentage: Math.round((count / totalRegistrations) * 100)
+  const topSkills = Object.values(skillStats)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map(({ display, count }) => ({
+      skill: display,
+      count,
+      percentage: totalRegistrations > 0 ? Math.round((count / totalRegistrations) * 100) : 0,
     }));
 
   // Handlers
@@ -412,6 +467,15 @@ export function HackathonRegistrations() {
   };
 
   const handleSendCustomEmail = () => {
+    if (!notifyGate.unlocked) {
+      toast.error('غير متاح بعد', {
+        description: notifyGate.announcementDate
+          ? `إرسال الإيميلات متاح يوم ${formatDateAr(notifyGate.announcementDate)}`
+          : 'حدّد تاريخ إعلان النتائج أولاً',
+        duration: 4000,
+      });
+      return;
+    }
     if (selectedIds.length === 0) {
       toast.error('لم يتم التحديد', {
         description: 'الرجاء تحديد طلب واحد على الأقل',
@@ -420,14 +484,14 @@ export function HackathonRegistrations() {
       return;
     }
 
-    setEmailType('custom');
-    setEmailSubject('');
-    setEmailMessage('');
+    // Default to "accepted" preview if any accepted in selection, else "rejected"
+    const selectedRegs = registrations.filter((r) => selectedIds.includes(r.id));
+    const hasAccepted = selectedRegs.some((r) => r.status === 'تم القبول');
+    setNotifyDecision(hasAccepted ? 'accepted' : 'rejected');
     setShowEmailModal(true);
   };
 
   const handleResetFilters = () => {
-    setFilterTrack('الكل');
     setFilterType('الكل');
     setFilterStatus('all');
     setSearchQuery('');
@@ -437,30 +501,128 @@ export function HackathonRegistrations() {
     });
   };
 
+  // CSV cell escape: wrap any field containing commas/quotes/newlines in quotes
+  // and double-up internal quotes. Excel-safe.
+  const csvCell = (v: string | number | null | undefined): string => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
   const handleExportCSV = () => {
-    toast.success('جاري التصدير...', {
-      description: 'سيتم تحميل الملف قريباً',
+    if (registrations.length === 0) {
+      toast.error('لا توجد بيانات للتصدير');
+      return;
+    }
+    const headers = [
+      'الاسم',
+      'البريد الإلكتروني',
+      'نوع المشاركة',
+      'المسار',
+      'عنوان الفكرة',
+      'نبذة الفكرة',
+      'المهارات',
+      'الحالة',
+      'تاريخ التسجيل',
+      'تم إرسال إشعار؟',
+    ];
+    const rows = filteredRegistrations.map((r) => [
+      csvCell(r.name),
+      csvCell(r.email),
+      csvCell(r.type),
+      csvCell(r.track),
+      csvCell(r.ideaTitle),
+      csvCell(r.ideaDescription),
+      csvCell(r.skills.join(' | ')),
+      csvCell(r.status),
+      csvCell(r.registrationDate),
+      csvCell(r.notificationSentAt ? 'نعم' : 'لا'),
+    ].join(','));
+
+    // UTF-8 BOM so Excel renders Arabic correctly when opening the file.
+    const csv = '﻿' + headers.map(csvCell).join(',') + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const today = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `registrations-hackathon-${id}-${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success('تم التصدير', {
+      description: `${filteredRegistrations.length} طلب`,
       duration: 3000,
     });
   };
 
-  const handleSendEmails = () => {
-    setShowEmailModal(false);
-    setShowConfirmModal(true);
+  // Recipients eligible to receive the currently-previewed template:
+  // selected participants whose status matches the decision AND who haven't
+  // been notified yet. (Backend enforces the same filter — this is for the
+  // preview count and to short-circuit useless API calls.)
+  const eligibleForNotify = (): Registration[] => {
+    const targetStatus = notifyDecision === 'accepted' ? 'تم القبول' : 'تم الرفض';
+    return registrations.filter(
+      (r) =>
+        selectedIds.includes(r.id) &&
+        r.status === targetStatus &&
+        !r.notificationSentAt,
+    );
   };
 
-  const handleConfirmSendEmails = () => {
-    const selectedRegs = registrations.filter(r => selectedIds.includes(r.id));
-    
-    toast.success('تم إرسال الرسائل بنجاح', {
-      description: `تم إرسال ${selectedIds.length} رسالة بريد إلكتروني`,
-      duration: 4000,
-    });
+  const handleConfirmSendEmails = async () => {
+    if (!id) return;
+    const eligible = eligibleForNotify();
+    if (eligible.length === 0) {
+      toast.error('لا يوجد مستلمون مؤهلون', {
+        description: 'تأكد من تحديد طلبات بنفس الحالة لم يتم إبلاغها بعد',
+        duration: 3000,
+      });
+      return;
+    }
 
-    setShowConfirmModal(false);
-    setSelectedIds([]);
-    setEmailSubject('');
-    setEmailMessage('');
+    setNotifyLoading(true);
+    try {
+      const result = await apiPost<{
+        sent: number[];
+        skipped: number[];
+        failed: Array<{ pmId: number; reason: string }>;
+        sentCount: number;
+        skippedCount: number;
+        failedCount: number;
+      }>(`/hackathons/${id}/registrations/notify`, {
+        pmIds: eligible.map((r) => r.id),
+        decision: notifyDecision,
+      });
+
+      if (result.sentCount > 0) {
+        const nowIso = new Date().toISOString();
+        setRegistrations((prev) =>
+          prev.map((r) =>
+            result.sent.includes(r.id) ? { ...r, notificationSentAt: nowIso } : r,
+          ),
+        );
+      }
+
+      toast.success('تم إرسال الإشعارات', {
+        description:
+          `أُرسل: ${result.sentCount}` +
+          (result.failedCount > 0 ? ` · فشل: ${result.failedCount}` : ''),
+        duration: 4000,
+      });
+
+      setShowEmailModal(false);
+      setSelectedIds([]);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'تعذّر إرسال الإشعارات', {
+        duration: 4000,
+      });
+    } finally {
+      setNotifyLoading(false);
+    }
   };
 
   const getStatusBadge = (status: Registration['status']) => {
@@ -534,6 +696,93 @@ export function HackathonRegistrations() {
             تعديل التواريخ
           </button>
         </div>
+
+        {/* Announcement countdown — drives the lock/unlock state of the "مراسلة" button.
+            Three states: not configured, counting down, unlocked. */}
+        {(() => {
+          if (!notifyGate.announcementDate) {
+            return (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-amber-900 mb-0.5" style={{ fontWeight: 700 }}>
+                    لم يتم تحديد تاريخ إعلان النتائج
+                  </p>
+                  <p className="text-xs text-amber-800">
+                    حدّد تاريخ الإعلان من إعدادات الهاكاثون لتتمكن من إرسال إيميلات القبول/الرفض.
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          const announceMs = new Date(notifyGate.announcementDate).getTime();
+          const diff = announceMs - nowTs;
+          if (notifyGate.unlocked || diff <= 0) {
+            return (
+              <div className="bg-green-50 border border-green-200 rounded-2xl p-5 mb-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <Check className="w-5 h-5 text-green-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-green-900 mb-0.5" style={{ fontWeight: 700 }}>
+                    يمكنك الآن إرسال إيميلات النتائج
+                  </p>
+                  <p className="text-xs text-green-800">
+                    تاريخ الإعلان: {formatDateAr(notifyGate.announcementDate)} — حدّد المشاركين المقبولين/المرفوضين واضغط "مراسلة".
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+          const minutes = Math.floor((diff / (1000 * 60)) % 60);
+          const seconds = Math.floor((diff / 1000) % 60);
+          return (
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 mb-6 flex items-center gap-4 flex-wrap">
+              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <Clock className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <p className="text-xs text-blue-700 mb-2" style={{ fontWeight: 600 }}>
+                  إعلان النتائج للمشاركين بعد:
+                </p>
+                <div className="flex items-center gap-3 text-blue-900">
+                  <div className="text-center">
+                    <div className="text-xl tabular-nums" style={{ fontWeight: 700 }}>{days}</div>
+                    <div className="text-[10px] text-blue-700">يوم</div>
+                  </div>
+                  <span className="text-blue-300">:</span>
+                  <div className="text-center">
+                    <div className="text-xl tabular-nums" style={{ fontWeight: 700 }}>{String(hours).padStart(2, '0')}</div>
+                    <div className="text-[10px] text-blue-700">ساعة</div>
+                  </div>
+                  <span className="text-blue-300">:</span>
+                  <div className="text-center">
+                    <div className="text-xl tabular-nums" style={{ fontWeight: 700 }}>{String(minutes).padStart(2, '0')}</div>
+                    <div className="text-[10px] text-blue-700">دقيقة</div>
+                  </div>
+                  <span className="text-blue-300">:</span>
+                  <div className="text-center">
+                    <div className="text-xl tabular-nums" style={{ fontWeight: 700 }}>{String(seconds).padStart(2, '0')}</div>
+                    <div className="text-[10px] text-blue-700">ثانية</div>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-blue-700 mb-0.5">الموعد المحدد</p>
+                <p className="text-sm text-blue-900" style={{ fontWeight: 700 }}>
+                  {formatDateAr(notifyGate.announcementDate)}
+                </p>
+                <p className="text-[11px] text-blue-700 mt-1">
+                  حتى هذا التاريخ، قراراتك خاصة بك — المشاركون لا يرونها.
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-4 mb-6">
@@ -625,29 +874,15 @@ export function HackathonRegistrations() {
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex-1 min-w-[200px]">
               <select
-                value={filterTrack}
-                onChange={(e) => setFilterTrack(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-blue-500"
-                style={{ fontWeight: 600 }}
-              >
-                <option value="الكل">المسار التقني: الكل</option>
-                <option value="تطوير الويب">تطوير الويب</option>
-                <option value="الذكاء الاصطناعي">الذكاء الاصطناعي</option>
-                <option value="الأمن السيبراني">الأمن السيبراني</option>
-              </select>
-            </div>
-
-            <div className="flex-1 min-w-[200px]">
-              <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-blue-500"
                 style={{ fontWeight: 600 }}
               >
-                <option value="الكل">النوع: الكل</option>
+                <option value="الكل">نوع المشاركة: الكل</option>
                 <option value="فردي">فردي</option>
-                <option value="فريق (أساس)">فريق (أساس)</option>
-                <option value="فريق (رفيقة)">فريق (رفيقة)</option>
+                <option value="فريق يدوي">فريق يدوي</option>
+                <option value="فريق بالذكاء الاصطناعي">فريق بالذكاء الاصطناعي</option>
               </select>
             </div>
 
@@ -705,11 +940,24 @@ export function HackathonRegistrations() {
 
             <button
               onClick={handleSendCustomEmail}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
+              disabled={!notifyGate.unlocked}
+              title={
+                !notifyGate.announcementDate
+                  ? 'حدّد تاريخ إعلان النتائج أولاً'
+                  : !notifyGate.unlocked
+                  ? `متاح يوم ${formatDateAr(notifyGate.announcementDate)}`
+                  : 'إرسال إيميلات القبول/الرفض'
+              }
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm transition-all ${
+                notifyGate.unlocked
+                  ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed'
+              }`}
               style={{ fontWeight: 600 }}
             >
               <Mail className="w-4 h-4" />
               مراسلة
+              {!notifyGate.unlocked && <span className="text-[10px]">🔒</span>}
             </button>
           </div>
         </div>
@@ -768,9 +1016,16 @@ export function HackathonRegistrations() {
                     <span className="text-sm text-gray-500">{reg.registrationDate}</span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-lg text-xs border ${getStatusBadge(reg.status)}`} style={{ fontWeight: 600 }}>
-                      {reg.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1 rounded-lg text-xs border ${getStatusBadge(reg.status)}`} style={{ fontWeight: 600 }}>
+                        {reg.status}
+                      </span>
+                      {reg.notificationSentAt && (
+                        <span title="تم إرسال إشعار للمشارك" className="text-blue-500" aria-label="notified">
+                          <Mail className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1">
@@ -862,158 +1117,178 @@ export function HackathonRegistrations() {
           </div>
         )}
 
-        {/* Skills Chart */}
+        {/* Skills Chart — top 5 skills among current registrations by frequency */}
         <div className="bg-white rounded-2xl border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg text-gray-900" style={{ fontWeight: 700 }}>
-              نظرة سريعة على المهارات
+              أكثر المهارات تكرارًا
             </h3>
             <TrendingUp className="w-5 h-5 text-blue-600" />
           </div>
 
-          <div className="space-y-4">
-            {topSkills.map((skill, index) => (
-              <div key={index}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-700" style={{ fontWeight: 600 }}>{skill.skill}</span>
-                  <span className="text-sm text-gray-500" style={{ fontWeight: 600 }}>{skill.percentage}%</span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      index === 0 ? 'bg-blue-600' : index === 1 ? 'bg-purple-600' : 'bg-green-600'
-                    }`}
-                    style={{ width: `${skill.percentage}%` }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
+          {topSkills.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">لا توجد مهارات مسجّلة بعد.</p>
+          ) : (
+            <div className="space-y-4">
+              {topSkills.map((skill, index) => {
+                const barColor = ['bg-blue-600', 'bg-purple-600', 'bg-green-600', 'bg-orange-500', 'bg-pink-500'][index] ?? 'bg-gray-400';
+                return (
+                  <div key={skill.skill}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-700" style={{ fontWeight: 600 }}>{skill.skill}</span>
+                      <span className="text-xs text-gray-500" style={{ fontWeight: 600 }}>
+                        {skill.count} مشارك · {skill.percentage}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${barColor}`}
+                        style={{ width: `${skill.percentage}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Email Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 relative">
-            <button
-              onClick={() => setShowEmailModal(false)}
-              className="absolute top-4 left-4 w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
+      {/* Notification Modal — preview the decision template, then confirm send */}
+      {showEmailModal && (() => {
+        const selectedRegs = registrations.filter((r) => selectedIds.includes(r.id));
+        const acceptedSelected = selectedRegs.filter((r) => r.status === 'تم القبول');
+        const rejectedSelected = selectedRegs.filter((r) => r.status === 'تم الرفض');
+        const pendingSelected = selectedRegs.filter((r) => r.status === 'قيد الانتظار');
+        const targetList = notifyDecision === 'accepted' ? acceptedSelected : rejectedSelected;
+        const eligible = targetList.filter((r) => !r.notificationSentAt);
+        const alreadyNotified = targetList.length - eligible.length;
+        const sampleName = eligible[0]?.name ?? targetList[0]?.name ?? '[الاسم]';
 
-            <div className="mb-6">
-              <h2 className="text-xl text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                إرسال رسالة بريد إلكتروني
-              </h2>
-              <p className="text-sm text-gray-500">
-                سيتم إرسال هذه الرسالة إلى {selectedIds.length} مشارك
-              </p>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                  عنوان الرسالة
-                </label>
-                <input
-                  type="text"
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                  placeholder="أدخل عنوان الرسالة"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                  محتوى الرسالة
-                </label>
-                <textarea
-                  value={emailMessage}
-                  onChange={(e) => setEmailMessage(e.target.value)}
-                  placeholder="اكتب محتوى الرسالة هنا... (سيتم استبدال [الاسم] باسم كل مشارك)"
-                  rows={8}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-blue-500 resize-none"
-                />
-              </div>
-
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                <p className="text-xs text-blue-900 mb-2" style={{ fontWeight: 600 }}>
-                  💡 نصيحة: استخدم [الاسم] في المحتوى ليتم استبداله بالاسم الفعلي لكل مستلم
-                </p>
-                <p className="text-xs text-blue-700">
-                  المستلمين ({selectedIds.length}): {registrations.filter(r => selectedIds.includes(r.id)).map(r => r.name).join(', ')}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 relative">
               <button
                 onClick={() => setShowEmailModal(false)}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
-                style={{ fontWeight: 600 }}
+                className="absolute top-4 left-4 w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
               >
-                إلغاء
+                <X className="w-5 h-5 text-gray-600" />
               </button>
-              <button
-                onClick={handleSendEmails}
-                disabled={!emailSubject || !emailMessage}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
-                style={{ fontWeight: 600 }}
-              >
-                إرسال الرسائل
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Confirm Send Modal */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" dir="rtl">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-8 h-8 text-blue-600" />
+              <div className="mb-5">
+                <h2 className="text-xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
+                  إرسال إشعار للمشاركين
+                </h2>
+                <p className="text-sm text-gray-500">
+                  اختر قالب الإشعار وراجع المعاينة قبل التأكيد
+                </p>
               </div>
-              <h2 className="text-xl text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                تأكيد إرسال الرسائل
-              </h2>
-              <p className="text-sm text-gray-500">
-                هل أنت متأكد من إرسال {selectedIds.length} رسالة بريد إلكتروني؟
-              </p>
-            </div>
 
-            <div className="bg-gray-50 rounded-xl p-4 mb-6">
-              <p className="text-xs text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                العنوان: {emailSubject}
-              </p>
-              <p className="text-xs text-gray-500">
-                سيتم إرسال الرسالة إلى: {registrations.filter(r => selectedIds.includes(r.id)).map(r => r.email).join(', ')}
-              </p>
-            </div>
+              {/* Selection breakdown */}
+              <div className="grid grid-cols-3 gap-2 mb-5">
+                <div className="rounded-xl border border-green-100 bg-green-50/60 p-3 text-center">
+                  <p className="text-xs text-green-700">مقبول</p>
+                  <p className="text-base text-green-800" style={{ fontWeight: 700 }}>{acceptedSelected.length}</p>
+                </div>
+                <div className="rounded-xl border border-red-100 bg-red-50/60 p-3 text-center">
+                  <p className="text-xs text-red-700">مرفوض</p>
+                  <p className="text-base text-red-800" style={{ fontWeight: 700 }}>{rejectedSelected.length}</p>
+                </div>
+                <div className="rounded-xl border border-yellow-100 bg-yellow-50/60 p-3 text-center">
+                  <p className="text-xs text-yellow-700">قيد الانتظار</p>
+                  <p className="text-base text-yellow-800" style={{ fontWeight: 700 }}>{pendingSelected.length}</p>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
-                style={{ fontWeight: 600 }}
-              >
-                إلغاء
-              </button>
-              <button
-                onClick={handleConfirmSendEmails}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 transition-all"
-                style={{ fontWeight: 600 }}
-              >
-                تأكيد الإرسال
-              </button>
+              {/* Template tabs */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setNotifyDecision('accepted')}
+                  className={`flex-1 px-4 py-2 rounded-xl text-sm transition-colors ${
+                    notifyDecision === 'accepted'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  style={{ fontWeight: 600 }}
+                >
+                  قالب القبول ({acceptedSelected.length})
+                </button>
+                <button
+                  onClick={() => setNotifyDecision('rejected')}
+                  className={`flex-1 px-4 py-2 rounded-xl text-sm transition-colors ${
+                    notifyDecision === 'rejected'
+                      ? 'bg-[#cc4a48] text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  style={{ fontWeight: 600 }}
+                >
+                  قالب الرفض ({rejectedSelected.length})
+                </button>
+              </div>
+
+              {/* Preview */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 mb-4">
+                {notifyDecision === 'accepted' ? (
+                  <div className="space-y-3 text-sm text-gray-800 leading-relaxed">
+                    <p style={{ fontWeight: 700 }}>الموضوع: تم قبول طلبك في الهاكاثون</p>
+                    <hr className="border-gray-200" />
+                    <p>مرحباً <strong>{sampleName}</strong>،</p>
+                    <p>يسعدنا إخبارك بأنه تم قبول طلبك للمشاركة في هاكاثون <strong>"...اسم الهاكاثون..."</strong>.</p>
+                    <p className="text-xs text-gray-500">[زر: الدخول إلى مساحة العمل]</p>
+                    <p className="text-gray-500 text-xs">يمكنك الآن متابعة آخر التحديثات والاطلاع على تفاصيل الفعالية، والبدء في إعداد مشروعك.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 text-sm text-gray-800 leading-relaxed">
+                    <p style={{ fontWeight: 700 }}>الموضوع: بخصوص طلبك في الهاكاثون</p>
+                    <hr className="border-gray-200" />
+                    <p>مرحباً <strong>{sampleName}</strong>،</p>
+                    <p>نشكرك على اهتمامك بالمشاركة في هاكاثون <strong>"...اسم الهاكاثون..."</strong>.</p>
+                    <p>نأسف لإبلاغك بأنه لم يتم قبول طلبك هذه المرة. نقدّر وقتك ونتمنى لك التوفيق في الفعاليات القادمة.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Eligibility note */}
+              <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 mb-4">
+                <p className="text-xs text-blue-900 mb-1" style={{ fontWeight: 600 }}>
+                  سيتم الإرسال إلى {eligible.length} مشارك
+                </p>
+                {alreadyNotified > 0 && (
+                  <p className="text-xs text-blue-700">
+                    {alreadyNotified} مشارك تم إبلاغهم مسبقًا — لن يُرسل لهم مرة ثانية.
+                  </p>
+                )}
+                {pendingSelected.length > 0 && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    {pendingSelected.length} مشارك قيد المراجعة — لن يُشمل في الإرسال.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowEmailModal(false)}
+                  disabled={notifyLoading}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleConfirmSendEmails}
+                  disabled={eligible.length === 0 || notifyLoading}
+                  className={`flex-1 px-4 py-2.5 rounded-xl text-white text-sm transition-all disabled:bg-gray-300 disabled:cursor-not-allowed ${
+                    notifyDecision === 'accepted' ? 'bg-green-600 hover:bg-green-700' : 'bg-[#cc4a48] hover:bg-[#a93b39]'
+                  }`}
+                  style={{ fontWeight: 600 }}
+                >
+                  {notifyLoading ? 'جاري الإرسال...' : `تأكيد الإرسال (${eligible.length})`}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Registration Details Modal */}
       {selectedRegistration && (

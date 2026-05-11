@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { apiGet } from "../../lib/api";
+import { HackathonCover, BrandingPayload } from "./HackathonCover";
 
 type OpportunityResponse = {
   items: Array<{
@@ -14,15 +15,9 @@ type OpportunityResponse = {
     prizeTotal: number;
     tags: string[];
     packagesCount: number;
+    branding: BrandingPayload | null;
   }>;
 };
-
-const COVER_GRADIENTS = [
-  "bg-gradient-to-br from-green-800 via-teal-700 to-cyan-600",
-  "bg-gradient-to-br from-blue-800 via-indigo-700 to-purple-600",
-  "bg-gradient-to-br from-red-800 via-rose-700 to-orange-600",
-  "bg-gradient-to-br from-purple-800 via-fuchsia-700 to-pink-600",
-];
 
 const TAG_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4"];
 
@@ -65,8 +60,7 @@ type DisplayHackathon = {
   prize: string;
   viewers: number;
   teams: number;
-  cover: string;
-  coverText: string;
+  branding: BrandingPayload | null;
   featured: boolean;
   packagesCount: number;
 };
@@ -84,7 +78,7 @@ export function HackathonsExplore() {
   useEffect(() => {
     apiGet<OpportunityResponse>("/sponsors/opportunities")
       .then((res) => {
-        const mapped: DisplayHackathon[] = res.items.map((it, idx) => ({
+        const mapped: DisplayHackathon[] = res.items.map((it) => ({
           id: it.id,
           title: it.title,
           slug: it.slug,
@@ -99,8 +93,7 @@ export function HackathonsExplore() {
           prize: `${it.prizeTotal.toLocaleString("ar-SA")} ر.س`,
           viewers: 0,
           teams: 0,
-          cover: COVER_GRADIENTS[idx % COVER_GRADIENTS.length],
-          coverText: it.title.slice(0, 20),
+          branding: it.branding,
           featured: false,
           packagesCount: it.packagesCount,
         }));
@@ -247,21 +240,22 @@ export function HackathonsExplore() {
                 key={h.id}
                 className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-200 group flex flex-col"
               >
-                {/* Cover */}
-                <div className={`h-44 ${h.cover} relative flex items-end p-4`}>
+                {/* Cover — uses organizer-uploaded image/pattern/palette from branding */}
+                <div className="h-44 relative overflow-hidden flex items-end p-4">
+                  <HackathonCover branding={h.branding} id={h.id} />
                   {/* Featured badge */}
                   {h.featured && (
-                    <div className="absolute top-3 right-3">
-                      <span className="flex items-center gap-1 bg-[#e35654] text-white text-xs px-2.5 py-1 rounded-full" style={{ fontWeight: 600 }}>
+                    <div className="absolute top-3 right-3 z-10">
+                      <span className="flex items-center gap-1 bg-[#e35654] text-white text-xs px-2.5 py-1 rounded-full shadow-md" style={{ fontWeight: 600 }}>
                         <Star className="w-3 h-3" />
                         مميز
                       </span>
                     </div>
                   )}
                   {/* Type badge */}
-                  <div className="absolute top-3 left-3">
+                  <div className="absolute top-3 left-3 z-10">
                     <span
-                      className="text-xs px-2.5 py-1 rounded-full"
+                      className="text-xs px-2.5 py-1 rounded-full shadow-md"
                       style={{
                         background: h.typeBg,
                         color: h.typeColor,
@@ -271,16 +265,6 @@ export function HackathonsExplore() {
                       {h.type}
                     </span>
                   </div>
-                  <p
-                    className="text-white/30 select-none whitespace-pre-line leading-tight"
-                    style={{
-                      fontFamily: "monospace",
-                      fontWeight: 800,
-                      fontSize: "0.8rem",
-                    }}
-                  >
-                    {h.coverText}
-                  </p>
                 </div>
 
                 {/* Body */}
