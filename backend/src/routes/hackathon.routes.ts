@@ -19,6 +19,8 @@ import {
   replaceJudges,
   replacePrizes,
   replaceSponsorPackages,
+  listHackathonRegistrations,
+  updateRegistrationStatus,
 } from '../controllers/hackathon.controller';
 
 const router = Router();
@@ -43,5 +45,7 @@ router.post('/:id/co-managers/:hcmId/resend-invite', requireAuth, resendCoManage
 router.put('/:id/judges', requireAuth, replaceJudges);
 router.put('/:id/prizes', requireAuth, replacePrizes);
 router.put('/:id/sponsor-packages', requireAuth, replaceSponsorPackages);
+router.get('/:id/registrations', requireAuth, listHackathonRegistrations);
+router.put('/:id/registrations/:pmId/status', requireAuth, updateRegistrationStatus);
 
 export default router;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Plus, Calendar, Users, MapPin, ChevronLeft, FileText, ArrowRight, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Calendar, Users, MapPin, ChevronLeft, FileText, ArrowRight, Trash2, AlertTriangle, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import PublishConfirmModal from './PublishConfirmModal';
 import PublishSuccessModal from './PublishSuccessModal';
@@ -358,14 +358,26 @@ export default function MyHackathons() {
                       <ChevronLeft className="w-4 h-4" />
                     </Link>
                   ) : (
-                    <Link
-                      to={`/admin/hackathon/${hackathon.id}`}
-                      className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <span>إدارة الهاكاثون</span>
-                      <ChevronLeft className="w-4 h-4" />
-                    </Link>
+                    <>
+                      <Link
+                        to={`/admin/hackathon/${hackathon.id}`}
+                        className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <span>إدارة الهاكاثون</span>
+                        <ChevronLeft className="w-4 h-4" />
+                      </Link>
+                      {/* Edit button — owner of a published hackathon can adjust basic info + branding live */}
+                      {hackathon.myRole === 'owner' && hackathon.status === 'published' && (
+                        <Link
+                          to={`/admin/create-hackathon/${hackathon.id}`}
+                          className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:text-[#e35654] transition-all flex items-center justify-center"
+                          title="تعديل المعلومات الأساسية والتصميم"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Link>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

@@ -156,6 +156,27 @@ async function ensureOwner(hackathonId: number, memberId: number): Promise<boole
   return rows[0].HAM_ID === memberId;
 }
 
+// Owner of the hackathon, OR an accepted co-manager assigned to the given section.
+// Used by section-scoped endpoints (registrations, projects, etc.) so a section
+// manager can do their job without needing full owner privileges.
+async function ensureSectionAccess(
+  hackathonId: number,
+  memberId: number,
+  section: Section,
+): Promise<boolean> {
+  if (await ensureOwner(hackathonId, memberId)) return true;
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT 1 FROM hackathon_co_manager
+       WHERE hackathon_ID = ?
+         AND M_ID = ?
+         AND HCM_Section = ?
+         AND HCM_InviteStatus = 'accepted'
+       LIMIT 1`,
+    [hackathonId, memberId, section],
+  );
+  return rows.length > 0;
+}
+
 export const getPublicHackathon = async (req: Request, res: Response) => {
   const slug = typeof req.params.slug === 'string' ? req.params.slug.trim() : '';
   if (!slug) {
@@ -423,6 +444,15 @@ export const getHackathon = async (req: Request, res: Response) => {
       }
     }
 
+    // Light counters used by HackathonManagement to badge cards (e.g. "3 طلب جديد"
+    // on the registrations card) — kept here to avoid a second roundtrip from the UI.
+    const [pendingCountRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS pendingCount FROM applies_hackathon
+        WHERE hackathon_ID = ? AND application_status = 'pending'`,
+      [id],
+    );
+    const pendingRegistrations = (pendingCountRows[0] as { pendingCount: number } | undefined)?.pendingCount ?? 0;
+
     return res.json({
       hackathon: h,
       tracks,
@@ -431,6 +461,7 @@ export const getHackathon = async (req: Request, res: Response) => {
       prizes,
       sponsorPackages,
       myAccess,
+      counts: { pendingRegistrations },
     });
   } catch (err) {
     console.error('getHackathon error:', err);
@@ -1826,5 +1857,123 @@ export const replaceSponsorPackages = async (req: Request, res: Response) => {
     });
   } finally {
     conn.release();
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registrations management (organizer reviewing participant applications)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// List all registrations for a hackathon — for the organizer's "إدارة التسجيلات" page.
+export const listHackathonRegistrations = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'registrations'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         a.PM_ID                AS id,
+         CONCAT(m.M_FName, ' ', m.M_LName) AS name,
+         m.M_Email              AS email,
+         m.avatar_url           AS avatarUrl,
+         a.participation_type   AS type,
+         a.idea_title           AS ideaTitle,
+         a.idea_description     AS ideaDescription,
+         a.applied_at           AS registrationDate,
+         a.application_status   AS status,
+         a.reviewed_at          AS reviewedAt,
+         a.T_ID                 AS teamId,
+         (SELECT GROUP_CONCAT(P_skills SEPARATOR '|||')
+            FROM participant_skills WHERE PM_ID = a.PM_ID) AS skillsRaw,
+         (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
+            FROM hackathon_track WHERE hackathon_ID = a.hackathon_ID) AS trackName
+         FROM applies_hackathon a
+         JOIN member m ON m.M_ID = a.PM_ID
+        WHERE a.hackathon_ID = ?
+        ORDER BY a.applied_at DESC`,
+      [id],
+    );
+
+    const items = (rows as Array<{
+      id: number;
+      name: string;
+      email: string;
+      avatarUrl: string | null;
+      type: 'solo' | 'team';
+      ideaTitle: string;
+      ideaDescription: string;
+      registrationDate: string;
+      status: 'pending' | 'accepted' | 'rejected';
+      reviewedAt: string | null;
+      teamId: number | null;
+      skillsRaw: string | null;
+      trackName: string | null;
+    }>).map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      avatarUrl: r.avatarUrl,
+      type: r.type,
+      ideaTitle: r.ideaTitle,
+      ideaDescription: r.ideaDescription,
+      registrationDate: r.registrationDate,
+      status: r.status,
+      reviewedAt: r.reviewedAt,
+      teamId: r.teamId,
+      skills: r.skillsRaw ? r.skillsRaw.split('|||').filter(Boolean) : [],
+      // Hackathon-level track. Multiple tracks (if any) joined with " · " to display.
+      trackName: r.trackName ? r.trackName.split('|||').filter(Boolean).join(' · ') : null,
+    }));
+
+    return res.json({ items });
+  } catch (err) {
+    console.error('listHackathonRegistrations error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// Update a registration's status (accept / reject / pending). Sets reviewed_at = NOW()
+// unless reverting to pending. Body: { status: 'accepted' | 'rejected' | 'pending' }.
+export const updateRegistrationStatus = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const pmId = Number(req.params.pmId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid hackathon id' });
+  if (!Number.isInteger(pmId) || pmId <= 0) return res.status(400).json({ error: 'invalid participant id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'registrations'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const status = req.body?.status;
+  if (status !== 'accepted' && status !== 'rejected' && status !== 'pending') {
+    return res.status(400).json({ error: 'invalid status' });
+  }
+
+  try {
+    const reviewedExpr = status === 'pending' ? 'NULL' : 'NOW()';
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE applies_hackathon
+          SET application_status = ?,
+              reviewed_at = ${reviewedExpr}
+        WHERE hackathon_ID = ? AND PM_ID = ?`,
+      [status, id, pmId],
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'registration not found' });
+    }
+    return res.json({ status });
+  } catch (err) {
+    console.error('updateRegistrationStatus error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 };

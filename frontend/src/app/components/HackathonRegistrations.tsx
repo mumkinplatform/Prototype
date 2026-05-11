@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ArrowRight, FileDown, Search, RefreshCw, Check, X, Eye, Mail, Filter, TrendingUp } from 'lucide-react';
+import { ArrowRight, FileDown, Search, RefreshCw, Check, X, Eye, Mail, Filter, TrendingUp, Calendar, Pencil, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiGet, apiPut, ApiError } from '../../lib/api';
 
 interface Registration {
   id: number;
@@ -13,9 +14,76 @@ interface Registration {
   registrationDate: string;
   status: 'قيد الانتظار' | 'تم القبول' | 'تم الرفض';
   skills: string[];
+  ideaTitle: string;
+  ideaDescription: string;
 }
 
-const mockRegistrations: Registration[] = [
+interface ApiRegistration {
+  id: number;
+  name: string;
+  email: string;
+  avatarUrl: string | null;
+  type: 'solo' | 'team';
+  ideaTitle: string;
+  ideaDescription: string;
+  registrationDate: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  reviewedAt: string | null;
+  teamId: number | null;
+  skills: string[];
+  trackName: string | null;
+}
+
+const STATUS_TO_AR: Record<ApiRegistration['status'], Registration['status']> = {
+  pending: 'قيد الانتظار',
+  accepted: 'تم القبول',
+  rejected: 'تم الرفض',
+};
+const STATUS_TO_EN: Record<Registration['status'], ApiRegistration['status']> = {
+  'قيد الانتظار': 'pending',
+  'تم القبول': 'accepted',
+  'تم الرفض': 'rejected',
+};
+const TYPE_TO_AR: Record<ApiRegistration['type'], Registration['type']> = {
+  solo: 'فردي',
+  team: 'فريق (أساس)',
+};
+
+function formatDateAr(iso: string | null): string {
+  if (!iso) return '—';
+  // Handles "YYYY-MM-DD HH:MM:SS" (mysql2 dateStrings) and ISO timestamps.
+  const d = new Date(iso.replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('ar-SA', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function toUiRegistration(r: ApiRegistration): Registration {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    avatar: r.avatarUrl ?? '',
+    type: TYPE_TO_AR[r.type] ?? 'فردي',
+    // Hackathon currently has a single track at most — every applicant maps to it.
+    track: r.trackName ?? '—',
+    registrationDate: formatDateAr(r.registrationDate),
+    status: STATUS_TO_AR[r.status],
+    skills: r.skills,
+    ideaTitle: r.ideaTitle,
+    ideaDescription: r.ideaDescription,
+  };
+}
+
+// Initials fallback shown in a circle when the participant didn't upload an avatar.
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '؟';
+  if (parts.length === 1) return parts[0].charAt(0);
+  return parts[0].charAt(0) + parts[parts.length - 1].charAt(0);
+}
+
+// Mock data retained only for reference — replaced by real API.
+const _UNUSED_MOCK: Registration[] = [
   {
     id: 1,
     name: 'سارة المنصور',
@@ -130,7 +198,56 @@ const mockRegistrations: Registration[] = [
 
 export function HackathonRegistrations() {
   const { id } = useParams();
-  const [registrations, setRegistrations] = useState<Registration[]>(mockRegistrations);
+  // Suppress "declared but never read" for the mock array kept for documentation.
+  void _UNUSED_MOCK;
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load real registrations from the API.
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    apiGet<{ items: ApiRegistration[] }>(`/hackathons/${id}/registrations`)
+      .then((data) => setRegistrations(data.items.map(toUiRegistration)))
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 403) {
+          toast.error('ليس لديك صلاحية مراجعة تسجيلات هذا الهاكاثون');
+        } else {
+          toast.error(e instanceof ApiError ? e.message : 'فشل تحميل التسجيلات');
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  // Registration window — visible to the organizer at the top of this page so they can
+  // see at-a-glance when participants can register, and edit it inline.
+  // Bounds are constrained by the hackathon's overall startDate/endDate.
+  const [regWindow, setRegWindow] = useState<{
+    registrationStart: string | null;
+    registrationEnd: string | null;
+    hackathonStart: string | null;
+    hackathonEnd: string | null;
+  }>({ registrationStart: null, registrationEnd: null, hackathonStart: null, hackathonEnd: null });
+  const [showDatesModal, setShowDatesModal] = useState(false);
+  const [editRegStart, setEditRegStart] = useState('');
+  const [editRegEnd, setEditRegEnd] = useState('');
+  const [savingDates, setSavingDates] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    apiGet<{ hackathon: Record<string, string | null | undefined> }>(`/hackathons/${id}`)
+      .then((data) => {
+        const h = data.hackathon ?? {};
+        setRegWindow({
+          registrationStart: (h.H_Registration_StartDate as string) ?? null,
+          registrationEnd: (h.H_Registration_EndDate as string) ?? null,
+          hackathonStart: (h.H_StartDate as string) ?? null,
+          hackathonEnd: (h.H_EndDate as string) ?? null,
+        });
+      })
+      .catch(() => {/* silent — banner just shows '—' */});
+  }, [id]);
+
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [filterTrack, setFilterTrack] = useState('الكل');
   const [filterType, setFilterType] = useState('الكل');
@@ -152,7 +269,7 @@ export function HackathonRegistrations() {
   const acceptedCount = registrations.filter(r => r.status === 'تم القبول').length;
   const rejectedCount = registrations.filter(r => r.status === 'تم الرفض').length;
   const acceptanceRate = totalRegistrations > 0 ? Math.round((acceptedCount / totalRegistrations) * 100) : 0;
-  const growthRate = 12; // Mock growth rate
+  // pendingCount drives the badge on the total card — it's the "remaining to review" hint.
 
   // Filter registrations
   const filteredRegistrations = registrations.filter(reg => {
@@ -208,27 +325,44 @@ export function HackathonRegistrations() {
     }
   };
 
-  const handleAccept = (regId: number) => {
-    setRegistrations(registrations.map(reg =>
-      reg.id === regId ? { ...reg, status: 'تم القبول' as const } : reg
-    ));
-    toast.success('تم قبول الطلب', {
-      description: `تم قبول ${registrations.find(r => r.id === regId)?.name}`,
-      duration: 3000,
-    });
+  // Persist status to the backend then mirror in local state. Note that on a 'pending'
+  // hackathon the participant wouldn't normally land in workspace — status flips that.
+  const setStatus = async (regId: number, newStatus: Registration['status']): Promise<boolean> => {
+    if (!id) return false;
+    try {
+      await apiPut(`/hackathons/${id}/registrations/${regId}/status`, {
+        status: STATUS_TO_EN[newStatus],
+      });
+      setRegistrations((prev) => prev.map((reg) => (reg.id === regId ? { ...reg, status: newStatus } : reg)));
+      return true;
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'فشل تحديث الحالة';
+      toast.error(msg);
+      return false;
+    }
   };
 
-  const handleReject = (regId: number) => {
-    setRegistrations(registrations.map(reg =>
-      reg.id === regId ? { ...reg, status: 'تم الرفض' as const } : reg
-    ));
-    toast.error('تم رفض الطلب', {
-      description: `تم رفض طلب ${registrations.find(r => r.id === regId)?.name}`,
-      duration: 3000,
-    });
+  const handleAccept = async (regId: number) => {
+    const ok = await setStatus(regId, 'تم القبول');
+    if (ok) {
+      toast.success('تم قبول الطلب', {
+        description: `تم قبول ${registrations.find((r) => r.id === regId)?.name}`,
+        duration: 3000,
+      });
+    }
   };
 
-  const handleAcceptSelected = () => {
+  const handleReject = async (regId: number) => {
+    const ok = await setStatus(regId, 'تم الرفض');
+    if (ok) {
+      toast.error('تم رفض الطلب', {
+        description: `تم رفض طلب ${registrations.find((r) => r.id === regId)?.name}`,
+        duration: 3000,
+      });
+    }
+  };
+
+  const handleAcceptSelected = async () => {
     if (selectedIds.length === 0) {
       toast.error('لم يتم التحديد', {
         description: 'الرجاء تحديد طلب واحد على الأقل',
@@ -236,10 +370,8 @@ export function HackathonRegistrations() {
       });
       return;
     }
-
-    setRegistrations(registrations.map(reg =>
-      selectedIds.includes(reg.id) ? { ...reg, status: 'تم القبول' as const } : reg
-    ));
+    // Persist all selected in parallel; tolerate partial failures.
+    await Promise.all(selectedIds.map((rid) => setStatus(rid, 'تم القبول')));
     
     // Open email modal for acceptance
     setEmailType('accept');
@@ -255,7 +387,7 @@ export function HackathonRegistrations() {
     setShowEmailModal(true);
   };
 
-  const handleRejectSelected = () => {
+  const handleRejectSelected = async () => {
     if (selectedIds.length === 0) {
       toast.error('لم يتم التحديد', {
         description: 'الرجاء تحديد طلب واحد على الأقل',
@@ -263,10 +395,7 @@ export function HackathonRegistrations() {
       });
       return;
     }
-
-    setRegistrations(registrations.map(reg =>
-      selectedIds.includes(reg.id) ? { ...reg, status: 'تم الرفض' as const } : reg
-    ));
+    await Promise.all(selectedIds.map((rid) => setStatus(rid, 'تم الرفض')));
     
     // Open email modal for rejection
     setEmailType('reject');
@@ -378,6 +507,34 @@ export function HackathonRegistrations() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        {/* Registration Window — visible at a glance + inline edit */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-6 flex items-center gap-4 flex-wrap">
+          <div className="w-12 h-12 rounded-xl bg-[#fce7eb] flex items-center justify-center flex-shrink-0">
+            <Calendar className="w-5 h-5 text-[#e35654]" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <p className="text-xs text-gray-500 mb-1">نافذة التسجيل</p>
+            <div className="flex items-center gap-2 flex-wrap text-sm text-gray-900" style={{ fontWeight: 600 }}>
+              <span>{formatDateAr(regWindow.registrationStart)}</span>
+              <span className="text-gray-400">→</span>
+              <span>{formatDateAr(regWindow.registrationEnd)}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const toLocal = (v: string | null) => (v ? v.replace(' ', 'T').slice(0, 16) : '');
+              setEditRegStart(toLocal(regWindow.registrationStart));
+              setEditRegEnd(toLocal(regWindow.registrationEnd));
+              setShowDatesModal(true);
+            }}
+            className="px-4 py-2 rounded-xl border border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:text-[#e35654] transition-all flex items-center gap-2"
+            style={{ fontWeight: 600 }}
+          >
+            <Pencil className="w-4 h-4" />
+            تعديل التواريخ
+          </button>
+        </div>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           <button
@@ -394,10 +551,11 @@ export function HackathonRegistrations() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <div className="flex items-center gap-1 text-xs text-green-600" style={{ fontWeight: 600 }}>
-                <TrendingUp className="w-3 h-3" />
-                +{growthRate}%
-              </div>
+              {pendingCount > 0 && (
+                <span className="text-xs text-yellow-700 px-2 py-1 rounded-full bg-yellow-50" style={{ fontWeight: 600 }}>
+                  {pendingCount} للمراجعة
+                </span>
+              )}
             </div>
             <p className="text-sm text-gray-500 mb-1">إجمالي الطلبات</p>
             <p className="text-3xl text-gray-900" style={{ fontWeight: 700 }}>{totalRegistrations.toLocaleString('ar-SA')}</p>
@@ -435,7 +593,7 @@ export function HackathonRegistrations() {
               }`}>
                 <Check className={`w-6 h-6 ${filterStatus === 'تم القبول' ? 'text-white' : 'text-green-600'}`} />
               </div>
-              <span className="text-xs text-green-600" style={{ fontWeight: 600 }}>{acceptanceRate}% نسبة القبول</span>
+              <span className="text-xs text-green-600" style={{ fontWeight: 600 }}>{acceptanceRate}%</span>
             </div>
             <p className="text-sm text-gray-500 mb-1">تم القبول</p>
             <p className="text-3xl text-gray-900" style={{ fontWeight: 700 }}>{acceptedCount}</p>
@@ -583,11 +741,17 @@ export function HackathonRegistrations() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={reg.avatar}
-                        alt={reg.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
+                      {reg.avatar ? (
+                        <img
+                          src={reg.avatar}
+                          alt={reg.name}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#e35654] to-[#cc4a48] text-white flex items-center justify-center text-xs" style={{ fontWeight: 700 }}>
+                          {getInitials(reg.name)}
+                        </div>
+                      )}
                       <div>
                         <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{reg.name}</p>
                         <p className="text-xs text-gray-500">{reg.email}</p>
@@ -863,11 +1027,17 @@ export function HackathonRegistrations() {
             </button>
 
             <div className="flex items-center gap-4 mb-6">
-              <img
-                src={selectedRegistration.avatar}
-                alt={selectedRegistration.name}
-                className="w-16 h-16 rounded-full object-cover"
-              />
+              {selectedRegistration.avatar ? (
+                <img
+                  src={selectedRegistration.avatar}
+                  alt={selectedRegistration.name}
+                  className="w-16 h-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e35654] to-[#cc4a48] text-white flex items-center justify-center text-lg" style={{ fontWeight: 700 }}>
+                  {getInitials(selectedRegistration.name)}
+                </div>
+              )}
               <div className="flex-1">
                 <h2 className="text-xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
                   {selectedRegistration.name}
@@ -878,6 +1048,23 @@ export function HackathonRegistrations() {
                 {selectedRegistration.status}
               </span>
             </div>
+
+            {/* Idea details — the title + description the participant entered when registering */}
+            {(selectedRegistration.ideaTitle || selectedRegistration.ideaDescription) && (
+              <div className="mb-6 p-4 rounded-xl bg-gradient-to-br from-orange-50 to-pink-50 border border-orange-100">
+                <p className="text-xs text-gray-500 mb-2">الفكرة المقترحة</p>
+                {selectedRegistration.ideaTitle && (
+                  <p className="text-base text-gray-900 mb-2" style={{ fontWeight: 700 }}>
+                    {selectedRegistration.ideaTitle}
+                  </p>
+                )}
+                {selectedRegistration.ideaDescription && (
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+                    {selectedRegistration.ideaDescription}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="p-4 rounded-xl bg-gray-50">
@@ -932,6 +1119,115 @@ export function HackathonRegistrations() {
           </div>
         </div>
       )}
+
+      {/* Registration Dates Edit Modal */}
+      {showDatesModal && (() => {
+        // Validation against the hackathon window — the organizer set the outer dates
+        // at creation time; registration must fit inside them and be self-consistent.
+        const toMs = (v: string) => (v ? new Date(v).getTime() : NaN);
+        const hStartMs = regWindow.hackathonStart ? new Date(regWindow.hackathonStart.replace(' ', 'T')).getTime() : null;
+        const hEndMs = regWindow.hackathonEnd ? new Date(regWindow.hackathonEnd.replace(' ', 'T')).getTime() : null;
+        const startMs = toMs(editRegStart);
+        const endMs = toMs(editRegEnd);
+        const errors: string[] = [];
+        if (!editRegStart) errors.push('تاريخ فتح التسجيل مطلوب');
+        if (!editRegEnd) errors.push('تاريخ إغلاق التسجيل مطلوب');
+        if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs <= startMs) {
+          errors.push('تاريخ إغلاق التسجيل يجب أن يكون بعد تاريخ الفتح');
+        }
+        if (hStartMs != null && Number.isFinite(startMs) && startMs < hStartMs) {
+          errors.push('تاريخ فتح التسجيل يجب أن يكون داخل فترة الهاكاثون (بعد تاريخ بدئه)');
+        }
+        if (hEndMs != null && Number.isFinite(endMs) && endMs > hEndMs) {
+          errors.push('تاريخ إغلاق التسجيل يجب أن يكون داخل فترة الهاكاثون (قبل تاريخ انتهائه)');
+        }
+        const canSave = errors.length === 0 && !savingDates;
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <h3 className="text-lg text-gray-900" style={{ fontWeight: 700 }}>تعديل نافذة التسجيل</h3>
+                <button onClick={() => setShowDatesModal(false)} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-gray-500 flex items-center justify-center">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  لازم تكون التواريخ ضمن فترة الهاكاثون
+                  ({formatDateAr(regWindow.hackathonStart)} → {formatDateAr(regWindow.hackathonEnd)}).
+                </p>
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1.5" style={{ fontWeight: 600 }}>فتح التسجيل</label>
+                  <input
+                    type="datetime-local"
+                    value={editRegStart}
+                    onChange={(e) => setEditRegStart(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1.5" style={{ fontWeight: 600 }}>إغلاق التسجيل</label>
+                  <input
+                    type="datetime-local"
+                    value={editRegEnd}
+                    onChange={(e) => setEditRegEnd(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:bg-white"
+                  />
+                </div>
+                {errors.length > 0 && (
+                  <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 space-y-1">
+                    {errors.map((err, i) => (
+                      <div key={i} className="flex items-start gap-2 text-xs text-red-700">
+                        <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        <span>{err}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 px-6 pb-6">
+                <button
+                  onClick={() => setShowDatesModal(false)}
+                  disabled={savingDates}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!canSave || !id) return;
+                    setSavingDates(true);
+                    try {
+                      await apiPut(`/hackathons/${id}`, {
+                        registrationStart: editRegStart,
+                        registrationEnd: editRegEnd,
+                      });
+                      setRegWindow((prev) => ({
+                        ...prev,
+                        registrationStart: editRegStart.replace('T', ' ') + ':00',
+                        registrationEnd: editRegEnd.replace('T', ' ') + ':00',
+                      }));
+                      toast.success('تم تحديث تواريخ التسجيل');
+                      setShowDatesModal(false);
+                    } catch (e) {
+                      const msg = e instanceof ApiError ? e.message : 'تعذّر الحفظ';
+                      toast.error(msg);
+                    } finally {
+                      setSavingDates(false);
+                    }
+                  }}
+                  disabled={!canSave}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ fontWeight: 600 }}
+                >
+                  {savingDates ? 'جاري الحفظ...' : 'حفظ'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

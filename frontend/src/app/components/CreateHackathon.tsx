@@ -206,8 +206,22 @@ export function CreateHackathon() {
   const { id } = useParams();
   const isEditMode = !!id;
   const [hackathonId, setHackathonId] = useState<number | null>(id ? Number(id) : null);
+  // Status of the loaded hackathon — drives "edit a published hackathon live" mode.
+  // When 'published', we restrict the sidebar to basic + branding and swap the publish
+  // button for a "save changes" one that does NOT change the status.
+  const [hackathonStatus, setHackathonStatus] = useState<'draft' | 'published' | null>(null);
+  const isPublishedEdit = hackathonStatus === 'published';
   const [isSaving, setIsSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>('basic');
+
+  // Snap the active section back to a visible one when entering live-edit mode —
+  // e.g. if the user was on "registration" in a draft and the hackathon got published
+  // server-side, that section is no longer reachable.
+  useEffect(() => {
+    if (isPublishedEdit && activeSection !== 'basic' && activeSection !== 'branding') {
+      setActiveSection('basic');
+    }
+  }, [isPublishedEdit, activeSection]);
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [judges, setJudges] = useState<Judge[]>([]);
@@ -373,7 +387,12 @@ export function CreateHackathon() {
     { id: 'sponsors' as Section, label: 'الرعاة والباقات', icon: Handshake },
   ];
  
-  const currentIndex = sections.findIndex((s) => s.id === activeSection);
+  // Sections visible in the sidebar — restricted to basic + branding when editing a
+  // published hackathon (the rest is managed from the post-publish workflow).
+  const visibleSections = isPublishedEdit
+    ? sections.filter((s) => s.id === 'basic' || s.id === 'branding')
+    : sections;
+  const currentIndex = visibleSections.findIndex((s) => s.id === activeSection);
 
   // A section is "complete" when ALL its required fields are filled — independent of
   // navigation. Each complete section is worth 12.5% of progress.
@@ -625,6 +644,8 @@ export function CreateHackathon() {
           // by replacing the space separator with "T" so <input type="datetime-local"> can parse it.
           return v.replace(' ', 'T').slice(0, 16);
         };
+        const status = h.H_status === 'published' ? 'published' : 'draft';
+        setHackathonStatus(status);
         setForm({
           title: (h.H_title as string) ?? '',
           slug: (h.H_slug as string) ?? '',
@@ -849,43 +870,49 @@ export function CreateHackathon() {
       await apiPut(`/hackathons/${currentId}/tracks`, {
         tracks: tracks.map((t) => ({ name: t.name, description: t.description })),
       });
-      await apiPut(`/hackathons/${currentId}/co-managers`, {
-        coManagers: organizers.map((o) => ({
-          clientId: o.id,
-          parentClientId: o.role === 'staff' && o.parentId ? o.parentId : null,
-          fullName: o.name,
-          email: o.email,
-          role: o.role,
-          section: o.section || null,
-          permissions: o.permissions,
-        })),
-      });
-      await apiPut(`/hackathons/${currentId}/judges`, {
-        judges: judges.map((j) => ({
-          fullName: j.name,
-          email: j.email,
-          specialty: j.specialty,
-        })),
-      });
-      await apiPut(`/hackathons/${currentId}/prizes`, {
-        prizes: prizes.map((p) => ({
-          position: p.position,
-          amount: p.amount,
-          description: p.description,
-        })),
-      });
-      await apiPut(`/hackathons/${currentId}/sponsor-packages`, {
-        sponsorPackages: sponsorPackages.map((s) => ({
-          name: s.name,
-          type: s.type,
-          description: s.description,
-          duration: s.duration,
-          price: s.price,
-          sponsorOffer: s.sponsorOffer,
-          resources: s.resources,
-          benefits: s.benefits.filter((b) => b.trim() !== ''),
-        })),
-      });
+
+      // Skip the "replace-all" sub-table syncs when live-editing a published hackathon.
+      // The user can only edit basic + branding in this mode; sending stale org/judge/
+      // prize/package state would wipe accepted invitations and active applications.
+      if (!isPublishedEdit) {
+        await apiPut(`/hackathons/${currentId}/co-managers`, {
+          coManagers: organizers.map((o) => ({
+            clientId: o.id,
+            parentClientId: o.role === 'staff' && o.parentId ? o.parentId : null,
+            fullName: o.name,
+            email: o.email,
+            role: o.role,
+            section: o.section || null,
+            permissions: o.permissions,
+          })),
+        });
+        await apiPut(`/hackathons/${currentId}/judges`, {
+          judges: judges.map((j) => ({
+            fullName: j.name,
+            email: j.email,
+            specialty: j.specialty,
+          })),
+        });
+        await apiPut(`/hackathons/${currentId}/prizes`, {
+          prizes: prizes.map((p) => ({
+            position: p.position,
+            amount: p.amount,
+            description: p.description,
+          })),
+        });
+        await apiPut(`/hackathons/${currentId}/sponsor-packages`, {
+          sponsorPackages: sponsorPackages.map((s) => ({
+            name: s.name,
+            type: s.type,
+            description: s.description,
+            duration: s.duration,
+            price: s.price,
+            sponsorOffer: s.sponsorOffer,
+            resources: s.resources,
+            benefits: s.benefits.filter((b) => b.trim() !== ''),
+          })),
+        });
+      }
       return true;
     } catch (err) {
       if (err instanceof ApiError) {
@@ -905,25 +932,32 @@ export function CreateHackathon() {
   };
 
   const handleNext = async () => {
-    if (currentIndex >= sections.length - 1) return;
+    if (currentIndex >= visibleSections.length - 1) return;
     const ok = await saveDraft();
     if (!ok) return;
-    setActiveSection(sections[currentIndex + 1].id);
+    setActiveSection(visibleSections[currentIndex + 1].id);
   };
  
   const handlePrevious = () => {
     if (currentIndex > 0) {
-      setActiveSection(sections[currentIndex - 1].id);
+      setActiveSection(visibleSections[currentIndex - 1].id);
     }
   };
  
   const handleSaveDraft = async () => {
     const ok = await saveDraft();
     if (!ok) return;
-    toast.success(isEditMode ? 'تم تحديث المسودة' : 'تم حفظ المسودة', {
-      description: 'يمكنك الرجوع لتعديلها في أي وقت',
-      duration: 3000,
-    });
+    if (isPublishedEdit) {
+      toast.success('تم حفظ التعديلات', {
+        description: 'التغييرات تظهر فوراً للمشاركين والرعاة',
+        duration: 3000,
+      });
+    } else {
+      toast.success(isEditMode ? 'تم تحديث المسودة' : 'تم حفظ المسودة', {
+        description: 'يمكنك الرجوع لتعديلها في أي وقت',
+        duration: 3000,
+      });
+    }
     setTimeout(() => {
       navigate('/admin/my-hackathons');
     }, 1000);
@@ -1280,6 +1314,23 @@ export function CreateHackathon() {
         </div>
       </header>
  
+      {/* Live-edit warning — only when editing a published hackathon */}
+      {isPublishedEdit && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-amber-900" style={{ fontWeight: 700 }}>
+                تعديل هاكاثون منشور
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                التغييرات تظهر فوراً للمشاركين والرعاة. الأقسام الأخرى (المنظمون، التسجيل، الجوائز، الرعاة...) تُدار من <strong>إدارة الهاكاثون</strong>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
         <div className="flex gap-6">
           {/* Sidebar */}
@@ -1299,9 +1350,11 @@ export function CreateHackathon() {
                 </div>
               </div>
  
-              {/* Sections List */}
+              {/* Sections List — for published hackathons in live-edit mode, only
+                  basic info and branding are editable here; the rest is managed from
+                  the post-publish "إدارة الهاكاثون" workflow. */}
               <nav className="space-y-1">
-                {sections.map((section) => {
+                {visibleSections.map((section) => {
                   const isActive = activeSection === section.id;
                   const isCompleted = isSectionComplete(section.id);
                   const SectionIcon = section.icon;
@@ -3003,8 +3056,8 @@ export function CreateHackathon() {
                   onClick={handlePrevious}
                   disabled={currentIndex === 0}
                   className={`px-6 py-3 rounded-xl border border-gray-200 transition-all flex items-center gap-2 ${
-                    currentIndex === 0 
-                      ? 'text-gray-300 cursor-not-allowed' 
+                    currentIndex === 0
+                      ? 'text-gray-300 cursor-not-allowed'
                       : 'text-gray-700 hover:bg-gray-50'
                   }`}
                   style={{ fontWeight: 600 }}
@@ -3013,14 +3066,32 @@ export function CreateHackathon() {
                   السابق
                 </button>
                 <div className="flex items-center gap-3">
-                  <button 
-                    onClick={handleSaveDraft}
-                    className="px-6 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all" 
-                    style={{ fontWeight: 600 }}
-                  >
-                    حفظ كمسودة
-                  </button>
-                  {currentIndex === sections.length - 1 ? (
+                  {/* "Save draft" button is hidden when editing a published hackathon
+                      because there is no draft state to save into. */}
+                  {!isPublishedEdit && (
+                    <button
+                      onClick={handleSaveDraft}
+                      className="px-6 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all"
+                      style={{ fontWeight: 600 }}
+                    >
+                      حفظ كمسودة
+                    </button>
+                  )}
+                  {isPublishedEdit ? (
+                    <button
+                      onClick={handleSaveDraft}
+                      disabled={isSaving}
+                      className={`px-8 py-3 rounded-xl text-white transition-all flex items-center gap-2 ${
+                        isSaving
+                          ? 'bg-gray-300 cursor-not-allowed'
+                          : 'bg-[#e35654] hover:shadow-lg hover:shadow-[#e35654]/30'
+                      }`}
+                      style={{ fontWeight: 600 }}
+                    >
+                      <CheckCircle2 className="w-5 h-5" />
+                      {isSaving ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+                    </button>
+                  ) : currentIndex === visibleSections.length - 1 ? (
                     <button
                       onClick={handlePublish}
                       disabled={isSaving}

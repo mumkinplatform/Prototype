@@ -44,6 +44,9 @@ export default function HackathonManagement() {
   const [confirming, setConfirming] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Number of registrations waiting for organizer review — drives the "X طلب جديد"
+  // badge on the registrations card. Drops to 0 once they've all been accepted/rejected.
+  const [pendingRegistrations, setPendingRegistrations] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -53,10 +56,12 @@ export default function HackathonManagement() {
         const data = await apiGet<{
           hackathon: { H_status: string };
           myAccess: MyAccess | null;
+          counts?: { pendingRegistrations?: number };
         }>(`/hackathons/${id}`);
         if (!cancelled) {
           setStatus(data.hackathon.H_status);
           setMyAccess(data.myAccess);
+          setPendingRegistrations(data.counts?.pendingRegistrations ?? 0);
         }
       } catch (err) {
         if (!cancelled) setStatus(null);
@@ -108,7 +113,7 @@ export default function HackathonManagement() {
       buttonColor: 'bg-gray-900',
       buttonHoverColor: 'hover:bg-gray-800',
       link: `/admin/hackathon/${id}/registrations`,
-      badge: '12 طلب جديد'
+      badge: pendingRegistrations > 0 ? `${pendingRegistrations} طلب جديد` : undefined,
     },
     {
       id: 'team',
