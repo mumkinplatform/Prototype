@@ -98,6 +98,9 @@ interface UiMyHackathon {
   submissionDeadlineRaw: string | null;
   hasTeam: boolean;
   participationType: "solo" | "team";
+  teamMin: number;
+  teamMax: number;
+  hackathonStatus: string;
   timeline: UiTimelinePhase[];
 }
 
@@ -203,14 +206,27 @@ function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
     submissionDeadlineRaw: h.submissionDeadline,
     hasTeam: h.myTeamId !== null,
     participationType: h.participationType,
+    teamMin: h.teamMin,
+    teamMax: h.teamMax,
+    hackathonStatus: h.status,
     timeline: buildTimeline(h),
   };
+}
+
+function hackathonStatusLabel(status: string): { value: string; color: string } {
+  switch (status) {
+    case "draft":     return { value: "مسودة",           color: "#6b7280" };
+    case "published": return { value: "مفتوح للتسجيل",  color: "#3b82f6" };
+    case "ongoing":   return { value: "نشط — قيد التنفيذ", color: "#10b981" };
+    case "completed": return { value: "منتهي",          color: "#6b7280" };
+    default:          return { value: status || "—",     color: "#6b7280" };
+  }
 }
 
 // ── Hackathons Data (legacy mock — kept for reference, unused) ───
 
 // ─── Types ──────────────────────────────────────────────
-type WorkspaceTab = "home" | "team" | "submission" | "evaluations" | "certificates" | "sessions";
+type WorkspaceTab = "home" | "team" | "submission" | "evaluations" | "certificates" ;
 
 // ─── Team Chat ────────────────────────────────────────────
 interface ApiTeamMessage {
@@ -287,83 +303,13 @@ function formatFileSize(bytes: number): string {
 
 const FILE_COLOR_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
 
-// ─── Sessions ─────────────────────────────────────────────
-type SessionPlatform = "zoom" | "teams" | "meet" | "other";
-type SessionStatus = "completed" | "live" | "soon" | "scheduled";
 
-interface ApiSession {
-  id: number;
-  title: string;
-  description: string | null;
-  type: SessionPlatform;
-  startAt: string;
-  durationMinutes: number;
-  link: string | null;
-}
-
-interface UiSession {
-  id: number;
-  title: string;
-  description: string;
-  type: SessionPlatform;
-  date: string;
-  time: string;
-  duration: string;
-  status: SessionStatus;
-  link: string | null;
-}
-
-function formatTimeAr(value: string): string {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("ar-SA", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(d);
-}
-
-function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} دقيقة`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 1 && m === 0) return "ساعة واحدة";
-  if (h === 2 && m === 0) return "ساعتان";
-  if (m === 0) return `${h} ساعات`;
-  return `${h} س ${m} د`;
-}
-
-function computeSessionStatus(startAt: string, durationMinutes: number): SessionStatus {
-  const startMs = new Date(startAt).getTime();
-  const endMs = startMs + durationMinutes * 60 * 1000;
-  const now = Date.now();
-  if (now >= endMs) return "completed";
-  if (now >= startMs) return "live";
-  // Starts within 24 hours
-  if (startMs - now <= 24 * 60 * 60 * 1000) return "soon";
-  return "scheduled";
-}
-
-function toUiSession(s: ApiSession): UiSession {
-  return {
-    id: s.id,
-    title: s.title,
-    description: s.description ?? "",
-    type: s.type,
-    date: formatDateAr(s.startAt),
-    time: formatTimeAr(s.startAt),
-    duration: formatDuration(s.durationMinutes),
-    status: computeSessionStatus(s.startAt, s.durationMinutes),
-    link: s.link,
-  };
-}
 
 // ─── Timeline Data ──────────────────────────────────────
 // ─── Sidebar Cards ──────────────────────────────────────
 const sidebarCards: { tab: WorkspaceTab; icon: any; label: string; desc: string; color: string; bg: string }[] = [
   { tab: "home", icon: Home, label: "الرئيسية", desc: "نظرة عامة على الهاكاثون", color: "#6366f1", bg: "#eef2ff" },
   { tab: "team", icon: Users, label: "بيانات الفريق", desc: "التواصل مع أعضاء فريقك", color: "#10b981", bg: "#f0fdf4" },
-  { tab: "sessions", icon: Video, label: "الجلسات", desc: "الانضمام للجلسات المباشرة", color: "#06b6d4", bg: "#ecfeff" },
   { tab: "submission", icon: Upload, label: "رفع المشروع", desc: "رفع ومعاينة التسليمات", color: "#e35654", bg: "#fef2f2" },
   { tab: "evaluations", icon: BarChart3, label: "التقييمات", desc: "تقييمات الحكام لمشروعك", color: "#f59e0b", bg: "#fffbeb" },
   { tab: "certificates", icon: Award, label: "الشهادات", desc: "عرض وتحميل شهاداتك", color: "#8b5cf6", bg: "#f5f3ff" },
@@ -562,7 +508,6 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
   const [counts, setCounts] = useState<Record<WorkspaceTab, number>>({
     home: 0,
     team: 0,
-    sessions: 0,
     submission: 0,
     evaluations: 0,
     certificates: 0,
@@ -587,21 +532,19 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
     let cancelled = false;
 
     interface TeamResp { team: { members: unknown[] } | null }
-    interface SessionsResp { items: { startAt: string; durationMinutes: number }[] }
     interface SubmissionResp { files: unknown[] }
     interface EvalResp { items: unknown[] }
     interface CertResp { items: { hackathonId: number }[] }
 
     Promise.allSettled([
       apiGet<TeamResp>(`/participants/hackathons/${hid}/my-team`),
-      apiGet<SessionsResp>(`/participants/hackathons/${hid}/sessions`),
       apiGet<SubmissionResp>(`/participants/hackathons/${hid}/submission`),
       apiGet<EvalResp>(`/participants/hackathons/${hid}/evaluations`),
       apiGet<CertResp>(`/participants/certificates`),
     ]).then((results) => {
       if (cancelled) return;
       const next: Record<WorkspaceTab, number> = {
-        home: 0, team: 0, sessions: 0, submission: 0, evaluations: 0, certificates: 0,
+        home: 0, team: 0, submission: 0, evaluations: 0, certificates: 0,
       };
 
       // Team: number of members (if a team exists)
@@ -609,14 +552,6 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
         next.team = results[0].value.team?.members.length ?? 0;
       }
 
-      // Sessions: count of sessions that haven't ended yet
-      if (results[1].status === 'fulfilled') {
-        const now = Date.now();
-        next.sessions = results[1].value.items.filter((s) => {
-          const end = new Date(s.startAt).getTime() + s.durationMinutes * 60_000;
-          return end > now;
-        }).length;
-      }
 
       // Submission: number of uploaded files
       if (results[2].status === 'fulfilled') {
@@ -805,7 +740,6 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
             {activeTab === "submission" && <SubmissionTab hackathonId={hackathon.id} />}
             {activeTab === "evaluations" && <EvaluationsTab hackathonId={hackathon.id} />}
             {activeTab === "certificates" && <CertificatesTab />}
-            {activeTab === "sessions" && <SessionsTab hackathonId={hackathon.id} />}
           </div>
         </div>
       </div>
@@ -873,11 +807,22 @@ function HomeTab({ hackathon }: { hackathon: UiMyHackathon }) {
         </p>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {[
-            { label: "المسار", value: hackathon.track, color: "#6366f1" },
-            { label: "الحالة", value: "نشط - قيد التنفيذ", color: "#10b981" },
-            { label: "نوع المشاركة", value: "فريق (4 أعضاء)", color: "#e35654" },
-          ].map((info, i) => (
+          {(() => {
+            const statusInfo = hackathonStatusLabel(hackathon.hackathonStatus);
+            return [
+              { label: "المسار", value: hackathon.track, color: "#6366f1" },
+              { label: "الحالة", value: statusInfo.value, color: statusInfo.color },
+              {
+                label: "نوع المشاركة",
+                value: hackathon.participationType === "solo"
+                  ? "فردي"
+                  : hackathon.teamMin === hackathon.teamMax
+                  ? `فريق (${hackathon.teamMax} أعضاء)`
+                  : `فريق (${hackathon.teamMin}–${hackathon.teamMax} أعضاء)`,
+                color: "#e35654",
+              },
+            ];
+          })().map((info, i) => (
             <div key={i} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
               <p className="text-gray-400 text-xs mb-1">{info.label}</p>
               <p style={{ color: info.color, fontWeight: 600, fontSize: "0.82rem" }}>{info.value}</p>
@@ -1054,7 +999,7 @@ function TeamTab({ hackathonId, hackathonHasTeam }: { hackathonId: number; hacka
           ابحث عن فريق متاح للانضمام، أو اطلب من قائد فريق إضافتك.
         </p>
         <button
-          onClick={() => navigate("/participant/matchmaking")}
+          onClick={() => navigate("/participant/matchmaking", { state: { hackathonId } })}
           className="px-5 py-2.5 rounded-xl bg-[#6366f1] text-white text-sm hover:bg-[#4f51d4] transition-colors"
           style={{ fontWeight: 600 }}
         >
@@ -1522,19 +1467,17 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
 // ═══════════════════════════════════════════════════════════
 function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
   const [evaluations, setEvaluations] = useState<ApiEvaluation[]>([]);
-  const [hasTeam, setHasTeam] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    apiGet<{ items: ApiEvaluation[]; teamId: number | null }>(
+    apiGet<{ items: ApiEvaluation[] }>(
       `/participants/hackathons/${hackathonId}/evaluations`
     )
       .then((data) => {
         if (cancelled) return;
         setEvaluations(data.items);
-        setHasTeam(data.teamId !== null);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -1560,16 +1503,6 @@ function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
           <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل التقييمات...</div>
         ) : error ? (
           <div className="text-center py-10 text-red-500 text-sm">{error}</div>
-        ) : !hasTeam ? (
-          <div className="text-center py-10">
-            <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
-              التقييمات تظهر بعد الانضمام لفريق
-            </p>
-            <p className="text-gray-400 text-xs mt-1">
-              الحكّام يقيّمون مشاريع الفِرَق، لذا يجب الانضمام لفريق أولاً
-            </p>
-          </div>
         ) : evaluations.length === 0 ? (
           <div className="text-center py-10">
             <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -1740,164 +1673,6 @@ function CertificatesTab() {
                     <Download className="w-4 h-4" />
                     تحميل
                   </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// Tab: Sessions
-// ═══════════════════════════════════════════════════════════
-function SessionsTab({ hackathonId }: { hackathonId: number }) {
-  const [sessions, setSessions] = useState<UiSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiGet<{ items: ApiSession[] }>(`/participants/hackathons/${hackathonId}/sessions`)
-      .then((data) => {
-        if (cancelled) return;
-        setSessions(data.items.map(toUiSession));
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : "فشل تحميل الجلسات");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [hackathonId]);
-
-  // Status colors and labels
-  const statusStyle = (status: SessionStatus) => {
-    if (status === "live")      return { bg: "#fef2f2", color: "#e35654", label: "مباشر الآن" };
-    if (status === "soon")      return { bg: "#ecfeff", color: "#06b6d4", label: "قادم" };
-    if (status === "completed") return { bg: "#f0fdf4", color: "#10b981", label: "مكتمل" };
-    return { bg: "#fffbeb", color: "#f59e0b", label: "مجدول" };
-  };
-
-  const platformStyle = (type: SessionPlatform) => {
-    if (type === "zoom")  return { bg: "#ecfeff", color: "#06b6d4" };
-    if (type === "teams") return { bg: "#eef2ff", color: "#6366f1" };
-    if (type === "meet")  return { bg: "#f0fdf4", color: "#10b981" };
-    return { bg: "#f5f3ff", color: "#8b5cf6" };
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Video className="w-5 h-5" style={{ color: "#06b6d4" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>الجلسات المباشرة</h2>
-        </div>
-
-        {loading ? (
-          <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل الجلسات...</div>
-        ) : error ? (
-          <div className="text-center py-10 text-red-500 text-sm">{error}</div>
-        ) : sessions.length === 0 ? (
-          <div className="text-center py-10">
-            <Video className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لا توجد جلسات مجدولة</p>
-            <p className="text-gray-400 text-xs mt-1">ستظهر هنا جلسات الهاكاثون عند جدولتها</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {sessions.map((session) => {
-              const sStyle = statusStyle(session.status);
-              const pStyle = platformStyle(session.type);
-              const isJoinable = (session.status === "live" || session.status === "soon") && !!session.link;
-              return (
-                <div
-                  key={session.id}
-                  className={`p-5 rounded-2xl border transition-all ${
-                    session.status === "soon" || session.status === "live"
-                      ? "border-[#06b6d4]/30 bg-cyan-50/30"
-                      : session.status === "completed"
-                      ? "border-gray-100 bg-gray-50/30"
-                      : "border-gray-100"
-                  }`}
-                >
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                          {session.title}
-                        </h3>
-                        <span
-                          className="text-xs px-2.5 py-0.5 rounded-full"
-                          style={{ background: sStyle.bg, color: sStyle.color, fontWeight: 600 }}
-                        >
-                          {sStyle.label}
-                        </span>
-                      </div>
-                      {session.description && (
-                        <p className="text-gray-500 text-xs mb-2">{session.description}</p>
-                      )}
-                    </div>
-
-                    {/* Platform Icon */}
-                    <div
-                      className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mr-3"
-                      style={{ background: pStyle.bg }}
-                    >
-                      <Video className="w-5 h-5" style={{ color: pStyle.color }} />
-                    </div>
-                  </div>
-
-                  {/* Details */}
-                  <div className="flex items-center gap-4 text-xs text-gray-400 mb-4">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>{session.date}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>{session.time}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span>•</span>
-                      <span>{session.duration}</span>
-                    </div>
-                  </div>
-
-                  {/* Action Button */}
-                  {isJoinable && (
-                    <button
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white text-sm transition-colors"
-                      style={{ background: "#06b6d4", fontWeight: 600 }}
-                      onClick={() => session.link && window.open(session.link, "_blank", "noopener,noreferrer")}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      {session.status === "live" ? "انضم الآن" : "الانضمام للجلسة"}
-                    </button>
-                  )}
-
-                  {session.status === "completed" && (
-                    <div className="flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-100 text-gray-400 text-sm">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span style={{ fontWeight: 600 }}>تم الانتهاء</span>
-                    </div>
-                  )}
-
-                  {session.status === "scheduled" && (
-                    <div className="flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm"
-                      style={{ borderColor: "#f59e0b", color: "#f59e0b", fontWeight: 600 }}
-                    >
-                      <Calendar className="w-4 h-4" />
-                      مجدول لاحقاً
-                    </div>
-                  )}
                 </div>
               );
             })}

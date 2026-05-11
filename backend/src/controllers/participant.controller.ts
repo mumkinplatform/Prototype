@@ -1222,12 +1222,11 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
   }
   const teamId = appRows[0].T_ID;
 
-  // No team yet → return empty list
-  if (teamId === null) {
-    return res.json({ items: [], teamId: null });
-  }
+  // Filter by team (if in a team) or by solo participant (PM_ID)
+  const ownerCol = teamId !== null ? 'e.T_ID' : 'e.PM_ID';
+  const ownerId = teamId !== null ? teamId : memberId;
 
-  // 1) Fetch evaluation headers for this team
+  // 1) Fetch evaluation headers for this owner
   const [evRows] = await pool.query<EvaluationHeaderRow[]>(
     `SELECT
        e.E_ID         AS id,
@@ -1237,13 +1236,13 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
        e.E_EvaluatedAt AS evaluatedAt
        FROM evaluation e
        JOIN hackathon_judge j ON j.HJ_ID = e.HJ_ID
-      WHERE e.T_ID = ?
+      WHERE ${ownerCol} = ?
       ORDER BY e.E_EvaluatedAt DESC`,
-    [teamId]
+    [ownerId]
   );
 
   if (evRows.length === 0) {
-    return res.json({ items: [], teamId });
+    return res.json({ items: [], teamId, isRegistered: true });
   }
 
   // 2) Fetch criterion scores for all evaluations in a single query
@@ -1284,7 +1283,7 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
     };
   });
 
-  return res.json({ items, teamId });
+  return res.json({ items, teamId, isRegistered: true });
 };
 
 // ─── Sessions ────────────────────────────────────────────────
@@ -1494,13 +1493,18 @@ export const sendTeamMessage = async (req: Request, res: Response) => {
 // ─── Submission ──────────────────────────────────────────────
 interface TeamSubmissionRow extends RowDataPacket {
   TS_ID: number;
-  T_ID: number;
+  T_ID: number | null;
+  PM_ID: number | null;
   TS_ProjectName: string | null;
   TS_ProjectDescription: string | null;
   TS_RepoUrl: string | null;
   TS_DemoUrl: string | null;
   TS_SubmittedAt: Date | null;
 }
+
+type SubmissionTarget =
+  | { teamId: number; participantId: null }
+  | { teamId: null; participantId: number };
 
 interface SubmissionFileRow extends RowDataPacket {
   id: number;
@@ -1524,7 +1528,7 @@ interface HackathonSubmissionMetaRow extends RowDataPacket {
 
 /**
  * Resolves the participant's team in a hackathon. Returns T_ID or null on error.
- * If no team exists, responds 400 (submission requires a team).
+ * For team-only features (e.g. team chat). Solo participants are rejected here.
  */
 async function requireMyTeam(req: Request, res: Response, hackathonId: number): Promise<number | null> {
   const memberId = req.user!.memberId;
@@ -1538,34 +1542,60 @@ async function requireMyTeam(req: Request, res: Response, hackathonId: number): 
   }
   const teamId = rows[0].T_ID;
   if (teamId === null) {
-    res.status(400).json({ error: 'يجب الانضمام لفريق قبل التسليم' });
+    res.status(400).json({ error: 'يجب الانضمام لفريق أولاً' });
     return null;
   }
   return teamId;
 }
 
 /**
- * Fetches or creates a team_submission row for the given (team, hackathon).
+ * Resolves the participant's submission target (team or solo).
+ * Solo participants get their own PM_ID as target; team participants get T_ID.
+ * Used by submission and evaluation endpoints that work for both modes.
  */
-async function getOrCreateTeamSubmission(teamId: number, hackathonId: number): Promise<TeamSubmissionRow> {
-  const [rows] = await pool.query<TeamSubmissionRow[]>(
-    `SELECT TS_ID, T_ID, TS_ProjectName, TS_ProjectDescription, TS_RepoUrl, TS_DemoUrl, TS_SubmittedAt
-       FROM team_submission
-      WHERE T_ID = ? AND hackathon_ID = ?`,
-    [teamId, hackathonId]
+async function requireSubmissionTarget(
+  req: Request,
+  res: Response,
+  hackathonId: number
+): Promise<SubmissionTarget | null> {
+  const memberId = req.user!.memberId;
+  const [rows] = await pool.query<MyTeamInHackRow[]>(
+    'SELECT T_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
+    [memberId, hackathonId]
   );
+  if (rows.length === 0) {
+    res.status(403).json({ error: 'يجب التسجيل في الهاكاثون أولاً' });
+    return null;
+  }
+  const teamId = rows[0].T_ID;
+  if (teamId !== null) return { teamId, participantId: null };
+  return { teamId: null, participantId: memberId };
+}
+
+/**
+ * Fetches or creates a team_submission row for the given target (team OR solo participant).
+ * Each registered owner (team or solo) gets exactly one submission per hackathon.
+ */
+async function getOrCreateSubmission(
+  target: SubmissionTarget,
+  hackathonId: number
+): Promise<TeamSubmissionRow> {
+  const isTeam = target.teamId !== null;
+  const ownerCol = isTeam ? 'T_ID' : 'PM_ID';
+  const ownerId = isTeam ? target.teamId! : target.participantId!;
+
+  const selectSql = `SELECT TS_ID, T_ID, PM_ID, TS_ProjectName, TS_ProjectDescription, TS_RepoUrl, TS_DemoUrl, TS_SubmittedAt
+       FROM team_submission
+      WHERE ${ownerCol} = ? AND hackathon_ID = ?`;
+
+  const [rows] = await pool.query<TeamSubmissionRow[]>(selectSql, [ownerId, hackathonId]);
   if (rows.length > 0) return rows[0];
 
   await pool.query<ResultSetHeader>(
-    'INSERT INTO team_submission (T_ID, hackathon_ID) VALUES (?, ?)',
-    [teamId, hackathonId]
+    `INSERT INTO team_submission (${ownerCol}, hackathon_ID) VALUES (?, ?)`,
+    [ownerId, hackathonId]
   );
-  const [created] = await pool.query<TeamSubmissionRow[]>(
-    `SELECT TS_ID, T_ID, TS_ProjectName, TS_ProjectDescription, TS_RepoUrl, TS_DemoUrl, TS_SubmittedAt
-       FROM team_submission
-      WHERE T_ID = ? AND hackathon_ID = ?`,
-    [teamId, hackathonId]
-  );
+  const [created] = await pool.query<TeamSubmissionRow[]>(selectSql, [ownerId, hackathonId]);
   return created[0];
 }
 
@@ -1580,10 +1610,10 @@ export const getMySubmission = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  const teamId = await requireMyTeam(req, res, hackathonId);
-  if (teamId === null) return;
+  const target = await requireSubmissionTarget(req, res, hackathonId);
+  if (target === null) return;
 
-  const sub = await getOrCreateTeamSubmission(teamId, hackathonId);
+  const sub = await getOrCreateSubmission(target, hackathonId);
 
   // Files
   const [files] = await pool.query<SubmissionFileRow[]>(
@@ -1661,10 +1691,10 @@ export const updateMySubmission = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  const teamId = await requireMyTeam(req, res, hackathonId);
-  if (teamId === null) return;
+  const target = await requireSubmissionTarget(req, res, hackathonId);
+  if (target === null) return;
 
-  const sub = await getOrCreateTeamSubmission(teamId, hackathonId);
+  const sub = await getOrCreateSubmission(target, hackathonId);
 
   const b = req.body ?? {};
   const updates: string[] = [];
@@ -1698,8 +1728,8 @@ export const uploadSubmissionFile = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  const teamId = await requireMyTeam(req, res, hackathonId);
-  if (teamId === null) {
+  const target = await requireSubmissionTarget(req, res, hackathonId);
+  if (target === null) {
     if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
     return;
   }
@@ -1708,7 +1738,7 @@ export const uploadSubmissionFile = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'لم يتم إرفاق ملف' });
   }
 
-  const sub = await getOrCreateTeamSubmission(teamId, hackathonId);
+  const sub = await getOrCreateSubmission(target, hackathonId);
 
   const memberId = req.user!.memberId;
   const [result] = await pool.query<ResultSetHeader>(
@@ -1742,17 +1772,19 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الملف غير صالح' });
   }
 
-  const teamId = await requireMyTeam(req, res, hackathonId);
-  if (teamId === null) return;
+  const target = await requireSubmissionTarget(req, res, hackathonId);
+  if (target === null) return;
 
-  // Verify the file belongs to this team's submission
+  // Verify the file belongs to this owner's submission (team or solo)
   interface FileOwnerRow extends RowDataPacket { storedName: string; }
+  const ownerCol = target.teamId !== null ? 'T_ID' : 'PM_ID';
+  const ownerId = target.teamId !== null ? target.teamId : target.participantId!;
   const [rows] = await pool.query<FileOwnerRow[]>(
     `SELECT f.SF_StoredName AS storedName
        FROM submission_file f
        JOIN team_submission ts ON ts.TS_ID = f.TS_ID
-      WHERE f.SF_ID = ? AND ts.T_ID = ? AND ts.hackathon_ID = ?`,
-    [fileId, teamId, hackathonId]
+      WHERE f.SF_ID = ? AND ts.${ownerCol} = ? AND ts.hackathon_ID = ?`,
+    [fileId, ownerId, hackathonId]
   );
   if (rows.length === 0) {
     return res.status(404).json({ error: 'الملف غير موجود' });
@@ -1778,10 +1810,10 @@ export const confirmSubmission = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  const teamId = await requireMyTeam(req, res, hackathonId);
-  if (teamId === null) return;
+  const target = await requireSubmissionTarget(req, res, hackathonId);
+  if (target === null) return;
 
-  const sub = await getOrCreateTeamSubmission(teamId, hackathonId);
+  const sub = await getOrCreateSubmission(target, hackathonId);
 
   await pool.query(
     'UPDATE team_submission SET TS_SubmittedAt = CURRENT_TIMESTAMP WHERE TS_ID = ?',

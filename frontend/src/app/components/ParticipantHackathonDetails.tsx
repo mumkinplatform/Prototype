@@ -6,7 +6,6 @@ import {
   Trophy,
   Clock,
   Users,
-  Eye,
   MapPin,
   Star,
   CheckCircle2,
@@ -93,7 +92,6 @@ interface UiHackathon {
   date: string;
   deadline: string;
   prize: string;
-  viewers: number;
   teams: number;
   branding: BrandingPayload | null;
   featured: boolean;
@@ -196,7 +194,6 @@ function toUiHackathon(h: ApiHackathonDetail): UiHackathon {
     date: formatDateAr(h.hackathonStartDate),
     deadline: formatDateAr(h.registrationEndDate),
     prize: formatPrize(h.prizeTotal),
-    viewers: 0,
     teams: h.applicantsCount,
     branding: h.branding,
     featured: false,
@@ -281,7 +278,7 @@ function RegistrationModal({
       });
 
       if (participationType === "team" && teamMethod === "ai") {
-        navigate("/participant/matchmaking");
+        navigate("/participant/matchmaking", { state: { hackathonId } });
         return;
       }
       onSuccess(participationType);
@@ -295,9 +292,9 @@ function RegistrationModal({
  
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
             <p className="text-gray-900" style={{ fontWeight: 700, fontSize: "0.95rem" }}>
               التسجيل في الهاكاثون
@@ -313,7 +310,7 @@ function RegistrationModal({
         </div>
  
         {/* Body */}
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
           {/* Step 1: Participation Type */}
           <div>
             <p className="text-gray-700 text-xs mb-3" style={{ fontWeight: 600 }}>
@@ -496,7 +493,7 @@ function RegistrationModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 pb-6 gap-3">
+        <div className="flex items-center justify-between px-6 py-4 gap-3 flex-shrink-0 border-t border-gray-100 bg-white">
           <button
             onClick={onClose}
             className="text-gray-500 text-sm hover:text-gray-700"
@@ -680,7 +677,7 @@ export function ParticipantHackathonDetails() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { icon: Trophy, label: "إجمالي الجوائز", value: hackathon.prize, color: "#f59e0b" },
-              { icon: Users, label: "فرق مشاركة", value: `${hackathon.teams} فريق`, color: "#10b981" },
+              { icon: Users, label: "المتقدمون", value: `${hackathon.teams}`, color: "#10b981" },
               { icon: Clock, label: "مدة الهاكاثون", value: hackathon.duration, color: "#6366f1" },
               { icon: Calendar, label: "تاريخ الانطلاق", value: hackathon.date, color: "#e35654" },
             ].map((stat, i) => (
@@ -714,11 +711,10 @@ export function ParticipantHackathonDetails() {
               <p className="text-gray-600 leading-relaxed" style={{ fontSize: "0.9rem" }}>
                 {hackathon.desc}
               </p>
-              <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-gray-100">
+              <div className="grid grid-cols-2 gap-3 mt-5 pt-5 border-t border-gray-100">
                 {[
-                  { label: "المشاركون", value: hackathon.participants, icon: Users, color: "#6366f1" },
-                  { label: "المشاهدات", value: hackathon.viewers, icon: Eye, color: "#e35654" },
-                  { label: "الفرق المسجلة", value: hackathon.teams, icon: Shield, color: "#10b981" },
+                  { label: "المتقدمون", value: hackathon.participants, icon: Users, color: "#6366f1" },
+                  { label: "الحد الأقصى للفريق", value: `${hackathon.maxTeam} أعضاء`, icon: Shield, color: "#10b981" },
                 ].map((s, i) => (
                   <div key={i} className="text-center p-3 rounded-xl bg-gray-50">
                     <s.icon className="w-4 h-4 mx-auto mb-1.5" style={{ color: s.color }} />
@@ -729,37 +725,21 @@ export function ParticipantHackathonDetails() {
               </div>
             </div>
  
-            {/* Required Skills */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <h2 className="text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
-                <Code className="w-4 h-4 text-[#e35654]" />
-                المهارات المطلوبة
-              </h2>
-              <div className="flex flex-wrap gap-2">
-                {hackathon.skills.map((skill) => (
-                  <span
-                    key={skill}
-                    className="px-3 py-1.5 rounded-xl border border-gray-200 text-gray-700 text-sm"
-                    style={{ fontWeight: 500 }}
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
+           
               <div className="mt-4 p-3 bg-[#eef2ff] rounded-xl border border-[#6366f1]/20 flex items-center gap-3">
                 <Sparkles className="w-4 h-4 text-[#6366f1] flex-shrink-0" />
                 <p className="text-[#6366f1] text-xs" style={{ fontWeight: 500 }}>
                   استخدم AI Matching لإيجاد زملاء يكملون مهاراتك في هذا الهاكاثون
                 </p>
                 <button
-                  onClick={() => navigate("/participant/matchmaking")}
+                  onClick={() => navigate("/participant/matchmaking", { state: { hackathonId: hackathon.id } })}
                   className="text-[#6366f1] text-xs hover:underline flex-shrink-0"
                   style={{ fontWeight: 700 }}
                 >
                   جرّبه الآن
                 </button>
               </div>
-            </div>
+            
  
             {/* Prizes */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -871,7 +851,7 @@ export function ParticipantHackathonDetails() {
                     </p>
 
                     <button
-                      onClick={() => navigate("/participant/matchmaking")}
+                      onClick={() => navigate("/participant/matchmaking", { state: { hackathonId: hackathon.id } })}
                       className="w-full py-3 rounded-xl text-sm bg-[#6366f1] text-white hover:bg-[#4f51d4] shadow-md shadow-[#6366f1]/25 transition-all flex items-center justify-center gap-2 mb-2"
                       style={{ fontWeight: 600 }}
                     >
@@ -963,8 +943,8 @@ export function ParticipantHackathonDetails() {
                       <span className="text-gray-700" style={{ fontWeight: 600 }}>حتى {hackathon.maxTeam} أعضاء</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-400">الفرق المسجلة</span>
-                      <span className="text-gray-700" style={{ fontWeight: 600 }}>{hackathon.teams} فريق</span>
+                      <span className="text-gray-400">المتقدمون</span>
+                      <span className="text-gray-700" style={{ fontWeight: 600 }}>{hackathon.teams}</span>
                     </div>
                   </div>
  
