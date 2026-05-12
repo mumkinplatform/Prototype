@@ -1771,56 +1771,6 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
   });
 };
 
-// ─── Certificates ────────────────────────────────────────────
-interface CertificateRow extends RowDataPacket {
-  id: number;
-  hackathonId: number;
-  hackathonTitle: string;
-  title: string;
-  type: 'participation' | 'win' | 'completion';
-  position: string | null;
-  fileUrl: string | null;
-  issuedAt: Date;
-}
-
-/**
- * Returns all certificates for the current participant, joined with hackathon title.
- */
-export const listMyCertificates = async (req: Request, res: Response) => {
-  if (!ensureParticipant(req, res)) return;
-  const memberId = req.user!.memberId;
-
-  const [rows] = await pool.query<CertificateRow[]>(
-    `SELECT
-       c.C_ID         AS id,
-       c.hackathon_ID AS hackathonId,
-       h.H_title      AS hackathonTitle,
-       c.C_Title      AS title,
-       c.C_Type       AS type,
-       c.C_Position   AS position,
-       c.C_FileUrl    AS fileUrl,
-       c.C_IssuedAt   AS issuedAt
-       FROM certificate c
-       JOIN hackathon h ON h.hackathon_ID = c.hackathon_ID
-      WHERE c.M_ID = ?
-      ORDER BY c.C_IssuedAt DESC`,
-    [memberId]
-  );
-
-  return res.json({
-    items: rows.map((r) => ({
-      id: r.id,
-      hackathonId: r.hackathonId,
-      hackathonTitle: r.hackathonTitle,
-      title: r.title,
-      type: r.type,
-      position: r.position,
-      fileUrl: r.fileUrl,
-      issuedAt: r.issuedAt,
-    })),
-  });
-};
-
 // ─── Team Chat ───────────────────────────────────────────────
 interface TeamMessageRow extends RowDataPacket {
   id: number;
@@ -2233,6 +2183,13 @@ export const updateMySubmission = async (req: Request, res: Response) => {
 
   const sub = await getOrCreateSubmission(target, hackathonId);
 
+  // Once submitted, the submission is final — no edits, no re-saves.
+  // (Organizer-side request: lets them build their own workflow without
+  // worrying about post-send mutations.)
+  if (sub.TS_SubmittedAt !== null) {
+    return res.status(400).json({ error: 'لا يمكن تعديل التسليم بعد الإرسال' });
+  }
+
   const b = req.body ?? {};
   const updates: string[] = [];
   const values: Array<string | null> = [];
@@ -2288,6 +2245,12 @@ export const uploadSubmissionFile = async (req: Request, res: Response) => {
 
   const sub = await getOrCreateSubmission(target, hackathonId);
 
+  // Submission is final once sent — no new files can be attached after.
+  if (sub.TS_SubmittedAt !== null) {
+    fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
+    return res.status(400).json({ error: 'لا يمكن رفع ملفات بعد إرسال التسليم' });
+  }
+
   const memberId = req.user!.memberId;
   const [result] = await pool.query<ResultSetHeader>(
     `INSERT INTO submission_file (TS_ID, SF_Name, SF_StoredName, SF_Size, SF_MimeType, SF_UploadedBy)
@@ -2330,12 +2293,17 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
 
-  // Verify the file belongs to this owner's submission (team or solo)
-  interface FileOwnerRow extends RowDataPacket { storedName: string; }
+  // Verify the file belongs to this owner's submission (team or solo) and
+  // pull TS_SubmittedAt so we can refuse deletion after the submission is
+  // final.
+  interface FileOwnerRow extends RowDataPacket {
+    storedName: string;
+    TS_SubmittedAt: Date | null;
+  }
   const ownerCol = target.teamId !== null ? 'T_ID' : 'PM_ID';
   const ownerId = target.teamId !== null ? target.teamId : target.participantId!;
   const [rows] = await pool.query<FileOwnerRow[]>(
-    `SELECT f.SF_StoredName AS storedName
+    `SELECT f.SF_StoredName AS storedName, ts.TS_SubmittedAt
        FROM submission_file f
        JOIN team_submission ts ON ts.TS_ID = f.TS_ID
       WHERE f.SF_ID = ? AND ts.${ownerCol} = ? AND ts.hackathon_ID = ?`,
@@ -2343,6 +2311,11 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
   );
   if (rows.length === 0) {
     return res.status(404).json({ error: 'الملف غير موجود' });
+  }
+
+  // Submission is final once sent — files are part of that final state.
+  if (rows[0].TS_SubmittedAt !== null) {
+    return res.status(400).json({ error: 'لا يمكن حذف ملفات بعد إرسال التسليم' });
   }
 
   // Best-effort disk delete (ignore if already missing)
@@ -2393,6 +2366,12 @@ export const confirmSubmission = async (req: Request, res: Response) => {
   if (target === null) return;
 
   const sub = await getOrCreateSubmission(target, hackathonId);
+
+  // Already-final submissions can't be re-sent. The frontend never calls
+  // this endpoint a second time, but we reject defensively.
+  if (sub.TS_SubmittedAt !== null) {
+    return res.status(400).json({ error: 'تم إرسال هذا المشروع بالفعل' });
+  }
 
   // Pull the organizer's required-fields list so we can block confirmation
   // when the participant hasn't filled the required text/URL fields or
@@ -2458,6 +2437,32 @@ export const confirmSubmission = async (req: Request, res: Response) => {
     'UPDATE team_submission SET TS_SubmittedAt = CURRENT_TIMESTAMP WHERE TS_ID = ?',
     [sub.TS_ID]
   );
+
+  // Drop an in-app notification so the participant sees confirmation
+  // matching the email/decision flow elsewhere in the app.
+  try {
+    const [hackRows] = await pool.query<RowDataPacket[]>(
+      'SELECT H_title FROM hackathon WHERE hackathon_ID = ?',
+      [hackathonId],
+    );
+    const hackathonTitle = hackRows.length > 0
+      ? (hackRows[0] as { H_title: string }).H_title
+      : 'الهاكاثون';
+    await pool.execute(
+      `INSERT INTO notification
+         (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+       VALUES (?, 'submission', ?, ?, ?, ?)`,
+      [
+        req.user!.memberId,
+        `تم إرسال مشروعك في "${hackathonTitle}"`,
+        'وصل تسليمك بنجاح. التسليم نهائي ولا يمكن تعديله بعد الإرسال.',
+        'فتح التسليم',
+        `/participant/workspace?id=${hackathonId}&tab=submission`,
+      ],
+    );
+  } catch (notifErr) {
+    console.error('confirmSubmission: notification insert failed', notifErr);
+  }
 
   return res.json({ ok: true, submittedAt: new Date() });
 };
