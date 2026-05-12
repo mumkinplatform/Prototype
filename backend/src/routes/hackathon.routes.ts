@@ -22,6 +22,19 @@ import {
   listHackathonRegistrations,
   updateRegistrationStatus,
   notifyRegistrationDecision,
+  listEvaluationCriteria,
+  replaceEvaluationCriteria,
+  listHackathonJudges,
+  addHackathonJudge,
+  removeHackathonJudge,
+  resendJudgeInvite,
+  remindJudge,
+  listHackathonProjects,
+  distributeJudging,
+  listProjectEvaluations,
+  getEvaluationSettings,
+  updateEvaluationSettings,
+  exportParticipantsCsv,
 } from '../controllers/hackathon.controller';
 
 const router = Router();
@@ -49,5 +62,28 @@ router.put('/:id/sponsor-packages', requireAuth, replaceSponsorPackages);
 router.get('/:id/registrations', requireAuth, listHackathonRegistrations);
 router.put('/:id/registrations/:pmId/status', requireAuth, updateRegistrationStatus);
 router.post('/:id/registrations/notify', requireAuth, notifyRegistrationDecision);
+
+// Evaluation criteria (structured: name + weight) for the projects section.
+router.get('/:id/evaluation-criteria', requireAuth, listEvaluationCriteria);
+router.put('/:id/evaluation-criteria', requireAuth, replaceEvaluationCriteria);
+
+// Judge management — invite, list, remove, resend, remind.
+router.get('/:id/judges', requireAuth, listHackathonJudges);
+router.post('/:id/judges', requireAuth, addHackathonJudge);
+router.delete('/:id/judges/:hjId', requireAuth, removeHackathonJudge);
+router.post('/:id/judges/:hjId/resend-invite', requireAuth, resendJudgeInvite);
+router.post('/:id/judges/:hjId/remind', requireAuth, remindJudge);
+
+// Projects + distribution + evaluations
+router.get('/:id/projects', requireAuth, listHackathonProjects);
+router.post('/:id/distribute-judging', requireAuth, distributeJudging);
+router.get('/:id/projects/:tsId/evaluations', requireAuth, listProjectEvaluations);
+
+// Evaluation visibility settings (toggle + announcement date).
+router.get('/:id/evaluation-settings', requireAuth, getEvaluationSettings);
+router.put('/:id/evaluation-settings', requireAuth, updateEvaluationSettings);
+
+// CSV export of registered participants for this hackathon.
+router.get('/:id/export-participants', requireAuth, exportParticipantsCsv);
 
 export default router;

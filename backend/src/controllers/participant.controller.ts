@@ -1628,12 +1628,55 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
 
   const memberId = req.user!.memberId;
 
+  // Honor the organizer's privacy settings on the hackathon row:
+  //   H_Show_Evaluations_To_Participants → master toggle
+  //   H_Show_Evaluation_Notes            → strip comments when off
+  //   H_Winners_Date                     → results hidden until this datetime
+  // When the master toggle is off or the date hasn't passed, we return an
+  // empty `items` array along with a `visibility` block so the UI can show
+  // a "results will appear after X" banner instead of an awkward blank.
+  const [hackRows] = await pool.query<RowDataPacket[]>(
+    `SELECT H_Show_Evaluations_To_Participants AS showEvaluations,
+            H_Show_Evaluation_Notes            AS showNotes,
+            H_Winners_Date                     AS winnersDate
+       FROM hackathon WHERE hackathon_ID = ?`,
+    [hackathonId],
+  );
+  const settings = hackRows[0] as {
+    showEvaluations: number;
+    showNotes: number;
+    winnersDate: Date | null;
+  } | undefined;
+  const showEvaluations = settings?.showEvaluations === 1;
+  const showNotes = settings?.showNotes === 1;
+  const winnersDate = settings?.winnersDate ?? null;
+  const winnersDateMs = winnersDate ? new Date(winnersDate).getTime() : null;
+  const winnersDatePassed = winnersDateMs === null || Date.now() >= winnersDateMs;
+  const visible = showEvaluations && winnersDatePassed;
+
   // Find the participant's team in this hackathon
   const [appRows] = await pool.query<MyTeamInHackRow[]>(
     'SELECT T_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
     [memberId, hackathonId]
   );
   const teamId = appRows[0].T_ID;
+
+  if (!visible) {
+    return res.json({
+      items: [],
+      teamId,
+      isRegistered: true,
+      visibility: {
+        visible: false,
+        showEvaluations,
+        showNotes,
+        winnersDate,
+        reason: !showEvaluations
+          ? 'evaluations_hidden'
+          : 'before_winners_date',
+      },
+    });
+  }
 
   // Filter by team (if in a team) or by solo participant (PM_ID)
   const ownerCol = teamId !== null ? 'e.T_ID' : 'e.PM_ID';
@@ -1655,7 +1698,12 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
   );
 
   if (evRows.length === 0) {
-    return res.json({ items: [], teamId, isRegistered: true });
+    return res.json({
+      items: [],
+      teamId,
+      isRegistered: true,
+      visibility: { visible: true, showEvaluations, showNotes, winnersDate, reason: null },
+    });
   }
 
   // 2) Fetch criterion scores for all evaluations in a single query
@@ -1678,17 +1726,35 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
     scoresByEval.get(r.evaluationId)!.push({ name: r.criterionName, score: r.score });
   }
 
+  // Pull criteria weights so we can compute the same weighted total the
+  // organizer + judge see. Falls back to equal weight if a name doesn't match.
+  const [critRows] = await pool.query<RowDataPacket[]>(
+    'SELECT HEC_Name, HEC_Weight FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
+    [hackathonId],
+  );
+  const weights = new Map<string, number>();
+  for (const c of critRows as Array<{ HEC_Name: string; HEC_Weight: number }>) {
+    weights.set(c.HEC_Name, Number(c.HEC_Weight));
+  }
+
   const items = evRows.map((r) => {
     const criteria = scoresByEval.get(r.id) ?? [];
+    // Weighted total: Σ (score × weight%) / 100. Matches the organizer view.
     const total =
       criteria.length > 0
-        ? Math.round(criteria.reduce((s, c) => s + c.score, 0) / criteria.length)
+        ? Math.round(
+            criteria.reduce(
+              (sum, c) => sum + (c.score * (weights.get(c.name) ?? 0)) / 100,
+              0,
+            ),
+          )
         : 0;
     return {
       id: r.id,
       judgeName: r.judgeName,
       judgeSpecialty: r.judgeSpecialty,
-      comment: r.comment,
+      // Strip comments when the organizer hasn't enabled showing notes.
+      comment: showNotes ? r.comment : null,
       evaluatedAt: r.evaluatedAt,
       criteria,
       totalScore: total,
@@ -1696,7 +1762,12 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
     };
   });
 
-  return res.json({ items, teamId, isRegistered: true });
+  return res.json({
+    items,
+    teamId,
+    isRegistered: true,
+    visibility: { visible: true, showEvaluations, showNotes, winnersDate, reason: null },
+  });
 };
 
 // ─── Certificates ────────────────────────────────────────────

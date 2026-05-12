@@ -8,7 +8,12 @@ import {
   SECTION_LABELS,
   type Section,
 } from '../lib/permissions';
-import { sendCoManagerInviteEmail, sendRegistrationDecisionEmail } from '../lib/mail';
+import {
+  sendCoManagerInviteEmail,
+  sendRegistrationDecisionEmail,
+  sendJudgeInviteEmail,
+  sendJudgeAssignmentEmail,
+} from '../lib/mail';
 import { env } from '../config/env';
 
 interface HackathonRow extends RowDataPacket {
@@ -82,6 +87,7 @@ interface JudgeRow extends RowDataPacket {
   HJ_Email: string;
   HJ_Specialty: string | null;
   HJ_InviteStatus: string;
+  M_ID: number | null;
 }
 
 interface PrizeRow extends RowDataPacket {
@@ -177,6 +183,26 @@ async function ensureSectionAccess(
   return rows.length > 0;
 }
 
+// Read-only access to the projects/evaluation section. Like ensureSectionAccess('projects')
+// but ALSO allows accepted judges since they need to view criteria + their assignments
+// to do their evaluations. Mutations (criteria edit, judge management, distribution)
+// still use the stricter ensureSectionAccess('projects') check.
+async function ensureProjectsReadAccess(
+  hackathonId: number,
+  memberId: number,
+): Promise<boolean> {
+  if (await ensureSectionAccess(hackathonId, memberId, 'projects')) return true;
+  const [judgeRows] = await pool.query<RowDataPacket[]>(
+    `SELECT 1 FROM hackathon_judge
+       WHERE hackathon_ID = ?
+         AND M_ID = ?
+         AND HJ_InviteStatus = 'accepted'
+       LIMIT 1`,
+    [hackathonId, memberId],
+  );
+  return judgeRows.length > 0;
+}
+
 export const getPublicHackathon = async (req: Request, res: Response) => {
   const slug = typeof req.params.slug === 'string' ? req.params.slug.trim() : '';
   if (!slug) {
@@ -247,8 +273,10 @@ export const listMyHackathons = async (req: Request, res: Response) => {
 
   try {
     // Return hackathons where the user is either:
-    //  a) the creator (HAM_ID = me)  → my_role = 'owner'
-    //  b) an accepted co-manager     → my_role = 'co_manager' with their section/role
+    //  a) the creator (HAM_ID = me)        → my_role = 'owner'
+    //  b) an accepted co-manager           → my_role = 'co_manager' with section/role
+    //  c) an accepted judge                → my_role = 'judge' (read-only access to
+    //                                        the projects section for evaluation)
     // Two-step query — H_Branding can hold a base64 banner up to ~5MB. Including it
     // in a SELECT with ORDER BY blows up MySQL's sort_buffer (256KB by default) and
     // crashes with ER_OUT_OF_SORTMEMORY. Sort the small columns first, then fetch
@@ -256,18 +284,32 @@ export const listMyHackathons = async (req: Request, res: Response) => {
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT h.hackathon_ID, h.H_title, h.H_slug, h.H_description, h.H_status,
               h.H_StartDate, h.H_EndDate, h.H_city, h.H_visibility, h.H_created_at, h.HAM_ID,
-              CASE WHEN h.HAM_ID = ? THEN 'owner' ELSE 'co_manager' END AS my_role,
+              CASE
+                WHEN h.HAM_ID = ? THEN 'owner'
+                WHEN hcm.HCM_ID IS NOT NULL THEN 'co_manager'
+                WHEN hj.HJ_ID IS NOT NULL THEN 'judge'
+              END AS my_role,
               hcm.HCM_Role AS my_co_role,
               hcm.HCM_Section AS my_section,
-              hcm.HCM_Permissions AS my_permissions
+              hcm.HCM_Permissions AS my_permissions,
+              hj.HJ_ID AS my_judge_id
          FROM hackathon h
          LEFT JOIN hackathon_co_manager hcm
            ON hcm.hackathon_ID = h.hackathon_ID
           AND hcm.M_ID = ?
           AND hcm.HCM_InviteStatus = 'accepted'
-        WHERE (h.HAM_ID = ? OR hcm.HCM_ID IS NOT NULL)
+         LEFT JOIN hackathon_judge hj
+           ON hj.hackathon_ID = h.hackathon_ID
+          AND hj.M_ID = ?
+          AND hj.HJ_InviteStatus = 'accepted'
+        WHERE (h.HAM_ID = ? OR hcm.HCM_ID IS NOT NULL OR hj.HJ_ID IS NOT NULL)
         ORDER BY h.H_created_at DESC`,
-      [req.user.memberId, req.user.memberId, req.user.memberId],
+      [
+        req.user.memberId,
+        req.user.memberId,
+        req.user.memberId,
+        req.user.memberId,
+      ],
     );
 
     if (rows.length > 0) {
@@ -402,7 +444,7 @@ export const getHackathon = async (req: Request, res: Response) => {
       [id],
     );
     const [judges] = await pool.query<JudgeRow[]>(
-      'SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteStatus FROM hackathon_judge WHERE hackathon_ID = ? ORDER BY HJ_ID',
+      'SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteStatus, M_ID FROM hackathon_judge WHERE hackathon_ID = ? ORDER BY HJ_ID',
       [id]
     );
     const [prizes] = await pool.query<PrizeRow[]>(
@@ -416,11 +458,17 @@ export const getHackathon = async (req: Request, res: Response) => {
 
     // Compute the current user's access for this hackathon. The frontend uses
     // myAccess to filter management cards and disable actions per permission.
+    //
+    // Three role tiers, in priority order:
+    //   1) owner    → full access (creator of the hackathon)
+    //   2) co_manager → section-scoped access (manager/staff per section)
+    //   3) judge    → restricted to the projects/evaluation flow only
     let myAccess: {
-      role: 'owner' | 'co_manager';
+      role: 'owner' | 'co_manager' | 'judge';
       coManagerRole?: 'manager' | 'staff';
       section?: Section | null;
       permissions: string[];
+      judgeId?: number;
     } | null = null;
     if (req.user && req.user.memberId === h.HAM_ID) {
       myAccess = { role: 'owner', permissions: [] }; // owner has implicit full access
@@ -441,6 +489,19 @@ export const getHackathon = async (req: Request, res: Response) => {
           section: myRow.HCM_Section,
           permissions: perms,
         };
+      } else {
+        // Not the owner and not a co-manager — is this user a judge in this hackathon?
+        // Judges only get access to the projects section, with a restricted view.
+        const myJudgeRow = (judges as JudgeRow[]).find(
+          (j) => j.M_ID === req.user!.memberId && j.HJ_InviteStatus === 'accepted',
+        );
+        if (myJudgeRow) {
+          myAccess = {
+            role: 'judge',
+            judgeId: myJudgeRow.HJ_ID,
+            permissions: [],
+          };
+        }
       }
     }
 
@@ -1321,33 +1382,65 @@ export const getInvitationByToken = async (req: Request, res: Response) => {
   if (!token) return res.status(400).json({ error: 'invalid_token' });
 
   try {
+    // Check co-manager invites first (the primary invite system).
     const [rows] = await pool.query<CoManagerRow[]>(
       `SELECT HCM_ID, hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section,
               HCM_InviteStatus, HCM_InviteExpiresAt, HCM_AcceptedAt, M_ID
          FROM hackathon_co_manager WHERE HCM_InviteToken = ? LIMIT 1`,
       [token],
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'not_found' });
-    const r = rows[0];
+    if (rows.length > 0) {
+      const r = rows[0];
+      const expired = r.HCM_InviteExpiresAt
+        ? new Date(r.HCM_InviteExpiresAt.replace(' ', 'T')).getTime() < Date.now()
+        : false;
+      const ctx = await getHackathonInviteContext(r.hackathon_ID);
+      return res.json({
+        kind: 'co_manager',
+        invitee: {
+          fullName: r.HCM_FullName,
+          email: r.HCM_Email,
+          role: r.HCM_Role,
+          section: r.HCM_Section,
+        },
+        hackathon: ctx,
+        status: r.HCM_InviteStatus,
+        expired,
+        alreadyAccepted: r.HCM_InviteStatus === 'accepted',
+      });
+    }
 
-    const expired = r.HCM_InviteExpiresAt
-      ? new Date(r.HCM_InviteExpiresAt.replace(' ', 'T')).getTime() < Date.now()
-      : false;
+    // Not a co-manager token — try the judge invite system. Judges have their
+    // own table since evaluation FK references HJ_ID, but the invite UX is the
+    // same (same /invite/:token URL, same accept flow).
+    const [judgeRows] = await pool.query<JudgeManageRow[]>(
+      `SELECT HJ_ID, hackathon_ID, HJ_FullName, HJ_Email, HJ_Specialty,
+              HJ_InviteStatus, HJ_InviteExpiresAt, HJ_AcceptedAt, M_ID
+         FROM hackathon_judge WHERE HJ_InviteToken = ? LIMIT 1`,
+      [token],
+    );
+    if (judgeRows.length > 0) {
+      const j = judgeRows[0] as JudgeManageRow & { hackathon_ID: number };
+      const expired = j.HJ_InviteExpiresAt
+        ? new Date(String(j.HJ_InviteExpiresAt).replace(' ', 'T')).getTime() < Date.now()
+        : false;
+      const ctx = await getHackathonInviteContext(j.hackathon_ID);
+      return res.json({
+        kind: 'judge',
+        invitee: {
+          fullName: j.HJ_FullName,
+          email: j.HJ_Email,
+          role: 'judge',
+          specialty: j.HJ_Specialty,
+        },
+        hackathon: ctx,
+        status: j.HJ_InviteStatus,
+        expired,
+        alreadyAccepted: j.HJ_InviteStatus === 'accepted',
+      });
+    }
 
-    const ctx = await getHackathonInviteContext(r.hackathon_ID);
-
-    return res.json({
-      invitee: {
-        fullName: r.HCM_FullName,
-        email: r.HCM_Email,
-        role: r.HCM_Role,
-        section: r.HCM_Section,
-      },
-      hackathon: ctx,
-      status: r.HCM_InviteStatus,
-      expired,
-      alreadyAccepted: r.HCM_InviteStatus === 'accepted',
-    });
+    return res.status(404).json({ error: 'not_found' });
   } catch (err) {
     console.error('getInvitationByToken error:', err);
     return res.status(500).json({
@@ -1366,54 +1459,95 @@ export const acceptInvitation = async (req: Request, res: Response) => {
   if (!token) return res.status(400).json({ error: 'invalid_token' });
 
   try {
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT HCM_ID, HCM_Email, HCM_InviteStatus, HCM_InviteExpiresAt, M_ID
-         FROM hackathon_co_manager WHERE HCM_InviteToken = ? LIMIT 1`,
-      [token],
-    );
-    if (rows.length === 0) return res.status(404).json({ error: 'not_found' });
-    const r = rows[0] as {
-      HCM_ID: number;
-      HCM_Email: string;
-      HCM_InviteStatus: 'pending' | 'accepted' | 'declined';
-      HCM_InviteExpiresAt: string | null;
-      M_ID: number | null;
-    };
-
-    if (r.HCM_InviteStatus === 'accepted' && r.M_ID === req.user.memberId) {
-      return res.json({ status: 'accepted', alreadyAccepted: true });
-    }
-    if (r.HCM_InviteStatus !== 'pending') {
-      return res.status(400).json({ error: 'invalid_status', detail: 'الدعوة غير قابلة للقبول' });
-    }
-
-    const expired = r.HCM_InviteExpiresAt
-      ? new Date(r.HCM_InviteExpiresAt.replace(' ', 'T')).getTime() < Date.now()
-      : false;
-    if (expired) return res.status(400).json({ error: 'expired', detail: 'انتهت صلاحية الدعوة' });
-
-    // Match by email — prevents anyone with the token URL from claiming an invite
-    // addressed to someone else.
+    // Look up the logged-in user's email once — used for the email-match check
+    // on whichever invite type we find.
     const [memberRows] = await pool.query<RowDataPacket[]>(
       'SELECT M_Email FROM member WHERE M_ID = ? LIMIT 1',
       [req.user.memberId],
     );
     const myEmail = (memberRows[0] as { M_Email?: string } | undefined)?.M_Email ?? '';
-    if (myEmail.toLowerCase() !== r.HCM_Email.toLowerCase()) {
-      return res.status(403).json({
-        error: 'email_mismatch',
-        detail: 'هذه الدعوة موجّهة لإيميل آخر — سجّل دخول بالإيميل المدعو',
-      });
+
+    // Branch 1: co-manager invite.
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT HCM_ID, HCM_Email, HCM_InviteStatus, HCM_InviteExpiresAt, M_ID
+         FROM hackathon_co_manager WHERE HCM_InviteToken = ? LIMIT 1`,
+      [token],
+    );
+    if (rows.length > 0) {
+      const r = rows[0] as {
+        HCM_ID: number;
+        HCM_Email: string;
+        HCM_InviteStatus: 'pending' | 'accepted' | 'declined';
+        HCM_InviteExpiresAt: string | null;
+        M_ID: number | null;
+      };
+
+      if (r.HCM_InviteStatus === 'accepted' && r.M_ID === req.user.memberId) {
+        return res.json({ kind: 'co_manager', status: 'accepted', alreadyAccepted: true });
+      }
+      if (r.HCM_InviteStatus !== 'pending') {
+        return res.status(400).json({ error: 'invalid_status', detail: 'الدعوة غير قابلة للقبول' });
+      }
+      const expired = r.HCM_InviteExpiresAt
+        ? new Date(r.HCM_InviteExpiresAt.replace(' ', 'T')).getTime() < Date.now()
+        : false;
+      if (expired) return res.status(400).json({ error: 'expired', detail: 'انتهت صلاحية الدعوة' });
+      if (myEmail.toLowerCase() !== r.HCM_Email.toLowerCase()) {
+        return res.status(403).json({
+          error: 'email_mismatch',
+          detail: 'هذه الدعوة موجّهة لإيميل آخر — سجّل دخول بالإيميل المدعو',
+        });
+      }
+      await pool.execute(
+        `UPDATE hackathon_co_manager
+            SET M_ID = ?, HCM_InviteStatus = 'accepted', HCM_AcceptedAt = NOW()
+          WHERE HCM_ID = ?`,
+        [req.user.memberId, r.HCM_ID],
+      );
+      return res.json({ kind: 'co_manager', status: 'accepted' });
     }
 
-    await pool.execute(
-      `UPDATE hackathon_co_manager
-          SET M_ID = ?, HCM_InviteStatus = 'accepted', HCM_AcceptedAt = NOW()
-        WHERE HCM_ID = ?`,
-      [req.user.memberId, r.HCM_ID],
+    // Branch 2: judge invite (separate table, same accept semantics).
+    const [judgeRows] = await pool.query<RowDataPacket[]>(
+      `SELECT HJ_ID, HJ_Email, HJ_InviteStatus, HJ_InviteExpiresAt, M_ID
+         FROM hackathon_judge WHERE HJ_InviteToken = ? LIMIT 1`,
+      [token],
     );
+    if (judgeRows.length > 0) {
+      const j = judgeRows[0] as {
+        HJ_ID: number;
+        HJ_Email: string;
+        HJ_InviteStatus: 'pending' | 'accepted' | 'declined';
+        HJ_InviteExpiresAt: string | null;
+        M_ID: number | null;
+      };
 
-    return res.json({ status: 'accepted' });
+      if (j.HJ_InviteStatus === 'accepted' && j.M_ID === req.user.memberId) {
+        return res.json({ kind: 'judge', status: 'accepted', alreadyAccepted: true });
+      }
+      if (j.HJ_InviteStatus !== 'pending') {
+        return res.status(400).json({ error: 'invalid_status', detail: 'الدعوة غير قابلة للقبول' });
+      }
+      const expired = j.HJ_InviteExpiresAt
+        ? new Date(String(j.HJ_InviteExpiresAt).replace(' ', 'T')).getTime() < Date.now()
+        : false;
+      if (expired) return res.status(400).json({ error: 'expired', detail: 'انتهت صلاحية الدعوة' });
+      if (myEmail.toLowerCase() !== j.HJ_Email.toLowerCase()) {
+        return res.status(403).json({
+          error: 'email_mismatch',
+          detail: 'هذه الدعوة موجّهة لإيميل آخر — سجّل دخول بالإيميل المدعو',
+        });
+      }
+      await pool.execute(
+        `UPDATE hackathon_judge
+            SET M_ID = ?, HJ_InviteStatus = 'accepted', HJ_AcceptedAt = NOW()
+          WHERE HJ_ID = ?`,
+        [req.user.memberId, j.HJ_ID],
+      );
+      return res.json({ kind: 'judge', status: 'accepted' });
+    }
+
+    return res.status(404).json({ error: 'not_found' });
   } catch (err) {
     console.error('acceptInvitation error:', err);
     return res.status(500).json({
@@ -2121,5 +2255,1425 @@ export const notifyRegistrationDecision = async (req: Request, res: Response) =>
       error: 'internal server error',
       detail: err instanceof Error ? err.message : String(err),
     });
+  }
+};
+
+// ============================================================
+// Evaluation criteria — structured (name + weight) per hackathon.
+// Replaces the legacy free-text H_JudgingCriteria column.
+// Section access: 'projects' (owner or accepted projects manager).
+// ============================================================
+export const listEvaluationCriteria = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  // Read access — judges need this to know what to score by.
+  if (!(await ensureProjectsReadAccess(id, req.user.memberId))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT HEC_ID AS id, HEC_Name AS name, HEC_Description AS description,
+              HEC_Weight AS weight, HEC_SortOrder AS sortOrder
+         FROM hackathon_evaluation_criteria
+        WHERE hackathon_ID = ?
+        ORDER BY HEC_SortOrder, HEC_ID`,
+      [id],
+    );
+    return res.json({ items: rows });
+  } catch (err) {
+    console.error('listEvaluationCriteria error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// Replace-all semantics: the request body's `items` becomes the complete
+// criteria list for this hackathon. Validates sum-of-weights = 100% and
+// each row has a non-empty name + a positive weight.
+export const replaceEvaluationCriteria = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const rawItems = Array.isArray(req.body?.items) ? req.body.items : null;
+  if (!rawItems) return res.status(400).json({ error: 'items array required' });
+  if (rawItems.length === 0) return res.status(400).json({ error: 'at least one criterion required' });
+  if (rawItems.length > 20) return res.status(400).json({ error: 'too many criteria (max 20)' });
+
+  const normalized: Array<{ name: string; description: string | null; weight: number; sortOrder: number }> = [];
+  for (let i = 0; i < rawItems.length; i++) {
+    const raw = rawItems[i] as { name?: unknown; description?: unknown; weight?: unknown } | null;
+    if (!raw || typeof raw !== 'object') return res.status(400).json({ error: `criterion ${i + 1} invalid` });
+
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    if (!name) return res.status(400).json({ error: `اسم المعيار رقم ${i + 1} مطلوب` });
+    if (name.length > 150) return res.status(400).json({ error: `اسم المعيار رقم ${i + 1} طويل (الحد 150 خانة)` });
+
+    const description = typeof raw.description === 'string' ? raw.description.trim() : '';
+
+    const weight = Number(raw.weight);
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
+      return res.status(400).json({ error: `وزن المعيار رقم ${i + 1} غير صالح` });
+    }
+
+    normalized.push({
+      name,
+      description: description.length > 0 ? description : null,
+      weight: Math.round(weight * 100) / 100,
+      sortOrder: i + 1,
+    });
+  }
+
+  const totalWeight = normalized.reduce((sum, r) => sum + r.weight, 0);
+  // Tolerance ±0.05 to accommodate floating-point rounding from 25.00 + 25.00 + ...
+  if (Math.abs(totalWeight - 100) > 0.05) {
+    return res.status(400).json({
+      error: `مجموع الأوزان لازم يساوي 100% (المجموع الحالي: ${totalWeight.toFixed(2)}%)`,
+    });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.execute('DELETE FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?', [id]);
+    for (const c of normalized) {
+      await conn.execute(
+        `INSERT INTO hackathon_evaluation_criteria
+           (hackathon_ID, HEC_Name, HEC_Description, HEC_Weight, HEC_SortOrder)
+           VALUES (?, ?, ?, ?, ?)`,
+        [id, c.name, c.description, c.weight, c.sortOrder],
+      );
+    }
+    await conn.commit();
+    return res.json({ items: normalized.length });
+  } catch (err) {
+    await conn.rollback();
+    console.error('replaceEvaluationCriteria error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+// ============================================================
+// Evaluation visibility settings — controls what participants can see about
+// their evaluations, and when. Persisted on the hackathon row so it survives
+// re-renders and is consulted whenever a participant fetches their results.
+// Section access: 'projects' (organizer-side gate).
+// ============================================================
+
+// GET /hackathons/:id/evaluation-settings
+export const getEvaluationSettings = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT H_Show_Evaluations_To_Participants AS showEvaluations,
+            H_Show_Evaluation_Notes            AS showNotes,
+            H_Winners_Date                     AS announcementDate
+       FROM hackathon WHERE hackathon_ID = ?`,
+    [id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'الهاكاثون غير موجود' });
+  const r = rows[0] as {
+    showEvaluations: number; showNotes: number; announcementDate: Date | null;
+  };
+  return res.json({
+    showEvaluations: r.showEvaluations === 1,
+    showNotes: r.showNotes === 1,
+    announcementDate: r.announcementDate,
+  });
+};
+
+// PUT /hackathons/:id/evaluation-settings
+// Body: { showEvaluations: boolean, showNotes: boolean, announcementDate: string | null }
+export const updateEvaluationSettings = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const showEvaluations = req.body?.showEvaluations === true;
+  const showNotes = req.body?.showNotes === true;
+  // Accept an ISO datetime, a YYYY-MM-DD date, or null to clear. Reject
+  // anything else with a clear validation error instead of writing garbage.
+  const rawDate = req.body?.announcementDate;
+  let announcementDate: Date | null = null;
+  if (rawDate != null && rawDate !== '') {
+    const d = new Date(rawDate);
+    if (Number.isNaN(d.getTime())) {
+      return res.status(400).json({ error: 'تاريخ إعلان النتائج غير صالح' });
+    }
+    announcementDate = d;
+  }
+
+  // Enforce the chain rule: winners date must come AFTER judging ends. Same
+  // check the frontend does, kept here as a safety net (catches API clients
+  // that bypass the UI).
+  if (announcementDate) {
+    const [endRows] = await pool.query<RowDataPacket[]>(
+      'SELECT H_Judging_EndDate FROM hackathon WHERE hackathon_ID = ?',
+      [id],
+    );
+    const judgingEnd = (endRows[0] as { H_Judging_EndDate: Date | null } | undefined)?.H_Judging_EndDate ?? null;
+    if (judgingEnd && announcementDate.getTime() <= new Date(judgingEnd).getTime()) {
+      return res.status(400).json({
+        error: 'يجب أن يكون تاريخ إعلان الفائزين بعد "نهاية التقييم"',
+      });
+    }
+  }
+
+  await pool.execute(
+    `UPDATE hackathon
+        SET H_Show_Evaluations_To_Participants = ?,
+            H_Show_Evaluation_Notes            = ?,
+            H_Winners_Date                     = ?
+      WHERE hackathon_ID = ?`,
+    [showEvaluations ? 1 : 0, showNotes ? 1 : 0, announcementDate, id],
+  );
+
+  return res.json({ showEvaluations, showNotes, announcementDate });
+};
+
+// ============================================================
+// Participants CSV export — one row per registered participant with their
+// basic profile, team (if any), and submission status. Used by the
+// "تصدير بيانات المشاركين" button on the projects page.
+// ============================================================
+
+// GET /hackathons/:id/export-participants — CSV download.
+export const exportParticipantsCsv = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         m.M_FName        AS firstName,
+         m.M_LName        AS lastName,
+         m.M_Email        AS email,
+         m.phone          AS phone,
+         ah.participation_type  AS participationType,
+         t.T_name              AS teamName,
+         ah.application_status AS status,
+         ah.applied_at         AS appliedAt,
+         CASE
+           WHEN ts.TS_SubmittedAt IS NOT NULL THEN 'مسلَّم'
+           WHEN ts.TS_ID IS NOT NULL THEN 'مسوّدة'
+           ELSE 'لم يبدأ'
+         END              AS submissionStatus,
+         ts.TS_ProjectName AS projectName,
+         ts.TS_SubmittedAt AS submittedAt
+       FROM applies_hackathon ah
+       JOIN member m       ON m.M_ID = ah.PM_ID
+       LEFT JOIN team t    ON t.T_ID = ah.T_ID
+       LEFT JOIN team_submission ts
+         ON ts.hackathon_ID = ah.hackathon_ID
+         AND ((ah.T_ID IS NOT NULL AND ts.T_ID = ah.T_ID)
+           OR (ah.T_ID IS NULL AND ts.PM_ID = ah.PM_ID))
+       WHERE ah.hackathon_ID = ?
+       ORDER BY ah.applied_at DESC, m.M_LName, m.M_FName`,
+      [id],
+    );
+
+    // Build a UTF-8 BOM + CSV so Excel opens it with Arabic intact. Quotes any
+    // value containing comma/quote/newline (CSV escaping rule).
+    const header = [
+      'الاسم الأول',
+      'الاسم الأخير',
+      'البريد الإلكتروني',
+      'الجوال',
+      'نوع المشاركة',
+      'اسم الفريق',
+      'حالة الطلب',
+      'تاريخ التقديم',
+      'حالة التسليم',
+      'اسم المشروع',
+      'تاريخ التسليم النهائي',
+    ];
+    const pad2 = (n: number) => n.toString().padStart(2, '0');
+    const fmtDate = (d: Date) =>
+      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const escape = (v: unknown): string => {
+      if (v === null || v === undefined) return '';
+      const s = v instanceof Date ? fmtDate(v) : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines: string[] = [header.map(escape).join(',')];
+    for (const raw of rows as Array<{
+      firstName: string | null; lastName: string | null; email: string | null;
+      phone: string | null; participationType: string | null; teamName: string | null;
+      status: string | null; appliedAt: Date | null; submissionStatus: string;
+      projectName: string | null; submittedAt: Date | null;
+    }>) {
+      lines.push([
+        escape(raw.firstName),
+        escape(raw.lastName),
+        escape(raw.email),
+        escape(raw.phone),
+        escape(raw.participationType === 'team' ? 'فريق' : raw.participationType === 'solo' ? 'فردي' : raw.participationType),
+        escape(raw.teamName),
+        escape(
+          raw.status === 'accepted' ? 'مقبول' :
+          raw.status === 'rejected' ? 'مرفوض' :
+          raw.status === 'pending' ? 'قيد المراجعة' :
+          raw.status,
+        ),
+        escape(raw.appliedAt),
+        escape(raw.submissionStatus),
+        escape(raw.projectName),
+        escape(raw.submittedAt),
+      ].join(','));
+    }
+    const csv = '﻿' + lines.join('\r\n') + '\r\n';
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="participants-${id}.csv"`);
+    return res.send(csv);
+  } catch (err) {
+    console.error('exportParticipantsCsv error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// ============================================================
+// Judge management — invite/list/remove/resend/remind.
+// Mirrors the co-manager invite flow (token-based email invite) but targets
+// hackathon_judge since evaluation FK references HJ_ID.
+// Section access: 'projects' (owner or accepted projects manager).
+// ============================================================
+interface JudgeManageRow extends RowDataPacket {
+  HJ_ID: number;
+  HJ_FullName: string;
+  HJ_Email: string;
+  HJ_Specialty: string | null;
+  HJ_InviteStatus: 'pending' | 'accepted' | 'declined';
+  HJ_InvitedAt: Date | null;
+  HJ_InviteExpiresAt: Date | null;
+  HJ_AcceptedAt: Date | null;
+  M_ID: number | null;
+}
+
+async function sendJudgeInviteEmailSafe(args: {
+  to: string;
+  inviteeName: string;
+  organizerName: string;
+  hackathonTitle: string;
+  specialty: string | null;
+  token: string;
+}): Promise<void> {
+  try {
+    await sendJudgeInviteEmail({
+      to: args.to,
+      inviteeName: args.inviteeName,
+      organizerName: args.organizerName,
+      hackathonTitle: args.hackathonTitle,
+      specialty: args.specialty,
+      inviteUrl: `${env.frontendUrl}/invite/${args.token}`,
+      expiryDays: 7,
+    });
+  } catch (err) {
+    console.error('[judge invite] failed to send email to', args.to, err);
+  }
+}
+
+// Fire-and-forget wrapper around the post-distribution assignment email so
+// SMTP failures don't bubble up and break the HTTP response.
+async function sendJudgeAssignmentEmailSafe(args: {
+  to: string;
+  judgeName: string;
+  hackathonTitle: string;
+  organizerName: string;
+  projectCount: number;
+  evaluationEndDate: Date | null;
+  workspaceUrl: string;
+}): Promise<void> {
+  try {
+    await sendJudgeAssignmentEmail(args);
+  } catch (err) {
+    console.error('[judge assignment] failed to send email to', args.to, err);
+  }
+}
+
+export const listHackathonJudges = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    const [rows] = await pool.query<JudgeManageRow[]>(
+      `SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty,
+              HJ_InviteStatus, HJ_InvitedAt, HJ_InviteExpiresAt, HJ_AcceptedAt, M_ID
+         FROM hackathon_judge
+        WHERE hackathon_ID = ?
+        ORDER BY HJ_ID`,
+      [id],
+    );
+
+    const items = rows.map((r) => ({
+      id: r.HJ_ID,
+      fullName: r.HJ_FullName,
+      email: r.HJ_Email,
+      specialty: r.HJ_Specialty,
+      inviteStatus: r.HJ_InviteStatus,
+      invitedAt: r.HJ_InvitedAt,
+      inviteExpiresAt: r.HJ_InviteExpiresAt,
+      acceptedAt: r.HJ_AcceptedAt,
+      memberId: r.M_ID,
+    }));
+
+    return res.json({ items });
+  } catch (err) {
+    console.error('listHackathonJudges error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/judges — add (invite) a new judge.
+export const addHackathonJudge = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const specialty = typeof req.body?.specialty === 'string' ? req.body.specialty.trim() : '';
+
+  if (!fullName) return res.status(400).json({ error: 'اسم الحكم مطلوب' });
+  if (fullName.length > 150) return res.status(400).json({ error: 'الاسم طويل (الحد 150 خانة)' });
+  if (!email) return res.status(400).json({ error: 'البريد الإلكتروني مطلوب' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'صيغة البريد الإلكتروني غير صحيحة' });
+  }
+  if (specialty.length > 200) return res.status(400).json({ error: 'التخصص طويل (الحد 200 خانة)' });
+
+  // Reuse the same role-conflict check we run when adding a co-manager: blocks
+  // inviting the hackathon's owner, an existing co-manager, an existing judge,
+  // or a registered participant. Keeps roles disjoint per hackathon.
+  const conflicts = await findRoleConflicts(id, email);
+  if (conflicts.length > 0) {
+    // The generic message references "co-manager" — swap to a judge-flavoured
+    // wording when the conflict is "owner of the hackathon" since the user is
+    // adding a judge, not a co-manager.
+    const judgeConflicts = conflicts.map((c) =>
+      c === 'لا يمكن دعوة منشئ الهاكاثون كمنظّم مساعد'
+        ? 'لا يمكن دعوة منشئ الهاكاثون كحكم'
+        : c === 'هذا الإيميل مرتبط بدور حكم في هذا الهاكاثون'
+        ? 'هذا الإيميل مدعو مسبقاً لهذا الهاكاثون كحكم'
+        : c,
+    );
+    return res.status(409).json({
+      error: 'role_conflict',
+      conflicts: judgeConflicts,
+      message: judgeConflicts[0] ?? 'تعارض في الأدوار',
+    });
+  }
+
+  try {
+    const token = newInviteToken();
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO hackathon_judge
+         (hackathon_ID, HJ_FullName, HJ_Email, HJ_Specialty,
+          HJ_InviteStatus, HJ_InviteToken, HJ_InvitedAt, HJ_InviteExpiresAt)
+       VALUES (?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+      [id, fullName, email, specialty || null, token, inviteExpiry()],
+    );
+
+    const ctx = await getHackathonInviteContext(id);
+    if (ctx) {
+      void sendJudgeInviteEmailSafe({
+        to: email,
+        inviteeName: fullName,
+        organizerName: ctx.organizerName,
+        hackathonTitle: ctx.title,
+        specialty: specialty || null,
+        token,
+      });
+    }
+
+    return res.status(201).json({
+      judge: {
+        id: result.insertId,
+        fullName,
+        email,
+        specialty: specialty || null,
+        inviteStatus: 'pending',
+      },
+    });
+  } catch (err) {
+    console.error('addHackathonJudge error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// DELETE /hackathons/:id/judges/:hjId — remove a judge.
+// Refuses if the judge already evaluated something (data integrity).
+export const removeHackathonJudge = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const hjId = Number(req.params.hjId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(hjId) || hjId <= 0) return res.status(400).json({ error: 'invalid hjId' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const [existing] = await pool.query<RowDataPacket[]>(
+    'SELECT HJ_ID FROM hackathon_judge WHERE HJ_ID = ? AND hackathon_ID = ?',
+    [hjId, id],
+  );
+  if (existing.length === 0) return res.status(404).json({ error: 'الحكم غير موجود' });
+
+  const [evals] = await pool.query<RowDataPacket[]>(
+    'SELECT COUNT(*) AS c FROM evaluation WHERE HJ_ID = ?',
+    [hjId],
+  );
+  const evalCount = (evals[0] as { c: number }).c;
+  if (evalCount > 0) {
+    return res.status(409).json({ error: 'لا يمكن حذف حكم لديه تقييمات مسجّلة' });
+  }
+
+  try {
+    await pool.execute(
+      'UPDATE team_submission SET assigned_judge_id = NULL WHERE assigned_judge_id = ?',
+      [hjId],
+    );
+    await pool.execute('DELETE FROM hackathon_judge WHERE HJ_ID = ?', [hjId]);
+    return res.json({ removed: true });
+  } catch (err) {
+    console.error('removeHackathonJudge error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/judges/:hjId/resend-invite — regenerate token + re-send.
+export const resendJudgeInvite = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const hjId = Number(req.params.hjId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(hjId) || hjId <= 0) return res.status(400).json({ error: 'invalid hjId' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const [rows] = await pool.query<JudgeManageRow[]>(
+    `SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteStatus
+       FROM hackathon_judge WHERE HJ_ID = ? AND hackathon_ID = ?`,
+    [hjId, id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'الحكم غير موجود' });
+  const judge = rows[0];
+  if (judge.HJ_InviteStatus !== 'pending') {
+    return res.status(400).json({ error: 'لا يمكن إعادة إرسال دعوة إلا للحكام المنتظرين' });
+  }
+
+  try {
+    const token = newInviteToken();
+    await pool.execute(
+      `UPDATE hackathon_judge
+          SET HJ_InviteToken = ?, HJ_InvitedAt = NOW(), HJ_InviteExpiresAt = ?
+        WHERE HJ_ID = ?`,
+      [token, inviteExpiry(), hjId],
+    );
+    const ctx = await getHackathonInviteContext(id);
+    if (ctx) {
+      void sendJudgeInviteEmailSafe({
+        to: judge.HJ_Email,
+        inviteeName: judge.HJ_FullName,
+        organizerName: ctx.organizerName,
+        hackathonTitle: ctx.title,
+        specialty: judge.HJ_Specialty,
+        token,
+      });
+    }
+    return res.json({ resent: true });
+  } catch (err) {
+    console.error('resendJudgeInvite error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/judges/:hjId/remind — manual reminder to an accepted
+// judge who hasn't finished evaluating. Sends a notification email pointing
+// to the projects page (no token — the judge is already in the system).
+export const remindJudge = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const hjId = Number(req.params.hjId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(hjId) || hjId <= 0) return res.status(400).json({ error: 'invalid hjId' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const [rows] = await pool.query<JudgeManageRow[]>(
+    `SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteStatus
+       FROM hackathon_judge WHERE HJ_ID = ? AND hackathon_ID = ?`,
+    [hjId, id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'الحكم غير موجود' });
+  const judge = rows[0];
+  if (judge.HJ_InviteStatus !== 'accepted') {
+    return res.status(400).json({ error: 'هذا الحكم لم يقبل الدعوة بعد' });
+  }
+
+  try {
+    const ctx = await getHackathonInviteContext(id);
+    if (ctx) {
+      await sendJudgeInviteEmail({
+        to: judge.HJ_Email,
+        inviteeName: judge.HJ_FullName,
+        organizerName: ctx.organizerName,
+        hackathonTitle: ctx.title,
+        specialty: judge.HJ_Specialty,
+        inviteUrl: `${env.frontendUrl}/admin/hackathon/${id}/projects`,
+        expiryDays: 7,
+      });
+    }
+    return res.json({ reminded: true });
+  } catch (err) {
+    console.error('remindJudge error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// ============================================================
+// Projects + distribution + evaluations.
+// Powers the organizer's "submitted projects" table and the judge's
+// "my assignments" view.
+// ============================================================
+
+interface ProjectRow extends RowDataPacket {
+  tsId: number;
+  teamId: number | null;
+  participantId: number | null;
+  hackathonId: number;
+  projectName: string | null;
+  projectDescription: string | null;
+  repoUrl: string | null;
+  demoUrl: string | null;
+  submittedAt: Date | null;
+  assignedJudgeId: number | null;
+  teamName: string | null;
+  participantFirst: string | null;
+  participantLast: string | null;
+  trackName: string | null;
+  fileCount: number;
+  evaluationCount: number;
+  judgeName: string | null;
+}
+
+function projectStatusFor(p: ProjectRow): 'pending' | 'awaiting' | 'inReview' | 'completed' {
+  if (!p.submittedAt) return 'pending';
+  if (p.evaluationCount > 0) return 'completed';
+  // Submitted, but the judge assignment hasn't happened yet — distinct from
+  // "inReview" (which means a judge is actively reviewing it).
+  if (p.assignedJudgeId === null) return 'awaiting';
+  return 'inReview';
+}
+
+// GET /hackathons/:id/projects — organizer view of every submission for this
+// hackathon. Each row reports owner (team/solo), assigned judge, evaluations.
+export const listHackathonProjects = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    const [rows] = await pool.query<ProjectRow[]>(
+      `SELECT
+         ts.TS_ID                AS tsId,
+         ts.T_ID                 AS teamId,
+         ts.PM_ID                AS participantId,
+         ts.hackathon_ID         AS hackathonId,
+         ts.TS_ProjectName       AS projectName,
+         ts.TS_ProjectDescription AS projectDescription,
+         ts.TS_RepoUrl           AS repoUrl,
+         ts.TS_DemoUrl           AS demoUrl,
+         ts.TS_SubmittedAt       AS submittedAt,
+         ts.assigned_judge_id    AS assignedJudgeId,
+         t.T_name                AS teamName,
+         pm.M_FName              AS participantFirst,
+         pm.M_LName              AS participantLast,
+         (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
+            FROM hackathon_track WHERE hackathon_ID = ts.hackathon_ID) AS trackName,
+         (SELECT COUNT(*) FROM submission_file WHERE TS_ID = ts.TS_ID) AS fileCount,
+         (SELECT COUNT(*) FROM evaluation e
+            WHERE (e.T_ID = ts.T_ID OR e.PM_ID = ts.PM_ID)
+              AND e.hackathon_ID = ts.hackathon_ID) AS evaluationCount,
+         hj.HJ_FullName          AS judgeName
+         FROM team_submission ts
+         LEFT JOIN team t   ON t.T_ID  = ts.T_ID
+         LEFT JOIN participant p ON p.PM_ID = ts.PM_ID
+         LEFT JOIN member pm     ON pm.M_ID = p.PM_ID
+         LEFT JOIN hackathon_judge hj ON hj.HJ_ID = ts.assigned_judge_id
+        WHERE ts.hackathon_ID = ?
+        ORDER BY ts.TS_SubmittedAt DESC, ts.TS_ID DESC`,
+      [id],
+    );
+
+    const [hackRows] = await pool.query<RowDataPacket[]>(
+      'SELECT H_Judging_Distributed_At, H_Judging_StartDate, H_Judging_EndDate FROM hackathon WHERE hackathon_ID = ?',
+      [id],
+    );
+    const meta = hackRows[0] as {
+      H_Judging_Distributed_At: Date | null;
+      H_Judging_StartDate: Date | null;
+      H_Judging_EndDate: Date | null;
+    } | undefined;
+
+    // Pull criteria weights once so we can compute weighted-average scores per
+    // project below. Map criterion-name → weight (percentage).
+    const [critRows] = await pool.query<RowDataPacket[]>(
+      'SELECT HEC_Name, HEC_Weight FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
+      [id],
+    );
+    const criteriaWeights = new Map<string, number>();
+    for (const c of critRows as Array<{ HEC_Name: string; HEC_Weight: number }>) {
+      criteriaWeights.set(c.HEC_Name, Number(c.HEC_Weight));
+    }
+
+    // Pull every evaluation score row for this hackathon and bucket them by
+    // (target = T_ID or PM_ID). We then compute a weighted total per evaluation
+    // and average across evaluators for the project-level score.
+    const scoresByTarget = new Map<string, Map<number, Array<{ name: string; score: number }>>>();
+    if (rows.length > 0) {
+      const [evalScoreRows] = await pool.query<RowDataPacket[]>(
+        `SELECT e.E_ID AS evalId, e.T_ID, e.PM_ID,
+                es.ES_CriterionName AS name, es.ES_Score AS score
+           FROM evaluation e
+           JOIN evaluation_score es ON es.E_ID = e.E_ID
+          WHERE e.hackathon_ID = ?`,
+        [id],
+      );
+      for (const r of evalScoreRows as Array<{
+        evalId: number; T_ID: number | null; PM_ID: number | null; name: string; score: number;
+      }>) {
+        const key = r.T_ID !== null ? `t:${r.T_ID}` : `p:${r.PM_ID}`;
+        const evalMap = scoresByTarget.get(key) ?? new Map<number, Array<{ name: string; score: number }>>();
+        const list = evalMap.get(r.evalId) ?? [];
+        list.push({ name: r.name, score: Number(r.score) });
+        evalMap.set(r.evalId, list);
+        scoresByTarget.set(key, evalMap);
+      }
+    }
+
+    // Compute a single 0-100 score per project by averaging weighted totals
+    // across evaluations. Returns null when no evaluations exist yet.
+    const scoreForProject = (teamId: number | null, participantId: number | null): number | null => {
+      const key = teamId !== null ? `t:${teamId}` : `p:${participantId}`;
+      const evalMap = scoresByTarget.get(key);
+      if (!evalMap || evalMap.size === 0) return null;
+      const weightedTotals: number[] = [];
+      for (const scores of evalMap.values()) {
+        let total = 0;
+        for (const s of scores) {
+          const w = criteriaWeights.get(s.name) ?? 0;
+          total += (s.score * w) / 100;
+        }
+        weightedTotals.push(total);
+      }
+      const avg = weightedTotals.reduce((a, b) => a + b, 0) / weightedTotals.length;
+      return Math.round(avg);
+    };
+
+    // Pull all submission files in one go (keyed by TS_ID) so the drawer
+    // doesn't need a second roundtrip when the organizer clicks a project.
+    const filesByProject = new Map<number, Array<{ id: number; name: string; size: number; mimeType: string | null; url: string }>>();
+    if (rows.length > 0) {
+      const tsIds = rows.map((r) => r.tsId);
+      const placeholders = tsIds.map(() => '?').join(',');
+      const [fileRows] = await pool.query<RowDataPacket[]>(
+        `SELECT SF_ID AS id, TS_ID, SF_Name AS name, SF_StoredName AS storedName,
+                SF_Size AS size, SF_MimeType AS mimeType
+           FROM submission_file
+          WHERE TS_ID IN (${placeholders})
+          ORDER BY SF_UploadedAt DESC`,
+        tsIds,
+      );
+      for (const f of fileRows as Array<{
+        id: number; TS_ID: number; name: string; storedName: string;
+        size: number; mimeType: string | null;
+      }>) {
+        const list = filesByProject.get(f.TS_ID) ?? [];
+        list.push({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          mimeType: f.mimeType,
+          url: `/uploads/submissions/${f.storedName}`,
+        });
+        filesByProject.set(f.TS_ID, list);
+      }
+    }
+
+    const trackName = rows[0]?.trackName ?? null;
+    const items = rows.map((r) => ({
+      tsId: r.tsId,
+      type: r.teamId !== null ? ('team' as const) : ('solo' as const),
+      teamId: r.teamId,
+      teamName: r.teamName,
+      participantId: r.participantId,
+      participantName:
+        r.participantFirst || r.participantLast
+          ? `${r.participantFirst ?? ''} ${r.participantLast ?? ''}`.trim()
+          : null,
+      projectName: r.projectName,
+      projectDescription: r.projectDescription,
+      repoUrl: r.repoUrl,
+      demoUrl: r.demoUrl,
+      submittedAt: r.submittedAt,
+      hasFiles: Number(r.fileCount) > 0,
+      hasLinks: Boolean(r.repoUrl || r.demoUrl),
+      files: filesByProject.get(r.tsId) ?? [],
+      assignedJudge: r.assignedJudgeId
+        ? { id: r.assignedJudgeId, name: r.judgeName ?? '' }
+        : null,
+      evaluationCount: Number(r.evaluationCount),
+      totalEvaluators: r.assignedJudgeId ? 1 : 0,
+      score: scoreForProject(r.teamId, r.participantId),
+      status: projectStatusFor(r),
+      trackName: trackName ? trackName.split('|||').filter(Boolean)[0] ?? null : null,
+    }));
+
+    return res.json({
+      items,
+      distribution: {
+        distributedAt: meta?.H_Judging_Distributed_At ?? null,
+        judgingStartDate: meta?.H_Judging_StartDate ?? null,
+        judgingEndDate: meta?.H_Judging_EndDate ?? null,
+      },
+    });
+  } catch (err) {
+    console.error('listHackathonProjects error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/distribute-judging — assign every submitted (but not
+// yet assigned) project to a judge in a balanced round-robin. One judge per
+// project. Idempotent: re-running only assigns projects that don't already
+// have a judge.
+export const distributeJudging = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    // First: are there any submitted projects AT ALL? Distinguishing this case
+    // from "all already distributed" gives the user a clearer error message.
+    const [submittedCount] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS c FROM team_submission
+        WHERE hackathon_ID = ? AND TS_SubmittedAt IS NOT NULL`,
+      [id],
+    );
+    const totalSubmitted = (submittedCount[0] as { c: number }).c;
+
+    if (totalSubmitted === 0) {
+      return res.status(400).json({
+        error: 'لا توجد مشاريع مسلَّمة للتوزيع. انتظر المشاركين يسلمون مشاريعهم أولاً.',
+      });
+    }
+
+    // Block distribution if no criteria exist — without them, judges land on
+    // an empty evaluation form and can't submit anything. Better to fail
+    // loud here than silently leave judges stuck later.
+    const [critCount] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) AS c FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
+      [id],
+    );
+    if ((critCount[0] as { c: number }).c === 0) {
+      return res.status(400).json({
+        error: 'لا توجد معايير تقييم. أضف معايير التقييم أولاً من قسم "إعدادات التقييم" ثم وزّع المشاريع.',
+      });
+    }
+
+    const [unassigned] = await pool.query<RowDataPacket[]>(
+      `SELECT TS_ID FROM team_submission
+        WHERE hackathon_ID = ?
+          AND TS_SubmittedAt IS NOT NULL
+          AND assigned_judge_id IS NULL
+        ORDER BY TS_ID`,
+      [id],
+    );
+
+    const [judges] = await pool.query<RowDataPacket[]>(
+      `SELECT HJ_ID FROM hackathon_judge
+        WHERE hackathon_ID = ? AND HJ_InviteStatus = 'accepted'
+        ORDER BY HJ_ID`,
+      [id],
+    );
+
+    // Shuffle helper — Fisher-Yates. Mutates the array in place.
+    const shuffle = <T>(arr: T[]): T[] => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
+    if (judges.length === 0) {
+      return res.status(400).json({
+        error: 'لا يوجد حكام مقبولين — أضف حكامًا أولاً ثم انتظر قبولهم',
+      });
+    }
+    if (unassigned.length === 0) {
+      // Submitted projects exist but they're all already assigned. Mark the
+      // hackathon as "distributed" if it wasn't already.
+      await pool.execute(
+        'UPDATE hackathon SET H_Judging_Distributed_At = COALESCE(H_Judging_Distributed_At, NOW()) WHERE hackathon_ID = ?',
+        [id],
+      );
+      return res.json({
+        assigned: 0,
+        totalProjects: totalSubmitted,
+        judges: judges.length,
+        message: 'كل المشاريع المسلَّمة موزّعة مسبقًا',
+      });
+    }
+
+    // Shuffle both lists before round-robin so the assignment is random while
+    // still balanced: with N projects and K judges every judge gets either
+    // floor(N/K) or ceil(N/K) — never a 0/4 split. Shuffling the judge order
+    // randomizes WHICH judge gets the extra project when N % K != 0.
+    const judgeIds = shuffle((judges as Array<{ HJ_ID: number }>).map((j) => j.HJ_ID));
+    const projectIds = shuffle((unassigned as Array<{ TS_ID: number }>).map((p) => p.TS_ID));
+
+    // Build a per-judge tally as we assign so we can return the actual
+    // distribution to the UI (lets the organizer see exactly how the random
+    // shuffle landed instead of guessing).
+    const tally = new Map<number, number>();
+    for (let i = 0; i < projectIds.length; i++) {
+      const judgeId = judgeIds[i % judgeIds.length];
+      await pool.execute(
+        'UPDATE team_submission SET assigned_judge_id = ? WHERE TS_ID = ?',
+        [judgeId, projectIds[i]],
+      );
+      tally.set(judgeId, (tally.get(judgeId) ?? 0) + 1);
+    }
+
+    await pool.execute(
+      'UPDATE hackathon SET H_Judging_Distributed_At = NOW() WHERE hackathon_ID = ?',
+      [id],
+    );
+
+    // Re-fetch judge contact info in the shuffled order so the UI can render
+    // the breakdown AND we can send each assignee an email below.
+    const namePh = judgeIds.map(() => '?').join(',');
+    const [judgeRows] = await pool.query<RowDataPacket[]>(
+      `SELECT HJ_ID, HJ_FullName, HJ_Email FROM hackathon_judge WHERE HJ_ID IN (${namePh})`,
+      judgeIds,
+    );
+    const nameById = new Map<number, string>();
+    const emailById = new Map<number, string>();
+    for (const r of judgeRows as Array<{ HJ_ID: number; HJ_FullName: string; HJ_Email: string }>) {
+      nameById.set(r.HJ_ID, r.HJ_FullName);
+      emailById.set(r.HJ_ID, r.HJ_Email);
+    }
+
+    // Notify each judge by email — fire-and-forget so the response isn't
+    // blocked on SMTP. Pulls the organizer + hackathon title in one query.
+    const ctx = await getHackathonInviteContext(id);
+    const [hackMeta] = await pool.query<RowDataPacket[]>(
+      'SELECT H_Judging_EndDate FROM hackathon WHERE hackathon_ID = ?',
+      [id],
+    );
+    const evaluationEndDate = (hackMeta[0] as { H_Judging_EndDate: Date | null } | undefined)?.H_Judging_EndDate ?? null;
+    if (ctx) {
+      for (const hjId of judgeIds) {
+        const count = tally.get(hjId) ?? 0;
+        const email = emailById.get(hjId);
+        const name = nameById.get(hjId);
+        if (!email || !name || count === 0) continue;
+        void sendJudgeAssignmentEmailSafe({
+          to: email,
+          judgeName: name,
+          hackathonTitle: ctx.title,
+          organizerName: ctx.organizerName,
+          projectCount: count,
+          evaluationEndDate,
+          workspaceUrl: `${env.frontendUrl}/admin/hackathon/${id}/projects`,
+        });
+      }
+    }
+
+    return res.json({
+      assigned: projectIds.length,
+      totalProjects: projectIds.length,
+      judges: judgeIds.length,
+      breakdown: judgeIds.map((hjId) => ({
+        judgeId: hjId,
+        judgeName: nameById.get(hjId) ?? '',
+        count: tally.get(hjId) ?? 0,
+      })),
+    });
+  } catch (err) {
+    console.error('distributeJudging error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// GET /hackathons/:id/projects/:tsId/evaluations — all evaluations submitted
+// against a given project. Used by the organizer's project drawer.
+export const listProjectEvaluations = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const tsId = Number(req.params.tsId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(tsId) || tsId <= 0) return res.status(400).json({ error: 'invalid tsId' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    const [subRows] = await pool.query<RowDataPacket[]>(
+      'SELECT T_ID, PM_ID FROM team_submission WHERE TS_ID = ? AND hackathon_ID = ?',
+      [tsId, id],
+    );
+    if (subRows.length === 0) return res.status(404).json({ error: 'المشروع غير موجود' });
+    const { T_ID, PM_ID } = subRows[0] as { T_ID: number | null; PM_ID: number | null };
+
+    const [evals] = await pool.query<RowDataPacket[]>(
+      `SELECT e.E_ID         AS id,
+              e.HJ_ID        AS judgeId,
+              hj.HJ_FullName AS judgeName,
+              hj.HJ_Specialty AS judgeSpecialty,
+              e.E_Comment    AS comment,
+              e.E_EvaluatedAt AS evaluatedAt
+         FROM evaluation e
+         JOIN hackathon_judge hj ON hj.HJ_ID = e.HJ_ID
+        WHERE e.hackathon_ID = ?
+          AND ((? IS NOT NULL AND e.T_ID = ?) OR (? IS NOT NULL AND e.PM_ID = ?))
+        ORDER BY e.E_EvaluatedAt DESC`,
+      [id, T_ID, T_ID, PM_ID, PM_ID],
+    );
+
+    if (evals.length === 0) return res.json({ items: [] });
+
+    const evalIds = (evals as Array<{ id: number }>).map((e) => e.id);
+    const placeholders = evalIds.map(() => '?').join(',');
+    const [scores] = await pool.query<RowDataPacket[]>(
+      `SELECT E_ID, ES_CriterionName, ES_Score, ES_SortOrder
+         FROM evaluation_score
+        WHERE E_ID IN (${placeholders})
+        ORDER BY ES_SortOrder, ES_ID`,
+      evalIds,
+    );
+
+    const scoresByEval = new Map<number, Array<{ name: string; score: number }>>();
+    for (const s of scores as Array<{ E_ID: number; ES_CriterionName: string; ES_Score: number }>) {
+      const list = scoresByEval.get(s.E_ID) ?? [];
+      list.push({ name: s.ES_CriterionName, score: s.ES_Score });
+      scoresByEval.set(s.E_ID, list);
+    }
+
+    const items = (evals as Array<{
+      id: number;
+      judgeId: number;
+      judgeName: string;
+      judgeSpecialty: string | null;
+      comment: string | null;
+      evaluatedAt: Date;
+    }>).map((e) => ({
+      id: e.id,
+      judgeId: e.judgeId,
+      judgeName: e.judgeName,
+      judgeSpecialty: e.judgeSpecialty,
+      comment: e.comment,
+      evaluatedAt: e.evaluatedAt,
+      scores: scoresByEval.get(e.id) ?? [],
+    }));
+
+    return res.json({ items });
+  } catch (err) {
+    console.error('listProjectEvaluations error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// Judge-side: resolve current user's HJ_ID for a hackathon, or null.
+async function findMyJudgeId(
+  memberId: number,
+  hackathonId: number,
+): Promise<number | null> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT HJ_ID FROM hackathon_judge
+      WHERE hackathon_ID = ? AND M_ID = ? AND HJ_InviteStatus = 'accepted'
+      LIMIT 1`,
+    [hackathonId, memberId],
+  );
+  if (rows.length === 0) return null;
+  return (rows[0] as { HJ_ID: number }).HJ_ID;
+}
+
+// GET /judges/me/hackathons/:id/assignments — projects this judge must evaluate.
+export const listMyJudgeAssignments = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+
+  const hjId = await findMyJudgeId(req.user.memberId, id);
+  if (hjId === null) return res.status(403).json({ error: 'forbidden' });
+
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         ts.TS_ID                AS tsId,
+         ts.T_ID                 AS teamId,
+         ts.PM_ID                AS participantId,
+         ts.TS_ProjectName       AS projectName,
+         ts.TS_ProjectDescription AS projectDescription,
+         ts.TS_RepoUrl           AS repoUrl,
+         ts.TS_DemoUrl           AS demoUrl,
+         ts.TS_SubmittedAt       AS submittedAt,
+         t.T_name                AS teamName,
+         pm.M_FName              AS participantFirst,
+         pm.M_LName              AS participantLast,
+         (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
+            FROM hackathon_track WHERE hackathon_ID = ts.hackathon_ID) AS trackName,
+         (SELECT COUNT(*) FROM submission_file WHERE TS_ID = ts.TS_ID) AS fileCount,
+         (SELECT E_ID FROM evaluation
+            WHERE HJ_ID = ?
+              AND ((ts.T_ID IS NOT NULL AND T_ID = ts.T_ID)
+                OR (ts.PM_ID IS NOT NULL AND PM_ID = ts.PM_ID))
+            LIMIT 1) AS myEvaluationId
+         FROM team_submission ts
+         LEFT JOIN team t   ON t.T_ID  = ts.T_ID
+         LEFT JOIN participant p ON p.PM_ID = ts.PM_ID
+         LEFT JOIN member pm     ON pm.M_ID = p.PM_ID
+        WHERE ts.hackathon_ID = ?
+          AND ts.assigned_judge_id = ?
+          AND ts.TS_SubmittedAt IS NOT NULL
+        ORDER BY ts.TS_SubmittedAt DESC, ts.TS_ID DESC`,
+      [hjId, id, hjId],
+    );
+
+    const rawRows = rows as Array<{
+      tsId: number;
+      teamId: number | null;
+      participantId: number | null;
+      projectName: string | null;
+      projectDescription: string | null;
+      repoUrl: string | null;
+      demoUrl: string | null;
+      submittedAt: Date | null;
+      teamName: string | null;
+      participantFirst: string | null;
+      participantLast: string | null;
+      trackName: string | null;
+      fileCount: number;
+      myEvaluationId: number | null;
+    }>;
+    const firstTrack = rawRows[0]?.trackName?.split('|||').filter(Boolean)[0] ?? null;
+
+    // Pull all submission files in one go (keyed by TS_ID) so the judge can
+    // open them directly from their assignments list.
+    const filesByProject = new Map<number, Array<{ id: number; name: string; size: number; mimeType: string | null; url: string }>>();
+    // Map evaluation_id → weighted total score (0-100) for this judge's
+    // evaluations. We compute the weighted average so the judge sees the same
+    // number as everyone else (and matches what the organizer view shows).
+    const scoreByEvalId = new Map<number, number>();
+    // Map evaluation_id → per-criterion scores so the judge can revisit what
+    // they submitted (read-only details panel in the UI).
+    const scoresByEvalId = new Map<number, Array<{ name: string; score: number }>>();
+    // Map evaluation_id → comment so the judge sees their own notes too.
+    const commentByEvalId = new Map<number, string | null>();
+    if (rawRows.length > 0) {
+      const tsIds = rawRows.map((r) => r.tsId);
+      const placeholders = tsIds.map(() => '?').join(',');
+      const [fileRows] = await pool.query<RowDataPacket[]>(
+        `SELECT SF_ID AS id, TS_ID, SF_Name AS name, SF_StoredName AS storedName,
+                SF_Size AS size, SF_MimeType AS mimeType
+           FROM submission_file
+          WHERE TS_ID IN (${placeholders})
+          ORDER BY SF_UploadedAt DESC`,
+        tsIds,
+      );
+      for (const f of fileRows as Array<{
+        id: number; TS_ID: number; name: string; storedName: string;
+        size: number; mimeType: string | null;
+      }>) {
+        const list = filesByProject.get(f.TS_ID) ?? [];
+        list.push({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          mimeType: f.mimeType,
+          url: `/uploads/submissions/${f.storedName}`,
+        });
+        filesByProject.set(f.TS_ID, list);
+      }
+
+      // Fetch criteria weights for the hackathon, then per-evaluation scores
+      // for every evaluation this judge has submitted. Compute weighted total
+      // per evaluation so we can show a single 0-100 score in the judge's row.
+      const evalIds = rawRows
+        .map((r) => r.myEvaluationId)
+        .filter((x): x is number => x !== null);
+      if (evalIds.length > 0) {
+        const [critRows] = await pool.query<RowDataPacket[]>(
+          'SELECT HEC_Name, HEC_Weight FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
+          [id],
+        );
+        const weights = new Map<string, number>();
+        for (const c of critRows as Array<{ HEC_Name: string; HEC_Weight: number }>) {
+          weights.set(c.HEC_Name, Number(c.HEC_Weight));
+        }
+        const ph = evalIds.map(() => '?').join(',');
+        const [scoreRows] = await pool.query<RowDataPacket[]>(
+          `SELECT E_ID, ES_CriterionName, ES_Score, ES_SortOrder
+             FROM evaluation_score WHERE E_ID IN (${ph})
+            ORDER BY ES_SortOrder, ES_ID`,
+          evalIds,
+        );
+        const totals = new Map<number, number>();
+        for (const s of scoreRows as Array<{ E_ID: number; ES_CriterionName: string; ES_Score: number }>) {
+          const w = weights.get(s.ES_CriterionName) ?? 0;
+          totals.set(s.E_ID, (totals.get(s.E_ID) ?? 0) + (Number(s.ES_Score) * w) / 100);
+          const list = scoresByEvalId.get(s.E_ID) ?? [];
+          list.push({ name: s.ES_CriterionName, score: Number(s.ES_Score) });
+          scoresByEvalId.set(s.E_ID, list);
+        }
+        for (const [evalId, total] of totals) {
+          scoreByEvalId.set(evalId, Math.round(total));
+        }
+        // Pull comments for these evaluations so the judge sees their own notes.
+        const [commentRows] = await pool.query<RowDataPacket[]>(
+          `SELECT E_ID, E_Comment FROM evaluation WHERE E_ID IN (${ph})`,
+          evalIds,
+        );
+        for (const c of commentRows as Array<{ E_ID: number; E_Comment: string | null }>) {
+          commentByEvalId.set(c.E_ID, c.E_Comment);
+        }
+      }
+    }
+
+    const items = rawRows.map((r) => ({
+      tsId: r.tsId,
+      type: r.teamId !== null ? ('team' as const) : ('solo' as const),
+      teamName: r.teamName,
+      participantName:
+        r.participantFirst || r.participantLast
+          ? `${r.participantFirst ?? ''} ${r.participantLast ?? ''}`.trim()
+          : null,
+      projectName: r.projectName,
+      projectDescription: r.projectDescription,
+      repoUrl: r.repoUrl,
+      demoUrl: r.demoUrl,
+      submittedAt: r.submittedAt,
+      hasFiles: Number(r.fileCount) > 0,
+      hasLinks: Boolean(r.repoUrl || r.demoUrl),
+      files: filesByProject.get(r.tsId) ?? [],
+      trackName: firstTrack,
+      evaluated: r.myEvaluationId !== null,
+      myScore: r.myEvaluationId !== null ? (scoreByEvalId.get(r.myEvaluationId) ?? null) : null,
+      myEvaluation: r.myEvaluationId !== null
+        ? {
+            scores: scoresByEvalId.get(r.myEvaluationId) ?? [],
+            comment: commentByEvalId.get(r.myEvaluationId) ?? null,
+          }
+        : null,
+    }));
+
+    return res.json({ items });
+  } catch (err) {
+    console.error('listMyJudgeAssignments error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /judges/me/evaluations — submit (or update) my evaluation for a
+// specific project. Body: { hackathonId, tsId, scores: [{name, score}], comment }
+export const submitJudgeEvaluation = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+
+  const hackathonId = Number(req.body?.hackathonId);
+  const tsId = Number(req.body?.tsId);
+  const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+  const rawScores = Array.isArray(req.body?.scores) ? req.body.scores : null;
+
+  if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
+    return res.status(400).json({ error: 'invalid hackathonId' });
+  }
+  if (!Number.isInteger(tsId) || tsId <= 0) {
+    return res.status(400).json({ error: 'invalid tsId' });
+  }
+  if (!rawScores || rawScores.length === 0) {
+    return res.status(400).json({ error: 'scores array required' });
+  }
+
+  const hjId = await findMyJudgeId(req.user.memberId, hackathonId);
+  if (hjId === null) return res.status(403).json({ error: 'forbidden' });
+
+  const [subRows] = await pool.query<RowDataPacket[]>(
+    `SELECT T_ID, PM_ID, assigned_judge_id, TS_SubmittedAt
+       FROM team_submission WHERE TS_ID = ? AND hackathon_ID = ?`,
+    [tsId, hackathonId],
+  );
+  if (subRows.length === 0) return res.status(404).json({ error: 'المشروع غير موجود' });
+  const sub = subRows[0] as {
+    T_ID: number | null;
+    PM_ID: number | null;
+    assigned_judge_id: number | null;
+    TS_SubmittedAt: Date | null;
+  };
+  if (sub.assigned_judge_id !== hjId) {
+    return res.status(403).json({ error: 'هذا المشروع ليس ضمن مشاريعك للتقييم' });
+  }
+  if (!sub.TS_SubmittedAt) {
+    return res.status(400).json({ error: 'المشروع لم يُسلَّم بعد' });
+  }
+
+  // Load criteria so we can validate that submitted scores reference real
+  // criteria for THIS hackathon (no inventing scores).
+  const [critRows] = await pool.query<RowDataPacket[]>(
+    `SELECT HEC_Name, HEC_SortOrder
+       FROM hackathon_evaluation_criteria
+      WHERE hackathon_ID = ?
+      ORDER BY HEC_SortOrder, HEC_ID`,
+    [hackathonId],
+  );
+  if (critRows.length === 0) {
+    return res.status(400).json({ error: 'لم يحدد المنظم معايير التقييم' });
+  }
+  const criteriaIndex = new Map<string, number>();
+  for (const c of critRows as Array<{ HEC_Name: string; HEC_SortOrder: number }>) {
+    criteriaIndex.set(c.HEC_Name, c.HEC_SortOrder);
+  }
+
+  const normalizedScores: Array<{ name: string; score: number; sortOrder: number }> = [];
+  for (let i = 0; i < rawScores.length; i++) {
+    const s = rawScores[i] as { name?: unknown; score?: unknown } | null;
+    if (!s || typeof s !== 'object') return res.status(400).json({ error: `score ${i + 1} invalid` });
+    const name = typeof s.name === 'string' ? s.name.trim() : '';
+    if (!name || !criteriaIndex.has(name)) {
+      return res.status(400).json({ error: `معيار غير معروف: ${name}` });
+    }
+    const score = Number(s.score);
+    if (!Number.isFinite(score) || score < 0 || score > 100) {
+      return res.status(400).json({ error: `درجة المعيار "${name}" غير صالحة (٠ - ١٠٠)` });
+    }
+    normalizedScores.push({
+      name,
+      score: Math.round(score),
+      sortOrder: criteriaIndex.get(name)!,
+    });
+  }
+
+  // Upsert: one evaluation per (judge, target). Update replaces comment +
+  // delete-and-reinsert scores.
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const targetCol = sub.T_ID !== null ? 'T_ID' : 'PM_ID';
+    const targetVal = sub.T_ID !== null ? sub.T_ID : sub.PM_ID;
+
+    const [existing] = await conn.query<RowDataPacket[]>(
+      `SELECT E_ID FROM evaluation
+        WHERE HJ_ID = ? AND hackathon_ID = ? AND ${targetCol} = ? LIMIT 1`,
+      [hjId, hackathonId, targetVal],
+    );
+
+    let evaluationId: number;
+    if (existing.length > 0) {
+      evaluationId = (existing[0] as { E_ID: number }).E_ID;
+      await conn.execute(
+        `UPDATE evaluation SET E_Comment = ?, E_EvaluatedAt = NOW() WHERE E_ID = ?`,
+        [comment || null, evaluationId],
+      );
+      await conn.execute('DELETE FROM evaluation_score WHERE E_ID = ?', [evaluationId]);
+    } else {
+      const [result] = await conn.execute<ResultSetHeader>(
+        `INSERT INTO evaluation (HJ_ID, ${targetCol}, hackathon_ID, E_Comment)
+         VALUES (?, ?, ?, ?)`,
+        [hjId, targetVal, hackathonId, comment || null],
+      );
+      evaluationId = result.insertId;
+    }
+
+    for (const s of normalizedScores) {
+      await conn.execute(
+        `INSERT INTO evaluation_score (E_ID, ES_CriterionName, ES_Score, ES_SortOrder)
+         VALUES (?, ?, ?, ?)`,
+        [evaluationId, s.name, s.score, s.sortOrder],
+      );
+    }
+
+    await conn.commit();
+    return res.json({ evaluationId, updated: existing.length > 0 });
+  } catch (err) {
+    await conn.rollback();
+    console.error('submitJudgeEvaluation error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    conn.release();
   }
 };

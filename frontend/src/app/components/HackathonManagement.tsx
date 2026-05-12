@@ -40,6 +40,9 @@ interface MyAccess {
 export default function HackathonManagement() {
   const { id } = useParams();
   const [status, setStatus] = useState<string | null>(null);
+  // Title of the current hackathon — surfaced in the header so the organizer
+  // always knows which one they're editing (matters when they manage several).
+  const [hackathonTitle, setHackathonTitle] = useState<string | null>(null);
   const [myAccess, setMyAccess] = useState<MyAccess | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [reverting, setReverting] = useState(false);
@@ -54,12 +57,13 @@ export default function HackathonManagement() {
     (async () => {
       try {
         const data = await apiGet<{
-          hackathon: { H_status: string };
+          hackathon: { H_status: string; H_title: string | null };
           myAccess: MyAccess | null;
           counts?: { pendingRegistrations?: number };
         }>(`/hackathons/${id}`);
         if (!cancelled) {
           setStatus(data.hackathon.H_status);
+          setHackathonTitle(data.hackathon.H_title);
           setMyAccess(data.myAccess);
           setPendingRegistrations(data.counts?.pendingRegistrations ?? 0);
         }
@@ -92,7 +96,7 @@ export default function HackathonManagement() {
   const managementCards: ManagementCard[] = [
     {
       id: 'projects',
-      title: 'إدارة المشاريع والتحكم',
+      title: 'إدارة المشاريع والحكام',
       description: 'تتبع تسليمات المشاريع المرسلة، مراجعة إنجاز الفرق، وترصد الإدخالات التقييمية لكل مشروع.',
       icon: Gavel,
       bgColor: 'bg-indigo-50',
@@ -153,7 +157,7 @@ export default function HackathonManagement() {
     },
     {
       id: 'winners',
-      title: 'إعلان الفائدين والنتائج',
+      title: 'إعلان الفائزين والنتائج',
       description: 'إعداد الترتيب النهائي، توزع الجوائز المحددة والشهادات، وتوليد شهادات الحضور للمشاركين.',
       icon: Trophy,
       bgColor: 'bg-yellow-50',
@@ -178,6 +182,14 @@ export default function HackathonManagement() {
               <ArrowRight className="w-5 h-5" />
             </Link>
             <div className="flex-1">
+              {hackathonTitle && (
+                <span
+                  className="inline-block px-3 py-1 rounded-full bg-[#e35654]/10 text-[#cc4a48] text-xs mb-2"
+                  style={{ fontWeight: 600 }}
+                >
+                  {hackathonTitle}
+                </span>
+              )}
               <h1 className="text-2xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
                 مركز إدارة الهاكاثون
               </h1>
