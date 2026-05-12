@@ -20,7 +20,6 @@ import {
   markAllNotificationsRead,
   deleteNotification,
   listMyCertificates,
-  listHackathonSessions,
   listMyEvaluations,
   getMySubmission,
   updateMySubmission,
@@ -31,6 +30,12 @@ import {
   sendTeamMessage,
   uploadAvatar,
   deleteAvatar,
+  addTeamInvites,
+  resendTeamInvite,
+  cancelTeamInvite,
+  listTeamInvites,
+  withdrawFromHackathon,
+  transferTeamLeadership,
 } from '../controllers/participant.controller';
 
 const router = Router();
@@ -57,7 +62,6 @@ router.put('/notifications/:id/read', requireAuth, markNotificationRead);
 router.delete('/notifications/:id', requireAuth, deleteNotification);
 
 router.get('/certificates', requireAuth, listMyCertificates);
-router.get('/hackathons/:id/sessions', requireAuth, listHackathonSessions);
 router.get('/hackathons/:id/evaluations', requireAuth, listMyEvaluations);
 
 router.get('/hackathons/:id/submission', requireAuth, getMySubmission);
@@ -68,5 +72,13 @@ router.post('/hackathons/:id/submission/submit', requireAuth, confirmSubmission)
 
 router.get('/hackathons/:id/team-messages', requireAuth, listTeamMessages);
 router.post('/hackathons/:id/team-messages', requireAuth, sendTeamMessage);
+
+// Team management (manual team formation)
+router.get('/hackathons/:id/team-invites', requireAuth, listTeamInvites);
+router.post('/hackathons/:id/team-invites', requireAuth, addTeamInvites);
+router.post('/team-invites/:inviteId/resend', requireAuth, resendTeamInvite);
+router.delete('/team-invites/:inviteId', requireAuth, cancelTeamInvite);
+router.post('/hackathons/:id/transfer-leadership', requireAuth, transferTeamLeadership);
+router.delete('/hackathons/:id/my-registration', requireAuth, withdrawFromHackathon);
 
 export default router;

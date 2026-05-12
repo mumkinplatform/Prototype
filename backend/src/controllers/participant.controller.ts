@@ -2,9 +2,12 @@ import { Request, Response } from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import path from 'path';
 import fs from 'fs';
+import { randomBytes } from 'crypto';
 import { pool } from '../db/pool';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { extractBranding } from '../lib/branding';
+import { sendTeamInviteEmail } from '../lib/mail';
+import { env } from '../config/env';
 import { UPLOADS_DIR, AVATARS_DIR } from '../middleware/upload.middleware';
 
 interface ParticipantProfileRow extends RowDataPacket {
@@ -45,6 +48,7 @@ interface HackathonListRow extends RowDataPacket {
   status: string;
   teamMin: number;
   teamMax: number;
+  participationMode: 'teams_only' | 'individuals_and_teams' | 'individuals_only';
   org: string | null;
   prizeTotal: string | null;
   tagsRaw: string | null;
@@ -116,6 +120,7 @@ interface MyHackathonRow extends RowDataPacket {
   org: string | null;
   myTeamId: number | null;
   participationType: 'solo' | 'team';
+  teamMethod: 'ai' | 'manual' | null;
   applicationStatus: 'pending' | 'accepted' | 'rejected';
   myIdeaTitle: string | null;
   myIdeaDescription: string | null;
@@ -181,7 +186,7 @@ function ensureParticipant(req: Request, res: Response): boolean {
 }
 
 /**
- * Workspace gate: a participant can only use workspace endpoints (team, sessions,
+ * Workspace gate: a participant can only use workspace endpoints (team,
  * evaluations, messages, submission, etc.) after the organizer has accepted them
  * AND sent the decision notification email. The notification email is the formal
  * announcement — before it, the participant should remain in "pending" state
@@ -196,19 +201,28 @@ async function ensureAcceptedParticipant(
   hackathonId: number,
 ): Promise<boolean> {
   const memberId = req.user!.memberId;
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT application_status, notification_sent_at
-       FROM applies_hackathon WHERE hackathon_ID = ? AND PM_ID = ?`,
+  interface AppRow extends RowDataPacket {
+    application_status: 'pending' | 'accepted' | 'rejected';
+    notification_sent_at: Date | string | null;
+    participation_type: 'solo' | 'team';
+    T_ID: number | null;
+    H_Team_Min: number;
+    H_Registration_EndDate: Date | null;
+  }
+  const [rows] = await pool.query<AppRow[]>(
+    `SELECT a.application_status, a.notification_sent_at,
+            a.participation_type, a.T_ID,
+            h.H_Team_Min, h.H_Registration_EndDate
+       FROM applies_hackathon a
+       JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
+      WHERE a.hackathon_ID = ? AND a.PM_ID = ?`,
     [hackathonId, memberId],
   );
   if (rows.length === 0) {
     res.status(404).json({ error: 'لم تسجّل في هذا الهاكاثون', reason: 'not_registered' });
     return false;
   }
-  const row = rows[0] as {
-    application_status: 'pending' | 'accepted' | 'rejected';
-    notification_sent_at: Date | string | null;
-  };
+  const row = rows[0];
   // Until the participant has been notified, treat them as pending — the
   // organizer's internal decision is private. The participant only "sees"
   // the decision once their notification email has been sent.
@@ -219,7 +233,6 @@ async function ensureAcceptedParticipant(
     });
     return false;
   }
-  if (row.application_status === 'accepted') return true;
   if (row.application_status === 'rejected') {
     res.status(403).json({
       error: 'تم رفض طلب مشاركتك في هذا الهاكاثون',
@@ -227,14 +240,40 @@ async function ensureAcceptedParticipant(
     });
     return false;
   }
-  // Defensive: status='pending' should never coexist with notification_sent_at
-  // IS NOT NULL (we don't send for pending), but if a manual DB edit produces
-  // that state, treat as still-pending to the participant.
-  res.status(403).json({
-    error: 'طلب مشاركتك قيد المراجعة من قِبل المنظم',
-    reason: 'pending',
-  });
-  return false;
+  if (row.application_status !== 'accepted') {
+    // Defensive: status='pending' should never coexist with notification_sent_at
+    // IS NOT NULL (we don't send for pending), but if a manual DB edit produces
+    // that state, treat as still-pending to the participant.
+    res.status(403).json({
+      error: 'طلب مشاركتك قيد المراجعة من قِبل المنظم',
+      reason: 'pending',
+    });
+    return false;
+  }
+
+  // Team-minimum gate: after registration closes, a team participant whose
+  // team is smaller than H_Team_Min is locked out of subsequent phases. This
+  // enforces the rule that the team had to be complete by the registration
+  // deadline. (Decision 3-🅳️ — see project memory.)
+  const regClosed =
+    row.H_Registration_EndDate !== null &&
+    new Date(row.H_Registration_EndDate).getTime() <= Date.now();
+  if (row.participation_type === 'team' && regClosed && row.T_ID !== null) {
+    interface CntRow extends RowDataPacket { cnt: number }
+    const [memberRows] = await pool.query<CntRow[]>(
+      'SELECT COUNT(*) AS cnt FROM applies_hackathon WHERE T_ID = ?',
+      [row.T_ID],
+    );
+    if (memberRows[0].cnt < row.H_Team_Min) {
+      res.status(403).json({
+        error: `فريقك تحت الحد الأدنى (${memberRows[0].cnt} من ${row.H_Team_Min})، انتهى وقت تعديل التسجيل`,
+        reason: 'team_below_min',
+      });
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -511,7 +550,8 @@ export const listHackathons = async (req: Request, res: Response) => {
        h.H_status                AS status,
        h.H_Team_Min              AS teamMin,
        h.H_Team_Max              AS teamMax,
-       op.ORG_Name               AS org,
+       h.H_Participation_Mode    AS participationMode,
+       h.H_public_name           AS org,
        (SELECT COALESCE(SUM(CAST(REPLACE(REPLACE(HP_Amount, ',', ''), ' ', '') AS DECIMAL(12,2))), 0)
           FROM hackathon_prize WHERE hackathon_ID = h.hackathon_ID) AS prizeTotal,
        (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
@@ -520,7 +560,6 @@ export const listHackathons = async (req: Request, res: Response) => {
           FROM hackathon_skill WHERE hackathon_ID = h.hackathon_ID) AS skillsRaw,
        (SELECT COUNT(*) FROM applies_hackathon WHERE hackathon_ID = h.hackathon_ID) AS applicantsCount
        FROM hackathon h
-       LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE h.H_status IN ('published', 'ongoing')
         AND h.H_visibility = 'public'
       ORDER BY h.H_created_at DESC`
@@ -569,6 +608,7 @@ export const listHackathons = async (req: Request, res: Response) => {
       skills: r.skillsRaw ? r.skillsRaw.split('|||') : [],
       teamMin: r.teamMin,
       teamMax: r.teamMax,
+      participationMode: r.participationMode,
       applicantsCount: r.applicantsCount,
       registrationOpen,
       branding: extractBranding(brandingById.get(r.id) ?? null),
@@ -611,10 +651,9 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
        h.H_Team_Max              AS teamMax,
        h.H_Participation_Mode    AS participationMode,
        h.H_Branding              AS brandingRaw,
-       op.ORG_Name               AS org,
+       h.H_public_name           AS org,
        h.HAM_ID                  AS organizerId
        FROM hackathon h
-       LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE h.hackathon_ID = ?`,
     [id]
   );
@@ -680,9 +719,12 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
     sortOrder: p.HP_SortOrder,
   }));
 
+  // Matches the lenient parse the listHackathons SQL uses: extract the leading
+  // numeric portion ("50,000 ر.س" → 50000) instead of failing the whole row
+  // when there's a currency suffix.
   const prizeTotal = prizeRows.reduce((sum, p) => {
-    const cleaned = (p.HP_Amount ?? '').replace(/[,\s]/g, '');
-    const n = Number(cleaned);
+    const match = String(p.HP_Amount ?? '').replace(/,/g, '').match(/[\d.]+/);
+    const n = match ? Number(match[0]) : NaN;
     return Number.isFinite(n) ? sum + n : sum;
   }, 0);
 
@@ -732,6 +774,104 @@ export const getHackathonDetail = async (req: Request, res: Response) => {
   });
 };
 
+function newInviteToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/**
+ * Validates manual-team invite emails. We do NOT require the email to belong
+ * to a registered participant — anyone can be invited, and the invitee signs
+ * up via the invite link if they don't have an account yet. We still reject
+ * obvious mistakes: malformed email, leader inviting themselves, or an email
+ * that is registered AND already enrolled in this hackathon (would be a
+ * double-registration if they accepted).
+ * All-or-nothing: any bad email rejects the whole list so the leader can fix
+ * it before retrying.
+ */
+async function validateManualTeamInvites(
+  emails: unknown,
+  leaderMemberId: number,
+  hackathonId: number,
+  teamMin: number,
+  teamMax: number,
+): Promise<
+  | { ok: true; emails: string[] }
+  | { ok: false; status: number; error: string; detail?: string }
+> {
+  if (!Array.isArray(emails)) {
+    return { ok: false, status: 400, error: 'inviteEmails يجب أن تكون قائمة' };
+  }
+
+  // Normalize, dedupe, basic format check
+  const cleaned = Array.from(
+    new Set(
+      emails
+        .map((e) => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
+        .filter((e) => e.length > 0),
+    ),
+  );
+
+  for (const e of cleaned) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
+      return { ok: false, status: 400, error: 'إيميل غير صالح', detail: e };
+    }
+  }
+
+  const minRequired = Math.max(1, teamMin - 1);
+  const maxAllowed = Math.max(1, teamMax - 1);
+  if (cleaned.length < minRequired) {
+    return {
+      ok: false,
+      status: 400,
+      error: `الحد الأدنى لعدد الدعوات هو ${minRequired}`,
+    };
+  }
+  if (cleaned.length > maxAllowed) {
+    return {
+      ok: false,
+      status: 400,
+      error: `الحد الأقصى لعدد الدعوات هو ${maxAllowed}`,
+    };
+  }
+
+  // Reject inviting yourself — compare against the leader's own email.
+  interface LeaderEmailRow extends RowDataPacket { M_Email: string }
+  const [leaderEmailRows] = await pool.query<LeaderEmailRow[]>(
+    'SELECT LOWER(M_Email) AS M_Email FROM member WHERE M_ID = ?',
+    [leaderMemberId]
+  );
+  const leaderEmail = leaderEmailRows[0]?.M_Email ?? null;
+  if (leaderEmail && cleaned.includes(leaderEmail)) {
+    return { ok: false, status: 400, error: 'لا يمكنك دعوة نفسك' };
+  }
+
+  // For emails that DO belong to a registered participant, ensure none of
+  // them is already enrolled in this hackathon (accepting would create a
+  // double-registration). Unregistered emails pass through untouched — they
+  // sign up via the invite link.
+  interface ConflictRow extends RowDataPacket { email: string }
+  const placeholders = cleaned.map(() => '?').join(',');
+  const [conflictRows] = await pool.query<ConflictRow[]>(
+    `SELECT LOWER(m.M_Email) AS email
+       FROM member m
+       JOIN applies_hackathon a ON a.PM_ID = m.M_ID
+      WHERE m.M_Type = 'PARTICIPANT'
+        AND a.hackathon_ID = ?
+        AND LOWER(m.M_Email) IN (${placeholders})`,
+    [hackathonId, ...cleaned],
+  );
+  if (conflictRows.length > 0) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'بعض الإيميلات مسجّلة مسبقاً في هذا الهاكاثون',
+      detail: conflictRows.map((r) => r.email).join(', '),
+    };
+  }
+
+  return { ok: true, emails: cleaned };
+}
+
 export const registerForHackathon = async (req: Request, res: Response) => {
   if (!ensureParticipant(req, res)) return;
 
@@ -772,7 +912,7 @@ export const registerForHackathon = async (req: Request, res: Response) => {
   }
 
   const [hackRows] = await pool.query<RowDataPacket[]>(
-    `SELECT H_status, H_visibility, H_Registration_EndDate
+    `SELECT H_title, H_status, H_visibility, H_Registration_EndDate, H_Team_Min, H_Team_Max
        FROM hackathon
       WHERE hackathon_ID = ?`,
     [id]
@@ -780,7 +920,14 @@ export const registerForHackathon = async (req: Request, res: Response) => {
   if (hackRows.length === 0) {
     return res.status(404).json({ error: 'الهاكاثون غير موجود' });
   }
-  const h = hackRows[0] as { H_status: string; H_visibility: string; H_Registration_EndDate: Date | null };
+  const h = hackRows[0] as {
+    H_title: string;
+    H_status: string;
+    H_visibility: string;
+    H_Registration_EndDate: Date | null;
+    H_Team_Min: number;
+    H_Team_Max: number;
+  };
   if (h.H_status === 'draft' || h.H_visibility === 'private') {
     return res.status(404).json({ error: 'الهاكاثون غير متاح' });
   }
@@ -792,26 +939,148 @@ export const registerForHackathon = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'انتهى وقت التسجيل في هذا الهاكاثون' });
   }
 
-  try {
-    await pool.execute(
-      `INSERT INTO applies_hackathon (PM_ID, hackathon_ID, idea_title, idea_description, participation_type, team_method)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [memberId, id, ideaTitle, ideaDescription, participationType, teamMethod]
-    );
-  } catch (err: any) {
-    if (err?.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'أنت مسجّل مسبقاً في هذا الهاكاثون' });
+  // ─── Solo or AI-formed team: simple single-row insert ────────────────
+  if (participationType === 'solo' || teamMethod === 'ai') {
+    try {
+      await pool.execute(
+        `INSERT INTO applies_hackathon (PM_ID, hackathon_ID, idea_title, idea_description, participation_type, team_method)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [memberId, id, ideaTitle, ideaDescription, participationType, teamMethod]
+      );
+    } catch (err: any) {
+      if (err?.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ error: 'أنت مسجّل مسبقاً في هذا الهاكاثون' });
+      }
+      console.error('registerForHackathon error:', err);
+      return res.status(500).json({ error: 'فشل تسجيل الاشتراك' });
     }
-    console.error('registerForHackathon error:', err);
-    return res.status(500).json({ error: 'فشل تسجيل الاشتراك' });
+
+    return res.status(201).json({
+      hackathonId: id,
+      ideaTitle,
+      ideaDescription,
+      participationType,
+      teamMethod,
+      appliedAt: new Date().toISOString(),
+    });
+  }
+
+  // ─── Manual team: create team, register leader, dispatch invites ─────
+  const validation = await validateManualTeamInvites(
+    req.body?.inviteEmails,
+    memberId,
+    id,
+    h.H_Team_Min,
+    h.H_Team_Max,
+  );
+  if (!validation.ok) {
+    return res.status(validation.status).json({ error: validation.error, detail: validation.detail });
+  }
+
+  // Compute invite expiry = MIN(NOW + 7 days, H_Registration_EndDate)
+  const sevenDays = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Math.min(sevenDays, regEnd));
+
+  // Fetch leader's name for the email template (done outside the transaction).
+  interface LeaderNameRow extends RowDataPacket { M_FName: string; M_LName: string }
+  const [leaderRows] = await pool.query<LeaderNameRow[]>(
+    'SELECT M_FName, M_LName FROM member WHERE M_ID = ?',
+    [memberId]
+  );
+  const leaderName = leaderRows.length > 0
+    ? `${leaderRows[0].M_FName} ${leaderRows[0].M_LName}`.trim()
+    : 'القائد';
+
+  const conn = await pool.getConnection();
+  let teamId = 0;
+  let teamName = '';
+  const inviteRecords: Array<{ email: string; token: string }> = [];
+
+  try {
+    await conn.beginTransaction();
+
+    // Sequential team name within this hackathon. Lock the existing rows so
+    // two concurrent registrations don't end up with the same number.
+    interface TeamCountRow extends RowDataPacket { cnt: number }
+    const [countRows] = await conn.query<TeamCountRow[]>(
+      'SELECT COUNT(*) AS cnt FROM team WHERE hackathon_ID = ? FOR UPDATE',
+      [id]
+    );
+    teamName = `الفريق ${countRows[0].cnt + 1}`;
+
+    const [teamInsert] = await conn.execute<ResultSetHeader>(
+      'INSERT INTO team (T_name, hackathon_ID, T_LeaderId) VALUES (?, ?, ?)',
+      [teamName, id, memberId]
+    );
+    teamId = teamInsert.insertId;
+
+    try {
+      await conn.execute(
+        `INSERT INTO applies_hackathon
+           (PM_ID, hackathon_ID, idea_title, idea_description, participation_type, team_method, T_ID)
+         VALUES (?, ?, ?, ?, 'team', 'manual', ?)`,
+        [memberId, id, ideaTitle, ideaDescription, teamId]
+      );
+    } catch (err: any) {
+      if (err?.code === 'ER_DUP_ENTRY') {
+        await conn.rollback();
+        return res.status(409).json({ error: 'أنت مسجّل مسبقاً في هذا الهاكاثون' });
+      }
+      throw err;
+    }
+
+    for (const email of validation.emails) {
+      const token = newInviteToken();
+      await conn.execute(
+        `INSERT INTO team_invitation
+           (T_ID, TI_Email, TI_Token, TI_InvitedBy, TI_ExpiresAt)
+         VALUES (?, ?, ?, ?, ?)`,
+        [teamId, email, token, memberId, expiresAt]
+      );
+      inviteRecords.push({ email, token });
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    console.error('registerForHackathon (manual team) error:', err);
+    return res.status(500).json({
+      error: 'فشل إنشاء الفريق وإرسال الدعوات',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    conn.release();
+  }
+
+  // Fire emails after the DB commits. We don't block the response on slow SMTP;
+  // failures are logged but don't roll back the team/invites (invites stay in
+  // pending state and the leader can re-trigger from "my team" if needed).
+  for (const inv of inviteRecords) {
+    const inviteUrl = `${env.frontendUrl}/team-invite/${encodeURIComponent(inv.token)}`;
+    sendTeamInviteEmail({
+      to: inv.email,
+      inviteeName: inv.email,
+      leaderName,
+      teamName,
+      hackathonTitle: h.H_title,
+      ideaTitle,
+      inviteUrl,
+      expiresAt,
+    }).catch((mailErr) => {
+      console.error(`sendTeamInviteEmail failed to=${inv.email}`, mailErr);
+    });
   }
 
   return res.status(201).json({
     hackathonId: id,
+    teamId,
+    teamName,
     ideaTitle,
     ideaDescription,
     participationType,
     teamMethod,
+    invitedEmails: validation.emails,
+    expiresAt: expiresAt.toISOString(),
     appliedAt: new Date().toISOString(),
   });
 };
@@ -844,9 +1113,10 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
        h.H_status                AS status,
        h.H_Team_Min              AS teamMin,
        h.H_Team_Max              AS teamMax,
-       op.ORG_Name               AS org,
+       h.H_public_name           AS org,
        a.T_ID                    AS myTeamId,
        a.participation_type      AS participationType,
+       a.team_method             AS teamMethod,
        -- Effective status for the participant: hide the internal decision
        -- until the organizer has sent the notification email. Anything before
        -- notification_sent_at is set should look like "pending" to the
@@ -861,7 +1131,6 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
           FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw
        FROM applies_hackathon a
        JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
-       LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE a.PM_ID = ?
       ORDER BY h.H_Hackathon_StartDate ASC`,
     [memberId]
@@ -903,6 +1172,7 @@ export const listMyRegisteredHackathons = async (req: Request, res: Response) =>
       teamMax: r.teamMax,
       myTeamId: r.myTeamId,
       participationType: r.participationType,
+      teamMethod: r.teamMethod,
       applicationStatus: r.applicationStatus,
       myIdeaTitle: r.myIdeaTitle,
       myIdeaDescription: r.myIdeaDescription,
@@ -926,13 +1196,19 @@ export const getMyTeamInHackathon = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
   }
 
-  if (!(await ensureAcceptedParticipant(req, res, id))) return;
+  // No `ensureAcceptedParticipant` here — team data must be visible while the
+  // application is still pending so the participant can manage their team
+  // (add/cancel invites, leave, transfer leadership) during the registration
+  // window. Workspace-only features (submission, evaluations, etc.) keep the
+  // stricter gate on their own endpoints.
 
   const memberId = req.user!.memberId;
 
-  // 1) Find my team in this hackathon
+  // 1) Find my team in this hackathon (with team_method for the UI to decide
+  // whether the invite-management section is relevant).
   const [appRows] = await pool.query<RowDataPacket[]>(
-    'SELECT T_ID, participation_type FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
+    `SELECT T_ID, participation_type, team_method
+       FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?`,
     [memberId, id]
   );
   if (appRows.length === 0) {
@@ -940,26 +1216,38 @@ export const getMyTeamInHackathon = async (req: Request, res: Response) => {
   }
   const myTeamId = (appRows[0] as { T_ID: number | null }).T_ID;
   const participationType = (appRows[0] as { participation_type: string }).participation_type;
+  const teamMethod = (appRows[0] as { team_method: 'ai' | 'manual' | null }).team_method;
 
   if (myTeamId === null) {
     return res.json({
       team: null,
       participationType,
+      teamMethod,
     });
   }
 
-  // 2) Fetch team info
+  // 2) Fetch team info — include team min so the UI can warn when below it
+  // and hackathon registration end so it knows whether edits are still allowed.
   const [teamRows] = await pool.query<RowDataPacket[]>(
-    `SELECT t.T_ID, t.T_name, t.T_LeaderId, h.H_Team_Max AS teamMax
+    `SELECT t.T_ID, t.T_name, t.T_LeaderId,
+            h.H_Team_Min AS teamMin, h.H_Team_Max AS teamMax,
+            h.H_Registration_EndDate AS registrationEndDate
        FROM team t
        JOIN hackathon h ON h.hackathon_ID = t.hackathon_ID
       WHERE t.T_ID = ?`,
     [myTeamId]
   );
   if (teamRows.length === 0) {
-    return res.json({ team: null, participationType });
+    return res.json({ team: null, participationType, teamMethod });
   }
-  const team = teamRows[0] as { T_ID: number; T_name: string; T_LeaderId: number; teamMax: number };
+  const team = teamRows[0] as {
+    T_ID: number;
+    T_name: string;
+    T_LeaderId: number;
+    teamMin: number;
+    teamMax: number;
+    registrationEndDate: Date | null;
+  };
 
   // 3) Fetch members
   const [memberRows] = await pool.query<RowDataPacket[]>(
@@ -983,10 +1271,13 @@ export const getMyTeamInHackathon = async (req: Request, res: Response) => {
       id: team.T_ID,
       name: team.T_name,
       leaderId: team.T_LeaderId,
+      minMembers: team.teamMin,
       maxMembers: team.teamMax,
+      registrationEndDate: team.registrationEndDate,
       members,
     },
     participationType,
+    teamMethod,
   });
 };
 
@@ -1134,6 +1425,64 @@ export const listNotifications = async (req: Request, res: Response) => {
   if (!ensureParticipant(req, res)) return;
 
   const memberId = req.user!.memberId;
+
+  // Backfill in-app acceptance notifications. The organizer's
+  // notifyRegistrationDecision endpoint sends the decision email and sets
+  // notification_sent_at but does not insert into `notification`, so a
+  // participant who only checks the in-app notifications page would miss
+  // the decision. We gate on notification_sent_at (not H_Announcement_Date)
+  // to stay consistent with the rest of the system: the email is the formal
+  // announcement, so the in-app notification appears at the same moment.
+  // Dedup key is N_ActionRoute (deterministic per hackathon).
+  try {
+    interface MissingDecisionRow extends RowDataPacket {
+      hackathon_ID: number;
+      application_status: 'accepted' | 'rejected';
+      H_title: string;
+    }
+    const [missing] = await pool.query<MissingDecisionRow[]>(
+      `SELECT a.hackathon_ID, a.application_status, h.H_title
+         FROM applies_hackathon a
+         JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
+        WHERE a.PM_ID = ?
+          AND a.application_status IN ('accepted', 'rejected')
+          AND a.notification_sent_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM notification n
+             WHERE n.M_ID = a.PM_ID
+               AND n.N_Type = 'acceptance'
+               AND n.N_ActionRoute IN (
+                 CONCAT('/participant/workspace?id=', a.hackathon_ID),
+                 CONCAT('/participant/hackathon/', a.hackathon_ID)
+               )
+          )`,
+      [memberId]
+    );
+
+    for (const r of missing) {
+      const accepted = r.application_status === 'accepted';
+      await pool.execute(
+        `INSERT INTO notification
+           (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+         VALUES (?, 'acceptance', ?, ?, ?, ?)`,
+        [
+          memberId,
+          accepted
+            ? `تم قبولك في "${r.H_title}"`
+            : `بخصوص طلبك في "${r.H_title}"`,
+          accepted
+            ? 'تم قبول طلبك في الهاكاثون. يمكنك دخول مساحة العمل الآن.'
+            : 'نأسف، لم يتم قبول طلب مشاركتك في هذا الهاكاثون.',
+          accepted ? 'دخول مساحة العمل' : null,
+          accepted
+            ? `/participant/workspace?id=${r.hackathon_ID}`
+            : `/participant/hackathon/${r.hackathon_ID}`,
+        ]
+      );
+    }
+  } catch (backfillErr) {
+    console.error('listNotifications: decision backfill failed', backfillErr);
+  }
 
   const [rows] = await pool.query<NotificationRow[]>(
     `SELECT N_ID, N_Type, N_Title, N_Message, N_Read, N_ActionLabel, N_ActionRoute, N_CreatedAt
@@ -1350,62 +1699,6 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
   return res.json({ items, teamId, isRegistered: true });
 };
 
-// ─── Sessions ────────────────────────────────────────────────
-interface SessionRow extends RowDataPacket {
-  id: number;
-  title: string;
-  description: string | null;
-  type: 'zoom' | 'teams' | 'meet' | 'other';
-  startAt: Date;
-  durationMinutes: number;
-  link: string | null;
-}
-
-interface ParticipationRow extends RowDataPacket {
-  PM_ID: number;
-}
-
-/**
- * Returns sessions for a hackathon. Verifies the participant is registered first.
- */
-export const listHackathonSessions = async (req: Request, res: Response) => {
-  if (!ensureParticipant(req, res)) return;
-
-  const hackathonId = Number(req.params.id);
-  if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
-    return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
-  }
-
-  if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
-
-  const [rows] = await pool.query<SessionRow[]>(
-    `SELECT
-       S_ID              AS id,
-       S_Title           AS title,
-       S_Description     AS description,
-       S_Type            AS type,
-       S_StartAt         AS startAt,
-       S_DurationMinutes AS durationMinutes,
-       S_Link            AS link
-       FROM session
-      WHERE hackathon_ID = ?
-      ORDER BY S_StartAt ASC`,
-    [hackathonId]
-  );
-
-  return res.json({
-    items: rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      type: r.type,
-      startAt: r.startAt,
-      durationMinutes: r.durationMinutes,
-      link: r.link,
-    })),
-  });
-};
-
 // ─── Certificates ────────────────────────────────────────────
 interface CertificateRow extends RowDataPacket {
   id: number;
@@ -1540,6 +1833,47 @@ export const sendTeamMessage = async (req: Request, res: Response) => {
     [teamId, memberId, text]
   );
 
+  // Notify the other team members. To avoid spamming the bell with one row per
+  // message, we collapse consecutive unread chat notifications for the same
+  // team into a single row by upserting on (M_ID, N_Type='team', N_ActionRoute).
+  // If a recipient already has an unread chat alert for this team, we just
+  // refresh its timestamp; otherwise we INSERT a fresh row. Mail / notification
+  // failures are logged but do NOT fail the message send.
+  try {
+    interface TeamMemberRow extends RowDataPacket { PM_ID: number }
+    const [otherRows] = await pool.query<TeamMemberRow[]>(
+      'SELECT PM_ID FROM applies_hackathon WHERE T_ID = ? AND PM_ID <> ?',
+      [teamId, memberId]
+    );
+    if (otherRows.length > 0) {
+      // Deep-link straight to the team tab so the recipient lands on the chat,
+      // not the workspace home page. The frontend reads `tab` from the URL.
+      const actionRoute = `/participant/workspace?id=${hackathonId}&tab=team`;
+      const title = 'رسائل جديدة من فريقك';
+      const message = 'وصلتك رسائل جديدة في فريقك. افتح مساحة العمل لقراءتها.';
+
+      for (const other of otherRows) {
+        const [updateRes] = await pool.execute<ResultSetHeader>(
+          `UPDATE notification
+              SET N_Title = ?, N_Message = ?, N_CreatedAt = NOW()
+            WHERE M_ID = ? AND N_Type = 'team'
+              AND N_ActionRoute = ? AND N_Read = 0`,
+          [title, message, other.PM_ID, actionRoute]
+        );
+        if (updateRes.affectedRows === 0) {
+          await pool.execute(
+            `INSERT INTO notification
+               (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+             VALUES (?, 'team', ?, ?, 'فتح الشات', ?)`,
+            [other.PM_ID, title, message, actionRoute]
+          );
+        }
+      }
+    }
+  } catch (notifErr) {
+    console.error('sendTeamMessage: notification upsert failed', notifErr);
+  }
+
   return res.json({
     id: result.insertId,
     senderId: memberId,
@@ -1580,8 +1914,9 @@ interface SubmissionFileRow extends RowDataPacket {
 interface HackathonSubmissionMetaRow extends RowDataPacket {
   H_Submission_Fields: string | string[] | null;
   H_Project_Requirements: string | null;
+  H_Submission_StartDate: Date | null;
   H_Submission_Deadline: Date | null;
-  H_Allow_Late_Submission: number;
+  H_Hackathon_StartDate: Date | null;
   H_Max_File_Size_MB: number;
 }
 
@@ -1605,6 +1940,53 @@ async function requireMyTeam(req: Request, res: Response, hackathonId: number): 
     return null;
   }
   return teamId;
+}
+
+/**
+ * Time-based gate for submission endpoints. The submission window is:
+ *   [start, deadline]
+ *   start    = H_Submission_StartDate, falling back to H_Hackathon_StartDate
+ *   deadline = H_Submission_Deadline
+ * Outside that window we reject. No "late submission" path — the organizer
+ * side does not currently expose a toggle to enable it.
+ */
+interface SubmissionWindow {
+  ok: boolean;
+  status?: number;
+  reason?: 'before_start' | 'closed' | 'no_dates' | 'hackathon_not_found';
+  error?: string;
+}
+
+async function checkSubmissionWindow(hackathonId: number): Promise<SubmissionWindow> {
+  interface HackRow extends RowDataPacket {
+    H_Submission_StartDate: Date | null;
+    H_Hackathon_StartDate: Date | null;
+    H_Submission_Deadline: Date | null;
+  }
+  const [rows] = await pool.query<HackRow[]>(
+    `SELECT H_Submission_StartDate, H_Hackathon_StartDate, H_Submission_Deadline
+       FROM hackathon WHERE hackathon_ID = ?`,
+    [hackathonId],
+  );
+  if (rows.length === 0) {
+    return { ok: false, status: 404, reason: 'hackathon_not_found', error: 'الهاكاثون غير موجود' };
+  }
+  const h = rows[0];
+  const startSource = h.H_Submission_StartDate ?? h.H_Hackathon_StartDate;
+  const deadline = h.H_Submission_Deadline;
+
+  if (!deadline) {
+    return { ok: false, status: 400, reason: 'no_dates', error: 'تواريخ التسليم غير معدّة' };
+  }
+
+  const now = Date.now();
+  if (startSource && now < new Date(startSource).getTime()) {
+    return { ok: false, status: 403, reason: 'before_start', error: 'لم يبدأ وقت التسليم بعد' };
+  }
+  if (now > new Date(deadline).getTime()) {
+    return { ok: false, status: 403, reason: 'closed', error: 'انتهى موعد التسليم' };
+  }
+  return { ok: true };
 }
 
 /**
@@ -1695,9 +2077,12 @@ export const getMySubmission = async (req: Request, res: Response) => {
     [sub.TS_ID]
   );
 
-  // Hackathon meta (requirements + required fields)
+  // Hackathon meta — including submission window so the frontend can render
+  // the right UI for "before start" / "open" / "closed".
   const [metaRows] = await pool.query<HackathonSubmissionMetaRow[]>(
-    `SELECT H_Submission_Fields, H_Project_Requirements, H_Submission_Deadline, H_Allow_Late_Submission, H_Max_File_Size_MB
+    `SELECT H_Submission_Fields, H_Project_Requirements,
+            H_Submission_StartDate, H_Submission_Deadline, H_Hackathon_StartDate,
+            H_Max_File_Size_MB
        FROM hackathon WHERE hackathon_ID = ?`,
     [hackathonId]
   );
@@ -1720,6 +2105,11 @@ export const getMySubmission = async (req: Request, res: Response) => {
     ? meta.H_Project_Requirements.split('\n').map((s) => s.trim()).filter(Boolean)
     : [];
 
+  // submissionStartDate falls back to the hackathon's overall start date when
+  // the organizer didn't set a dedicated submission start — same fallback
+  // used inside checkSubmissionWindow so the UI and the gate agree.
+  const submissionStartDate = meta?.H_Submission_StartDate ?? meta?.H_Hackathon_StartDate ?? null;
+
   return res.json({
     submissionId: sub.TS_ID,
     projectName: sub.TS_ProjectName,
@@ -1727,8 +2117,8 @@ export const getMySubmission = async (req: Request, res: Response) => {
     repoUrl: sub.TS_RepoUrl,
     demoUrl: sub.TS_DemoUrl,
     submittedAt: sub.TS_SubmittedAt,
+    submissionStartDate,
     submissionDeadline: meta?.H_Submission_Deadline ?? null,
-    allowLateSubmission: meta?.H_Allow_Late_Submission === 1,
     maxFileSizeMb: meta?.H_Max_File_Size_MB ?? 50,
     submissionFields,
     requirements,
@@ -1756,6 +2146,11 @@ export const updateMySubmission = async (req: Request, res: Response) => {
   }
 
   if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
+
+  const win = await checkSubmissionWindow(hackathonId);
+  if (!win.ok) {
+    return res.status(win.status!).json({ error: win.error, reason: win.reason });
+  }
 
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
@@ -1797,6 +2192,12 @@ export const uploadSubmissionFile = async (req: Request, res: Response) => {
   if (!(await ensureAcceptedParticipant(req, res, hackathonId))) {
     if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
     return;
+  }
+
+  const win = await checkSubmissionWindow(hackathonId);
+  if (!win.ok) {
+    if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
+    return res.status(win.status!).json({ error: win.error, reason: win.reason });
   }
 
   const target = await requireSubmissionTarget(req, res, hackathonId);
@@ -1845,6 +2246,11 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
 
   if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
 
+  const win = await checkSubmissionWindow(hackathonId);
+  if (!win.ok) {
+    return res.status(win.status!).json({ error: win.error, reason: win.reason });
+  }
+
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
 
@@ -1885,6 +2291,11 @@ export const confirmSubmission = async (req: Request, res: Response) => {
 
   if (!(await ensureAcceptedParticipant(req, res, hackathonId))) return;
 
+  const win = await checkSubmissionWindow(hackathonId);
+  if (!win.ok) {
+    return res.status(win.status!).json({ error: win.error, reason: win.reason });
+  }
+
   const target = await requireSubmissionTarget(req, res, hackathonId);
   if (target === null) return;
 
@@ -1896,4 +2307,838 @@ export const confirmSubmission = async (req: Request, res: Response) => {
   );
 
   return res.json({ ok: true, submittedAt: new Date() });
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Team Invitations — preview / accept / decline (manual team formation)
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface TeamInviteLookupRow extends RowDataPacket {
+  TI_ID: number;
+  TI_Email: string;
+  TI_Status: 'pending' | 'accepted' | 'declined' | 'expired';
+  TI_ExpiresAt: Date | null;
+  TI_RespondedAt: Date | null;
+  T_ID: number;
+  T_name: string;
+  leader_M_ID: number;
+  leader_first: string;
+  leader_last: string;
+  hackathon_ID: number;
+  hackathon_title: string;
+  hackathon_reg_end: Date | null;
+  idea_title: string | null;
+  idea_description: string | null;
+  H_Team_Max: number;
+}
+
+/** Loads everything the preview/accept/decline endpoints need in one query. */
+async function loadTeamInviteContext(token: string): Promise<TeamInviteLookupRow | null> {
+  const [rows] = await pool.query<TeamInviteLookupRow[]>(
+    `SELECT
+        ti.TI_ID, ti.TI_Email, ti.TI_Status, ti.TI_ExpiresAt, ti.TI_RespondedAt,
+        t.T_ID, t.T_name,
+        leader.M_ID AS leader_M_ID,
+        leader.M_FName AS leader_first,
+        leader.M_LName AS leader_last,
+        h.hackathon_ID, h.H_title AS hackathon_title,
+        h.H_Registration_EndDate AS hackathon_reg_end,
+        h.H_Team_Max,
+        leaderApp.idea_title, leaderApp.idea_description
+      FROM team_invitation ti
+      JOIN team t ON t.T_ID = ti.T_ID
+      JOIN member leader ON leader.M_ID = t.T_LeaderId
+      JOIN hackathon h ON h.hackathon_ID = t.hackathon_ID
+      LEFT JOIN applies_hackathon leaderApp
+        ON leaderApp.PM_ID = t.T_LeaderId AND leaderApp.hackathon_ID = t.hackathon_ID
+      WHERE ti.TI_Token = ?
+      LIMIT 1`,
+    [token],
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Computes the effective status of an invite, taking into account hard-coded
+ * expiry checks. The DB column TI_Status is the recorded state, but a pending
+ * invite may also be effectively expired because of time. We don't auto-update
+ * the row here — that's done by a separate cleanup, or just at next access.
+ */
+function effectiveInviteStatus(
+  row: TeamInviteLookupRow,
+  now = Date.now(),
+): 'pending' | 'accepted' | 'declined' | 'expired' {
+  if (row.TI_Status !== 'pending') return row.TI_Status;
+  if (row.TI_ExpiresAt && new Date(row.TI_ExpiresAt).getTime() <= now) return 'expired';
+  if (row.hackathon_reg_end && new Date(row.hackathon_reg_end).getTime() <= now) return 'expired';
+  return 'pending';
+}
+
+/**
+ * GET /team-invitations/:token
+ * Public — no auth. Returns the team, leader, hackathon, and idea snapshot so
+ * the invitee can preview before deciding. The token itself is the secret.
+ */
+export const getTeamInviteByToken = async (req: Request, res: Response) => {
+  const token = String(req.params.token ?? '').trim();
+  if (!token) {
+    return res.status(400).json({ error: 'token غير صالح' });
+  }
+  const ctx = await loadTeamInviteContext(token);
+  if (!ctx) {
+    return res.status(404).json({ error: 'الدعوة غير موجودة' });
+  }
+
+  const status = effectiveInviteStatus(ctx);
+
+  return res.json({
+    email: ctx.TI_Email,
+    status,
+    expiresAt: ctx.TI_ExpiresAt,
+    respondedAt: ctx.TI_RespondedAt,
+    team: {
+      id: ctx.T_ID,
+      name: ctx.T_name,
+    },
+    leader: {
+      id: ctx.leader_M_ID,
+      fullName: `${ctx.leader_first} ${ctx.leader_last}`.trim(),
+    },
+    hackathon: {
+      id: ctx.hackathon_ID,
+      title: ctx.hackathon_title,
+      registrationEndDate: ctx.hackathon_reg_end,
+    },
+    idea: {
+      title: ctx.idea_title,
+      description: ctx.idea_description,
+    },
+  });
+};
+
+/**
+ * Verifies that the logged-in caller is the intended invitee. Returns the
+ * caller's member row when matched, or writes a 403 response otherwise.
+ */
+async function ensureInviteRecipient(
+  req: Request,
+  res: Response,
+  inviteEmail: string,
+): Promise<{ memberId: number; email: string } | null> {
+  if (!ensureParticipant(req, res)) return null;
+  const memberId = req.user!.memberId;
+  interface CallerRow extends RowDataPacket { M_Email: string }
+  const [rows] = await pool.query<CallerRow[]>(
+    'SELECT M_Email FROM member WHERE M_ID = ?',
+    [memberId]
+  );
+  const callerEmail = (rows[0]?.M_Email ?? '').toLowerCase();
+  if (!callerEmail || callerEmail !== inviteEmail.toLowerCase()) {
+    res.status(403).json({
+      error: 'هذه الدعوة موجّهة لإيميل مختلف',
+      reason: 'email_mismatch',
+    });
+    return null;
+  }
+  return { memberId, email: callerEmail };
+}
+
+/**
+ * POST /team-invitations/:token/accept
+ * Auth required. The caller must be a PARTICIPANT whose email matches the
+ * invite. We insert their applies_hackathon row (inheriting the leader's
+ * idea) and mark the invite accepted in one transaction.
+ */
+export const acceptTeamInvite = async (req: Request, res: Response) => {
+  const token = String(req.params.token ?? '').trim();
+  if (!token) {
+    return res.status(400).json({ error: 'token غير صالح' });
+  }
+
+  const ctx = await loadTeamInviteContext(token);
+  if (!ctx) {
+    return res.status(404).json({ error: 'الدعوة غير موجودة' });
+  }
+
+  const status = effectiveInviteStatus(ctx);
+  if (status === 'accepted') {
+    return res.status(409).json({ error: 'الدعوة مقبولة مسبقاً', reason: 'already_accepted' });
+  }
+  if (status === 'declined') {
+    return res.status(409).json({ error: 'الدعوة مرفوضة مسبقاً', reason: 'already_declined' });
+  }
+  if (status === 'expired') {
+    return res.status(410).json({ error: 'انتهت صلاحية الدعوة', reason: 'expired' });
+  }
+
+  const caller = await ensureInviteRecipient(req, res, ctx.TI_Email);
+  if (!caller) return;
+
+  // Caller can't already be in this hackathon (would be a double-registration).
+  interface AlreadyRow extends RowDataPacket { PM_ID: number; T_ID: number | null }
+  const [alreadyRows] = await pool.query<AlreadyRow[]>(
+    'SELECT PM_ID, T_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
+    [caller.memberId, ctx.hackathon_ID]
+  );
+  if (alreadyRows.length > 0) {
+    const reason = alreadyRows[0].T_ID === null ? 'already_solo' : 'already_in_team';
+    return res.status(409).json({
+      error:
+        reason === 'already_solo'
+          ? 'أنت مسجّل في هذا الهاكاثون كفرد. احذف تسجيلك أولاً لقبول الدعوة'
+          : 'أنت عضو في فريق آخر في هذا الهاكاثون. غادر فريقك أولاً لقبول الدعوة',
+      reason,
+    });
+  }
+
+  // The leader must have an applies_hackathon row with the idea — sanity check.
+  if (!ctx.idea_title || !ctx.idea_description) {
+    return res.status(500).json({ error: 'بيانات الفكرة غير مكتملة', reason: 'idea_missing' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Check team capacity inside the transaction so we don't oversubscribe.
+    interface SizeRow extends RowDataPacket { cnt: number }
+    const [sizeRows] = await conn.query<SizeRow[]>(
+      'SELECT COUNT(*) AS cnt FROM applies_hackathon WHERE T_ID = ? FOR UPDATE',
+      [ctx.T_ID]
+    );
+    if (sizeRows[0].cnt >= ctx.H_Team_Max) {
+      await conn.rollback();
+      return res.status(409).json({ error: 'الفريق مكتمل', reason: 'team_full' });
+    }
+
+    await conn.execute(
+      `INSERT INTO applies_hackathon
+         (PM_ID, hackathon_ID, idea_title, idea_description, participation_type, team_method, T_ID)
+       VALUES (?, ?, ?, ?, 'team', 'manual', ?)`,
+      [caller.memberId, ctx.hackathon_ID, ctx.idea_title, ctx.idea_description, ctx.T_ID]
+    );
+
+    await conn.execute(
+      `UPDATE team_invitation
+          SET TI_Status = 'accepted', TI_RespondedAt = NOW()
+        WHERE TI_ID = ?`,
+      [ctx.TI_ID]
+    );
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    console.error('acceptTeamInvite error:', err);
+    return res.status(500).json({
+      error: 'فشل قبول الدعوة',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    conn.release();
+  }
+
+  return res.json({
+    ok: true,
+    teamId: ctx.T_ID,
+    teamName: ctx.T_name,
+    hackathonId: ctx.hackathon_ID,
+  });
+};
+
+/**
+ * POST /team-invitations/:token/decline
+ * Auth required (same email match rule as accept). Just flips the status —
+ * doesn't touch applies_hackathon since the invitee was never enrolled.
+ */
+export const declineTeamInvite = async (req: Request, res: Response) => {
+  const token = String(req.params.token ?? '').trim();
+  if (!token) {
+    return res.status(400).json({ error: 'token غير صالح' });
+  }
+
+  const ctx = await loadTeamInviteContext(token);
+  if (!ctx) {
+    return res.status(404).json({ error: 'الدعوة غير موجودة' });
+  }
+
+  const status = effectiveInviteStatus(ctx);
+  if (status === 'accepted') {
+    return res.status(409).json({ error: 'الدعوة مقبولة مسبقاً', reason: 'already_accepted' });
+  }
+  if (status === 'declined') {
+    return res.status(409).json({ error: 'الدعوة مرفوضة مسبقاً', reason: 'already_declined' });
+  }
+  if (status === 'expired') {
+    return res.status(410).json({ error: 'انتهت صلاحية الدعوة', reason: 'expired' });
+  }
+
+  const caller = await ensureInviteRecipient(req, res, ctx.TI_Email);
+  if (!caller) return;
+
+  await pool.execute(
+    `UPDATE team_invitation
+        SET TI_Status = 'declined', TI_RespondedAt = NOW()
+      WHERE TI_ID = ?`,
+    [ctx.TI_ID]
+  );
+
+  return res.json({ ok: true });
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Team Management — add/resend/cancel/list invites, withdraw, transfer lead
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface LeaderTeamRow extends RowDataPacket {
+  T_ID: number;
+  T_name: string;
+  hackathon_ID: number;
+  H_title: string;
+  H_Team_Min: number;
+  H_Team_Max: number;
+  H_Registration_EndDate: Date | null;
+}
+
+/**
+ * Loads the team led by `memberId` in `hackathonId`. Returns null if the caller
+ * isn't currently the leader (covers both "no team" and "demoted from leader").
+ * The hackathon fields come along since most endpoints need them anyway.
+ */
+async function loadTeamForLeader(
+  memberId: number,
+  hackathonId: number,
+): Promise<LeaderTeamRow | null> {
+  const [rows] = await pool.query<LeaderTeamRow[]>(
+    `SELECT t.T_ID, t.T_name, t.hackathon_ID,
+            h.H_title, h.H_Team_Min, h.H_Team_Max, h.H_Registration_EndDate
+       FROM team t
+       JOIN hackathon h ON h.hackathon_ID = t.hackathon_ID
+      WHERE t.hackathon_ID = ? AND t.T_LeaderId = ?
+      LIMIT 1`,
+    [hackathonId, memberId],
+  );
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * Counts current "slots used" toward team capacity:
+ * accepted members (rows in applies_hackathon with this T_ID) + pending invites.
+ */
+async function countTeamCapacityUsed(teamId: number): Promise<number> {
+  interface CntRow extends RowDataPacket { cnt: number }
+  const [memberRows] = await pool.query<CntRow[]>(
+    'SELECT COUNT(*) AS cnt FROM applies_hackathon WHERE T_ID = ?',
+    [teamId],
+  );
+  const [pendingRows] = await pool.query<CntRow[]>(
+    "SELECT COUNT(*) AS cnt FROM team_invitation WHERE T_ID = ? AND TI_Status = 'pending'",
+    [teamId],
+  );
+  return memberRows[0].cnt + pendingRows[0].cnt;
+}
+
+function registrationOpen(regEnd: Date | null): boolean {
+  if (!regEnd) return false;
+  return new Date(regEnd).getTime() > Date.now();
+}
+
+/**
+ * POST /participants/hackathons/:id/team-invites
+ * Leader adds more invites to their team after initial registration. Capacity
+ * = accepted members + pending invites; new invites can't push this past
+ * H_Team_Max. Same email validation as initial registration.
+ */
+export const addTeamInvites = async (req: Request, res: Response) => {
+  if (!ensureParticipant(req, res)) return;
+  const hackathonId = Number(req.params.id);
+  if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
+    return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+
+  const team = await loadTeamForLeader(memberId, hackathonId);
+  if (!team) {
+    return res.status(403).json({ error: 'لا تملك صلاحية إدارة دعوات هذا الفريق', reason: 'not_leader' });
+  }
+  if (!registrationOpen(team.H_Registration_EndDate)) {
+    return res.status(400).json({ error: 'انتهى وقت التسجيل، لا يمكن تعديل الدعوات', reason: 'registration_closed' });
+  }
+
+  const rawEmails = req.body?.inviteEmails;
+  if (!Array.isArray(rawEmails)) {
+    return res.status(400).json({ error: 'inviteEmails يجب أن تكون قائمة' });
+  }
+
+  // Reuse the same validation as initial registration. We pass teamMin=1 so
+  // the "at least teamMin-1" floor doesn't apply (the team already exists).
+  const validation = await validateManualTeamInvites(
+    rawEmails,
+    memberId,
+    hackathonId,
+    /* teamMin */ 1,
+    team.H_Team_Max,
+  );
+  if (!validation.ok) {
+    return res.status(validation.status).json({ error: validation.error, detail: validation.detail });
+  }
+
+  // Reject emails that already have a pending/accepted invite for this team.
+  interface ExistingRow extends RowDataPacket { TI_Email: string }
+  const placeholders = validation.emails.map(() => '?').join(',');
+  const [existingRows] = await pool.query<ExistingRow[]>(
+    `SELECT LOWER(TI_Email) AS TI_Email
+       FROM team_invitation
+      WHERE T_ID = ?
+        AND TI_Status IN ('pending', 'accepted')
+        AND LOWER(TI_Email) IN (${placeholders})`,
+    [team.T_ID, ...validation.emails],
+  );
+  if (existingRows.length > 0) {
+    return res.status(409).json({
+      error: 'بعض الإيميلات لها دعوة سارية مسبقاً في فريقك',
+      detail: existingRows.map((r) => r.TI_Email).join(', '),
+    });
+  }
+
+  // Capacity check: existing (members + pending) + new invites ≤ team max.
+  const used = await countTeamCapacityUsed(team.T_ID);
+  if (used + validation.emails.length > team.H_Team_Max) {
+    return res.status(409).json({
+      error: `الفريق ممتلئ. لديك ${used} من ${team.H_Team_Max} مقاعد مشغولة`,
+      reason: 'team_full',
+    });
+  }
+
+  // Pull the idea snapshot for the email template.
+  interface IdeaRow extends RowDataPacket { idea_title: string }
+  const [ideaRows] = await pool.query<IdeaRow[]>(
+    'SELECT idea_title FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
+    [memberId, hackathonId],
+  );
+  const ideaTitle = ideaRows[0]?.idea_title ?? '—';
+
+  interface LeaderNameRow extends RowDataPacket { M_FName: string; M_LName: string }
+  const [leaderRows] = await pool.query<LeaderNameRow[]>(
+    'SELECT M_FName, M_LName FROM member WHERE M_ID = ?',
+    [memberId],
+  );
+  const leaderName = leaderRows.length > 0
+    ? `${leaderRows[0].M_FName} ${leaderRows[0].M_LName}`.trim()
+    : 'القائد';
+
+  // Compute expiry now so all invites in this batch share it.
+  const sevenDays = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const regEndMs = team.H_Registration_EndDate
+    ? new Date(team.H_Registration_EndDate).getTime()
+    : sevenDays;
+  const expiresAt = new Date(Math.min(sevenDays, regEndMs));
+
+  const conn = await pool.getConnection();
+  const records: Array<{ email: string; token: string }> = [];
+  try {
+    await conn.beginTransaction();
+    for (const email of validation.emails) {
+      const token = newInviteToken();
+      await conn.execute(
+        `INSERT INTO team_invitation
+           (T_ID, TI_Email, TI_Token, TI_InvitedBy, TI_ExpiresAt)
+         VALUES (?, ?, ?, ?, ?)`,
+        [team.T_ID, email, token, memberId, expiresAt],
+      );
+      records.push({ email, token });
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    console.error('addTeamInvites error:', err);
+    return res.status(500).json({
+      error: 'فشل إنشاء الدعوات',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    conn.release();
+  }
+
+  for (const inv of records) {
+    const inviteUrl = `${env.frontendUrl}/team-invite/${encodeURIComponent(inv.token)}`;
+    sendTeamInviteEmail({
+      to: inv.email,
+      inviteeName: inv.email,
+      leaderName,
+      teamName: team.T_name,
+      hackathonTitle: team.H_title,
+      ideaTitle,
+      inviteUrl,
+      expiresAt,
+    }).catch((mailErr) => {
+      console.error(`addTeamInvites: sendTeamInviteEmail failed to=${inv.email}`, mailErr);
+    });
+  }
+
+  return res.status(201).json({
+    teamId: team.T_ID,
+    invitedEmails: validation.emails,
+    expiresAt: expiresAt.toISOString(),
+  });
+};
+
+/**
+ * POST /participants/team-invites/:inviteId/resend
+ * Regenerates token + expiry for an expired invite and re-sends the email.
+ * Only allowed for invites whose effective status is 'expired' (declined and
+ * accepted invites cannot be resent — that would override the recipient's
+ * decision or duplicate an existing membership).
+ */
+export const resendTeamInvite = async (req: Request, res: Response) => {
+  if (!ensureParticipant(req, res)) return;
+  const inviteId = Number(req.params.inviteId);
+  if (!Number.isInteger(inviteId) || inviteId <= 0) {
+    return res.status(400).json({ error: 'رقم الدعوة غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+
+  interface LookupRow extends RowDataPacket {
+    TI_ID: number;
+    TI_Email: string;
+    TI_Status: 'pending' | 'accepted' | 'declined' | 'expired';
+    TI_ExpiresAt: Date | null;
+    T_ID: number;
+    T_name: string;
+    T_LeaderId: number;
+    hackathon_ID: number;
+    H_title: string;
+    H_Registration_EndDate: Date | null;
+    idea_title: string | null;
+    leader_first: string;
+    leader_last: string;
+  }
+  const [rows] = await pool.query<LookupRow[]>(
+    `SELECT ti.TI_ID, ti.TI_Email, ti.TI_Status, ti.TI_ExpiresAt,
+            t.T_ID, t.T_name, t.T_LeaderId, t.hackathon_ID,
+            h.H_title, h.H_Registration_EndDate,
+            leaderApp.idea_title,
+            leader.M_FName AS leader_first, leader.M_LName AS leader_last
+       FROM team_invitation ti
+       JOIN team t ON t.T_ID = ti.T_ID
+       JOIN hackathon h ON h.hackathon_ID = t.hackathon_ID
+       JOIN member leader ON leader.M_ID = t.T_LeaderId
+       LEFT JOIN applies_hackathon leaderApp
+         ON leaderApp.PM_ID = t.T_LeaderId AND leaderApp.hackathon_ID = t.hackathon_ID
+      WHERE ti.TI_ID = ?
+      LIMIT 1`,
+    [inviteId],
+  );
+  if (rows.length === 0) {
+    return res.status(404).json({ error: 'الدعوة غير موجودة' });
+  }
+  const inv = rows[0];
+
+  if (inv.T_LeaderId !== memberId) {
+    return res.status(403).json({ error: 'لا تملك صلاحية إعادة إرسال هذه الدعوة', reason: 'not_leader' });
+  }
+  if (!registrationOpen(inv.H_Registration_EndDate)) {
+    return res.status(400).json({ error: 'انتهى وقت التسجيل', reason: 'registration_closed' });
+  }
+  if (inv.TI_Status === 'accepted') {
+    return res.status(409).json({ error: 'الدعوة مقبولة بالفعل', reason: 'already_accepted' });
+  }
+  if (inv.TI_Status === 'declined') {
+    return res.status(409).json({ error: 'الدعوة مرفوضة من المدعو، لا يمكن إعادة الإرسال', reason: 'already_declined' });
+  }
+  // Effective expiry check
+  const now = Date.now();
+  const recordedExpired = inv.TI_Status === 'expired';
+  const timeExpired = inv.TI_ExpiresAt && new Date(inv.TI_ExpiresAt).getTime() <= now;
+  if (!recordedExpired && !timeExpired) {
+    return res.status(409).json({ error: 'الدعوة لا تزال سارية، لا حاجة لإعادة الإرسال', reason: 'still_pending' });
+  }
+
+  const sevenDays = now + 7 * 24 * 60 * 60 * 1000;
+  const regEndMs = inv.H_Registration_EndDate
+    ? new Date(inv.H_Registration_EndDate).getTime()
+    : sevenDays;
+  const expiresAt = new Date(Math.min(sevenDays, regEndMs));
+  const newToken = newInviteToken();
+
+  await pool.execute(
+    `UPDATE team_invitation
+        SET TI_Token = ?, TI_Status = 'pending',
+            TI_InvitedAt = NOW(), TI_ExpiresAt = ?, TI_RespondedAt = NULL
+      WHERE TI_ID = ?`,
+    [newToken, expiresAt, inv.TI_ID],
+  );
+
+  const inviteUrl = `${env.frontendUrl}/team-invite/${encodeURIComponent(newToken)}`;
+  sendTeamInviteEmail({
+    to: inv.TI_Email,
+    inviteeName: inv.TI_Email,
+    leaderName: `${inv.leader_first} ${inv.leader_last}`.trim(),
+    teamName: inv.T_name,
+    hackathonTitle: inv.H_title,
+    ideaTitle: inv.idea_title ?? '—',
+    inviteUrl,
+    expiresAt,
+  }).catch((mailErr) => {
+    console.error(`resendTeamInvite: sendTeamInviteEmail failed to=${inv.TI_Email}`, mailErr);
+  });
+
+  return res.json({ inviteId: inv.TI_ID, expiresAt: expiresAt.toISOString() });
+};
+
+/**
+ * DELETE /participants/team-invites/:inviteId
+ * Leader cancels a pending invite. Accepted/declined invites are records of
+ * decisions and can't be canceled — only pending ones can be removed.
+ */
+export const cancelTeamInvite = async (req: Request, res: Response) => {
+  if (!ensureParticipant(req, res)) return;
+  const inviteId = Number(req.params.inviteId);
+  if (!Number.isInteger(inviteId) || inviteId <= 0) {
+    return res.status(400).json({ error: 'رقم الدعوة غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+
+  interface LookupRow extends RowDataPacket {
+    TI_ID: number;
+    TI_Status: 'pending' | 'accepted' | 'declined' | 'expired';
+    T_LeaderId: number;
+    H_Registration_EndDate: Date | null;
+  }
+  const [rows] = await pool.query<LookupRow[]>(
+    `SELECT ti.TI_ID, ti.TI_Status, t.T_LeaderId, h.H_Registration_EndDate
+       FROM team_invitation ti
+       JOIN team t ON t.T_ID = ti.T_ID
+       JOIN hackathon h ON h.hackathon_ID = t.hackathon_ID
+      WHERE ti.TI_ID = ?
+      LIMIT 1`,
+    [inviteId],
+  );
+  if (rows.length === 0) {
+    return res.status(404).json({ error: 'الدعوة غير موجودة' });
+  }
+  const inv = rows[0];
+
+  if (inv.T_LeaderId !== memberId) {
+    return res.status(403).json({ error: 'لا تملك صلاحية إلغاء هذه الدعوة', reason: 'not_leader' });
+  }
+  if (!registrationOpen(inv.H_Registration_EndDate)) {
+    return res.status(400).json({ error: 'انتهى وقت التسجيل', reason: 'registration_closed' });
+  }
+  if (inv.TI_Status !== 'pending') {
+    return res.status(409).json({
+      error: 'يمكن إلغاء الدعوات المعلّقة فقط',
+      reason: 'not_pending',
+    });
+  }
+
+  await pool.execute('DELETE FROM team_invitation WHERE TI_ID = ?', [inv.TI_ID]);
+  return res.json({ ok: true });
+};
+
+/**
+ * GET /participants/hackathons/:id/team-invites
+ * Returns all invitations for the caller's team (whether they're the leader
+ * or an accepted member) so the workspace can display invite status to the
+ * whole team.
+ */
+export const listTeamInvites = async (req: Request, res: Response) => {
+  if (!ensureParticipant(req, res)) return;
+  const hackathonId = Number(req.params.id);
+  if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
+    return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+
+  // Find caller's team in this hackathon (must be an accepted member or leader).
+  interface MyTeamRow extends RowDataPacket { T_ID: number | null; T_LeaderId: number }
+  const [meRows] = await pool.query<MyTeamRow[]>(
+    `SELECT a.T_ID, t.T_LeaderId
+       FROM applies_hackathon a
+       LEFT JOIN team t ON t.T_ID = a.T_ID
+      WHERE a.PM_ID = ? AND a.hackathon_ID = ?
+      LIMIT 1`,
+    [memberId, hackathonId],
+  );
+  if (meRows.length === 0 || meRows[0].T_ID === null) {
+    return res.json({ items: [], isLeader: false });
+  }
+  const myTeamId = meRows[0].T_ID;
+  const isLeader = meRows[0].T_LeaderId === memberId;
+
+  interface InviteRow extends RowDataPacket {
+    TI_ID: number;
+    TI_Email: string;
+    TI_Status: 'pending' | 'accepted' | 'declined' | 'expired';
+    TI_InvitedAt: Date;
+    TI_ExpiresAt: Date | null;
+    TI_RespondedAt: Date | null;
+  }
+  const [rows] = await pool.query<InviteRow[]>(
+    `SELECT TI_ID, TI_Email, TI_Status, TI_InvitedAt, TI_ExpiresAt, TI_RespondedAt
+       FROM team_invitation
+      WHERE T_ID = ?
+      ORDER BY TI_InvitedAt DESC`,
+    [myTeamId],
+  );
+
+  const now = Date.now();
+  const items = rows.map((r) => {
+    // Effective status: a 'pending' row past its expiry should display as 'expired'
+    // even if the DB row hasn't been touched yet.
+    let status = r.TI_Status;
+    if (status === 'pending' && r.TI_ExpiresAt && new Date(r.TI_ExpiresAt).getTime() <= now) {
+      status = 'expired';
+    }
+    return {
+      id: r.TI_ID,
+      email: r.TI_Email,
+      status,
+      invitedAt: r.TI_InvitedAt,
+      expiresAt: r.TI_ExpiresAt,
+      respondedAt: r.TI_RespondedAt,
+    };
+  });
+
+  return res.json({ items, isLeader, teamId: myTeamId });
+};
+
+/**
+ * DELETE /participants/hackathons/:id/my-registration
+ * Caller withdraws from the hackathon. Rules:
+ *   • Solo participant or non-leader team member: row is just deleted.
+ *   • Team leader: only allowed if no other accepted members remain
+ *     (they'd need to transfer leadership first per decision 4-A).
+ *     If alone, the team and all its invitations are deleted with them.
+ */
+export const withdrawFromHackathon = async (req: Request, res: Response) => {
+  if (!ensureParticipant(req, res)) return;
+  const hackathonId = Number(req.params.id);
+  if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
+    return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+
+  interface MyAppRow extends RowDataPacket {
+    PM_ID: number;
+    T_ID: number | null;
+    T_LeaderId: number | null;
+  }
+  const [meRows] = await pool.query<MyAppRow[]>(
+    `SELECT a.PM_ID, a.T_ID, t.T_LeaderId
+       FROM applies_hackathon a
+       LEFT JOIN team t ON t.T_ID = a.T_ID
+      WHERE a.PM_ID = ? AND a.hackathon_ID = ?
+      LIMIT 1`,
+    [memberId, hackathonId],
+  );
+  if (meRows.length === 0) {
+    return res.status(404).json({ error: 'لم تسجّل في هذا الهاكاثون', reason: 'not_registered' });
+  }
+  const me = meRows[0];
+
+  // Registration-window guard
+  interface RegEndRow extends RowDataPacket { H_Registration_EndDate: Date | null }
+  const [regRows] = await pool.query<RegEndRow[]>(
+    'SELECT H_Registration_EndDate FROM hackathon WHERE hackathon_ID = ?',
+    [hackathonId],
+  );
+  if (!registrationOpen(regRows[0]?.H_Registration_EndDate ?? null)) {
+    return res.status(400).json({ error: 'انتهى وقت التسجيل، لا يمكن الانسحاب', reason: 'registration_closed' });
+  }
+
+  // Solo or non-leader team member: simple delete.
+  if (me.T_ID === null || me.T_LeaderId !== memberId) {
+    await pool.execute(
+      'DELETE FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
+      [memberId, hackathonId],
+    );
+    return res.json({ ok: true });
+  }
+
+  // Caller is the leader. They can only withdraw if no other accepted members.
+  interface CntRow extends RowDataPacket { cnt: number }
+  const [otherRows] = await pool.query<CntRow[]>(
+    'SELECT COUNT(*) AS cnt FROM applies_hackathon WHERE T_ID = ? AND PM_ID <> ?',
+    [me.T_ID, memberId],
+  );
+  if (otherRows[0].cnt > 0) {
+    return res.status(409).json({
+      error: 'فريقك يضم أعضاء آخرين. انقل القيادة لأحدهم قبل الانسحاب',
+      reason: 'leader_has_members',
+    });
+  }
+
+  // Lone leader: delete the team (CASCADE removes pending invitations) and
+  // the leader's applies_hackathon row inside a single transaction.
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.execute(
+      'DELETE FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
+      [memberId, hackathonId],
+    );
+    await conn.execute('DELETE FROM team WHERE T_ID = ?', [me.T_ID]);
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    console.error('withdrawFromHackathon (leader) error:', err);
+    return res.status(500).json({
+      error: 'فشل الانسحاب',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    conn.release();
+  }
+
+  return res.json({ ok: true, teamDeleted: true });
+};
+
+/**
+ * POST /participants/hackathons/:id/transfer-leadership
+ * Body: { newLeaderId: <PM_ID> }
+ * Current leader hands the team to an accepted team member, paving the way
+ * for the old leader to withdraw via the regular withdraw endpoint.
+ */
+export const transferTeamLeadership = async (req: Request, res: Response) => {
+  if (!ensureParticipant(req, res)) return;
+  const hackathonId = Number(req.params.id);
+  if (!Number.isInteger(hackathonId) || hackathonId <= 0) {
+    return res.status(400).json({ error: 'رقم الهاكاثون غير صالح' });
+  }
+  const newLeaderId = Number(req.body?.newLeaderId);
+  if (!Number.isInteger(newLeaderId) || newLeaderId <= 0) {
+    return res.status(400).json({ error: 'newLeaderId غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+  if (newLeaderId === memberId) {
+    return res.status(400).json({ error: 'أنت القائد بالفعل' });
+  }
+
+  const team = await loadTeamForLeader(memberId, hackathonId);
+  if (!team) {
+    return res.status(403).json({ error: 'لا تملك صلاحية نقل القيادة', reason: 'not_leader' });
+  }
+  if (!registrationOpen(team.H_Registration_EndDate)) {
+    return res.status(400).json({ error: 'انتهى وقت التسجيل', reason: 'registration_closed' });
+  }
+
+  // The new leader must be an accepted member of the same team.
+  interface MemberCheckRow extends RowDataPacket { PM_ID: number }
+  const [rows] = await pool.query<MemberCheckRow[]>(
+    'SELECT PM_ID FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ? AND T_ID = ?',
+    [newLeaderId, hackathonId, team.T_ID],
+  );
+  if (rows.length === 0) {
+    return res.status(400).json({
+      error: 'العضو المختار ليس عضواً مقبولاً في فريقك',
+      reason: 'not_team_member',
+    });
+  }
+
+  await pool.execute(
+    'UPDATE team SET T_LeaderId = ? WHERE T_ID = ?',
+    [newLeaderId, team.T_ID],
+  );
+
+  return res.json({ ok: true, teamId: team.T_ID, newLeaderId });
 };

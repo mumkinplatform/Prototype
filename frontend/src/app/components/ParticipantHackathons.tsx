@@ -7,6 +7,7 @@ import {
   Trophy,
   Eye,
   Users,
+  User,
   Clock,
   ChevronDown,
   Play,
@@ -29,6 +30,7 @@ interface ApiHackathon {
   skills: string[];
   teamMin: number;
   teamMax: number;
+  participationMode: 'teams_only' | 'individuals_and_teams' | 'individuals_only';
   applicantsCount: number;
   registrationOpen: boolean;
   branding: BrandingPayload | null;
@@ -50,7 +52,9 @@ interface HackathonCard {
   branding: BrandingPayload | null;
   location: string;
   skills: string[];
+  teamMin: number;
   maxTeam: number;
+  participationMode: 'teams_only' | 'individuals_and_teams' | 'individuals_only';
   registrationOpen: boolean;
 }
 
@@ -95,7 +99,9 @@ function toCard(h: ApiHackathon): HackathonCard {
     branding: h.branding,
     location: h.location ?? "—",
     skills: h.skills ?? [],
+    teamMin: h.teamMin,
     maxTeam: h.teamMax,
+    participationMode: h.participationMode,
     registrationOpen: h.registrationOpen,
   };
 }
@@ -306,11 +312,33 @@ export function ParticipantHackathons() {
                   <h3 className="text-gray-900 mb-0.5" style={{ fontWeight: 700, fontSize: "0.95rem" }}>
                     {h.title}
                   </h3>
-                  <p className="text-gray-400 text-xs mb-1 flex items-center gap-1">
-                    {h.org}
+                  <p className="text-gray-400 text-xs mb-1 flex items-center gap-1 flex-wrap">
+                    <span>{h.org}</span>
                     <span className="text-gray-200">•</span>
-                    <MapPin className="w-3 h-3" />
-                    {h.location}
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      {h.location}
+                    </span>
+                    <span className="text-gray-200">•</span>
+                    {h.participationMode === 'individuals_only' ? (
+                      <span className="inline-flex items-center gap-1">
+                        <User className="w-3 h-3 shrink-0" />
+                        مشاركة فردية
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="w-3 h-3 shrink-0" />
+                        {h.teamMin === h.maxTeam ? (
+                          `${h.maxTeam} أعضاء`
+                        ) : (
+                          <>
+                            {/* Source order is reversed (max-min) so the LTR-rendered range
+                                reads naturally as min-max when scanned right-to-left in Arabic. */}
+                            <bdi dir="ltr">{`${h.maxTeam}-${h.teamMin}`}</bdi> أعضاء
+                          </>
+                        )}
+                      </span>
+                    )}
                   </p>
 
                   {/* Skills needed */}
@@ -338,7 +366,7 @@ export function ParticipantHackathons() {
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
                       <Users className="w-3.5 h-3.5 flex-shrink-0" />
-                      {h.teams} متقدم • حتى {h.maxTeam} أعضاء
+                      {h.teams} متقدم
                     </div>
                   </div>
 

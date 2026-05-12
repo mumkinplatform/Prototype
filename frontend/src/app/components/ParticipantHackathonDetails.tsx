@@ -6,20 +6,19 @@ import {
   Trophy,
   Clock,
   Users,
+  User,
   MapPin,
   Star,
   CheckCircle2,
   Globe,
   Shield,
-  Play,
   X,
   Mail,
   Sparkles,
-  UserCheck,
   Building2,
   ChevronLeft,
-  Code,
 } from "lucide-react";
+import { toast } from "sonner";
 import { apiGet, apiPost, ApiError } from "../../lib/api";
 import { HackathonCover, type BrandingPayload } from "./HackathonCover";
 
@@ -98,7 +97,9 @@ interface UiHackathon {
   location: string;
   duration: string;
   participants: number;
+  teamMin: number;
   maxTeam: number;
+  participationMode: string;
   registrationOpen: boolean;
   isRegistered: boolean;
   participationType: "solo" | "team" | null;
@@ -200,7 +201,9 @@ function toUiHackathon(h: ApiHackathonDetail): UiHackathon {
     location: h.location ?? "—",
     duration: formatDuration(h.hackathonStartDate, h.hackathonEndDate),
     participants: h.applicantsCount,
+    teamMin: h.teamMin,
     maxTeam: h.teamMax,
+    participationMode: h.participationMode,
     registrationOpen: h.registrationOpen,
     isRegistered: h.isRegistered,
     participationType: h.participationType,
@@ -216,16 +219,35 @@ function toUiHackathon(h: ApiHackathonDetail): UiHackathon {
 function RegistrationModal({
   hackathonId,
   hackathonTitle,
+  participationMode,
+  teamMin,
+  teamMax,
   onClose,
   onSuccess,
 }: {
   hackathonId: number;
   hackathonTitle: string;
+  participationMode: string;
+  teamMin: number;
+  teamMax: number;
   onClose: () => void;
   onSuccess: (type: "solo" | "team") => void;
 }) {
+  // Manual-team invites have to bring the team up to its minimum size: the
+  // leader counts as 1 member, so they need at least (teamMin - 1) invites
+  // (capped at 1 to keep the rule meaningful for hackathons with teamMin=1).
+  // Capped above at (teamMax - 1) so the leader can never invite more than
+  // the team is allowed to hold.
+  const minInvitesRequired = Math.max(1, teamMin - 1);
+  const maxInvitesAllowed = Math.max(1, teamMax - 1);
   const navigate = useNavigate();
-  const [participationType, setParticipationType] = useState<"solo" | "team" | null>(null);
+  // Pre-select participation type when the hackathon enforces a single mode,
+  // so the modal skips the (single-option) choice screen.
+  const initialType: "solo" | "team" | null =
+    participationMode === "individuals_only" ? "solo"
+    : participationMode === "teams_only" ? "team"
+    : null;
+  const [participationType, setParticipationType] = useState<"solo" | "team" | null>(initialType);
   const [teamMethod, setTeamMethod] = useState<"email" | "ai" | null>(null);
   const [email, setEmail] = useState("");
   const [invitedEmails, setInvitedEmails] = useState<string[]>([]);
@@ -250,21 +272,33 @@ function RegistrationModal({
   ];
  
   const handleAddEmail = () => {
-    if (email && !invitedEmails.includes(email)) {
-      setInvitedEmails([...invitedEmails, email]);
-      setEmail("");
-    }
+    if (!email || invitedEmails.includes(email)) return;
+    if (invitedEmails.length >= maxInvitesAllowed) return;
+    setInvitedEmails([...invitedEmails, email]);
+    setEmail("");
   };
- 
+
   const trimmedTitle = ideaTitle.trim();
   const trimmedDesc = ideaDescription.trim();
   const ideaValid = trimmedTitle.length > 0 && trimmedDesc.length > 0;
+
+  // For the manual team path, the leader needs enough invites to reach
+  // the team's minimum size. We surface this as both: a hint above the
+  // chips, and a hard gate on the confirm button.
+  const needsMoreInvites =
+    participationType === "team" &&
+    teamMethod === "email" &&
+    invitedEmails.length < minInvitesRequired;
 
   const handleConfirm = async () => {
     if (!participationType) return;
     if (participationType === "team" && !teamMethod) return;
     if (!ideaValid) {
       setSubmitError("عنوان الفكرة ونبذتها مطلوبان");
+      return;
+    }
+    if (participationType === "team" && teamMethod === "email" && invitedEmails.length === 0) {
+      setSubmitError("أضف إيميل عضو واحد على الأقل لإكمال التسجيل");
       return;
     }
 
@@ -285,7 +319,14 @@ function RegistrationModal({
         ideaDescription: trimmedDesc,
         participationType,
         ...(backendTeamMethod ? { teamMethod: backendTeamMethod } : {}),
+        ...(backendTeamMethod === "manual" ? { inviteEmails: invitedEmails } : {}),
       });
+
+      if (backendTeamMethod === "manual") {
+        toast.success(`تم التسجيل وإرسال ${invitedEmails.length} دعوة بالإيميل`);
+      } else {
+        toast.success("تم التسجيل بنجاح");
+      }
 
       if (participationType === "team" && teamMethod === "ai") {
         navigate("/participant/matchmaking", { state: { hackathonId } });
@@ -321,36 +362,39 @@ function RegistrationModal({
  
         {/* Body */}
         <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
-          {/* Step 1: Participation Type */}
-          <div>
-            <p className="text-gray-700 text-xs mb-3" style={{ fontWeight: 600 }}>
-              اختر نوع المشاركة:
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {participationOptions.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => {
-                    setParticipationType(opt.id as "solo" | "team");
-                    setTeamMethod(null);
-                  }}
-                  className={`p-3 rounded-xl border-2 text-right transition-all ${
-                    participationType === opt.id
-                      ? "border-[#e35654] bg-[#fef2f2]"
-                      : "border-gray-100 hover:border-gray-200"
-                  }`}
-                >
-                  <div className="text-2xl mb-2">{opt.icon}</div>
-                  <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
-                    {opt.label}
-                  </p>
-                  <p className="text-gray-400" style={{ fontSize: "0.65rem", lineHeight: 1.4 }}>
-                    {opt.desc}
-                  </p>
-                </button>
-              ))}
+          {/* Step 1: Participation Type — only when the hackathon allows both modes.
+              For individuals_only / teams_only the type is preselected. */}
+          {participationMode === "individuals_and_teams" && (
+            <div>
+              <p className="text-gray-700 text-xs mb-3" style={{ fontWeight: 600 }}>
+                اختر نوع المشاركة:
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {participationOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => {
+                      setParticipationType(opt.id as "solo" | "team");
+                      setTeamMethod(null);
+                    }}
+                    className={`p-3 rounded-xl border-2 text-right transition-all ${
+                      participationType === opt.id
+                        ? "border-[#e35654] bg-[#fef2f2]"
+                        : "border-gray-100 hover:border-gray-200"
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">{opt.icon}</div>
+                    <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
+                      {opt.label}
+                    </p>
+                    <p className="text-gray-400" style={{ fontSize: "0.65rem", lineHeight: 1.4 }}>
+                      {opt.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
  
           {/* Step 2: Team Method */}
           {participationType === "team" && (
@@ -421,6 +465,26 @@ function RegistrationModal({
                           ))}
                         </div>
                       )}
+                      {/* Hint: how many invites the leader still needs to add. */}
+                      <p
+                        className={`mt-1 ${needsMoreInvites ? "text-[#e35654]" : "text-gray-400"}`}
+                        style={{ fontSize: "0.65rem", fontWeight: 600 }}
+                      >
+                        {/* Use the partitive "من + plural noun" pattern so the
+                            sentence stays grammatical for any count (Arabic
+                            agreement otherwise differs for 1 / 2 / 3-10 / 11+).
+                            Each digit is wrapped in <bdi> to anchor its
+                            position inside the RTL paragraph. */}
+                        {needsMoreInvites ? (
+                          <>
+                            أضف <bdi>{minInvitesRequired - invitedEmails.length}</bdi> من الإيميلات — الحد الأدنى للفريق <bdi>{teamMin}</bdi> أعضاء
+                          </>
+                        ) : (
+                          <>
+                            أضفت <bdi>{invitedEmails.length}</bdi> من <bdi>{maxInvitesAllowed}</bdi>
+                          </>
+                        )}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -469,7 +533,13 @@ function RegistrationModal({
 
           {/* Step 3: Idea (required for everyone) */}
           {participationType && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
+            <div
+              className={`space-y-2 ${
+                participationMode === "individuals_and_teams" || participationType === "team"
+                  ? "pt-2 border-t border-gray-100"
+                  : ""
+              }`}
+            >
               <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
                 نبذة عن الفكرة <span className="text-[#e35654]">*</span>
               </p>
@@ -517,10 +587,15 @@ function RegistrationModal({
               !participationType ||
               (participationType === "team" && !teamMethod) ||
               !ideaValid ||
+              needsMoreInvites ||
               submitting
             }
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm transition-all ${
-              participationType && (participationType === "solo" || teamMethod) && ideaValid && !submitting
+              participationType
+                && (participationType === "solo" || teamMethod)
+                && ideaValid
+                && !needsMoreInvites
+                && !submitting
                 ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             }`}
@@ -722,10 +797,25 @@ export function ParticipantHackathonDetails() {
                 {hackathon.desc}
               </p>
               <div className="grid grid-cols-2 gap-3 mt-5 pt-5 border-t border-gray-100">
-                {[
-                  { label: "المتقدمون", value: hackathon.participants, icon: Users, color: "#6366f1" },
-                  { label: "الحد الأقصى للفريق", value: `${hackathon.maxTeam} أعضاء`, icon: Shield, color: "#10b981" },
-                ].map((s, i) => (
+                {([
+                  { label: "المتقدمون", value: hackathon.participants as React.ReactNode, icon: Users, color: "#6366f1" },
+                  hackathon.participationMode === 'individuals_only'
+                    ? { label: "نوع المشاركة", value: "فردية" as React.ReactNode, icon: User, color: "#10b981" }
+                    : {
+                        label: "حجم الفريق",
+                        value: hackathon.teamMin === hackathon.maxTeam ? (
+                          `${hackathon.maxTeam} أعضاء`
+                        ) : (
+                          <>
+                            {/* Source order reversed (max-min) so the LTR-rendered range reads
+                                naturally as min-max when scanned right-to-left in Arabic. */}
+                            <bdi dir="ltr">{`${hackathon.maxTeam}-${hackathon.teamMin}`}</bdi> أعضاء
+                          </>
+                        ) as React.ReactNode,
+                        icon: Shield,
+                        color: "#10b981",
+                      },
+                ]).map((s, i) => (
                   <div key={i} className="text-center p-3 rounded-xl bg-gray-50">
                     <s.icon className="w-4 h-4 mx-auto mb-1.5" style={{ color: s.color }} />
                     <p className="text-gray-900" style={{ fontWeight: 800, fontSize: "1.2rem" }}>{s.value}</p>
@@ -734,23 +824,7 @@ export function ParticipantHackathonDetails() {
                 ))}
               </div>
             </div>
- 
-           
-              <div className="mt-4 p-3 bg-[#eef2ff] rounded-xl border border-[#6366f1]/20 flex items-center gap-3">
-                <Sparkles className="w-4 h-4 text-[#6366f1] flex-shrink-0" />
-                <p className="text-[#6366f1] text-xs" style={{ fontWeight: 500 }}>
-                  استخدم AI Matching لإيجاد زملاء يكملون مهاراتك في هذا الهاكاثون
-                </p>
-                <button
-                  onClick={() => navigate("/participant/matchmaking", { state: { hackathonId: hackathon.id } })}
-                  className="text-[#6366f1] text-xs hover:underline flex-shrink-0"
-                  style={{ fontWeight: 700 }}
-                >
-                  جرّبه الآن
-                </button>
-              </div>
-            
- 
+
             {/* Prizes */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="text-gray-900 mb-4 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1rem" }}>
@@ -938,10 +1012,7 @@ export function ParticipantHackathonDetails() {
                   <h3 className="text-gray-900 mb-1" style={{ fontWeight: 700, fontSize: "0.95rem" }}>
                     سجّل مشاركتك الآن
                   </h3>
-                  <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-                    شارك فردياً أو كوّن فريقاً مع زملائك أو دع الذكاء الاصطناعي يختار لك أفضل الأعضاء
-                  </p>
- 
+
                   {/* Quick info */}
                   <div className="space-y-2 mb-4">
                     <div className="flex items-center justify-between text-xs">
@@ -949,8 +1020,27 @@ export function ParticipantHackathonDetails() {
                       <span className="text-[#e35654]" style={{ fontWeight: 600 }}>{hackathon.deadline}</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-400">حجم الفريق</span>
-                      <span className="text-gray-700" style={{ fontWeight: 600 }}>حتى {hackathon.maxTeam} أعضاء</span>
+                      {hackathon.participationMode === 'individuals_only' ? (
+                        <>
+                          <span className="text-gray-400">نوع المشاركة</span>
+                          <span className="text-gray-700" style={{ fontWeight: 600 }}>فردية</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-gray-400">حجم الفريق</span>
+                          <span className="text-gray-700" style={{ fontWeight: 600 }}>
+                            {hackathon.teamMin === hackathon.maxTeam ? (
+                              `${hackathon.maxTeam} أعضاء`
+                            ) : (
+                              <>
+                                {/* Source order reversed (max-min) so the LTR-rendered range reads
+                                    naturally as min-max when scanned right-to-left in Arabic. */}
+                                <bdi dir="ltr">{`${hackathon.maxTeam}-${hackathon.teamMin}`}</bdi> أعضاء
+                              </>
+                            )}
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-gray-400">المتقدمون</span>
@@ -963,7 +1053,6 @@ export function ParticipantHackathonDetails() {
                     className="w-full py-3 rounded-xl text-sm bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/25 transition-all flex items-center justify-center gap-2"
                     style={{ fontWeight: 600 }}
                   >
-                    <Play className="w-4 h-4" />
                     سجّل الآن
                     <ChevronLeft className="w-4 h-4" />
                   </button>
@@ -1005,7 +1094,6 @@ export function ParticipantHackathonDetails() {
                 </div>
                 <div>
                   <p className="text-gray-900" style={{ fontWeight: 700 }}>{hackathon.org}</p>
-                  <p className="text-gray-400 text-xs">جهة رسمية موثّقة ✓</p>
                 </div>
               </div>
               <div className="space-y-2 text-xs text-gray-500">
@@ -1024,30 +1112,6 @@ export function ParticipantHackathonDetails() {
               </div>
             </div>
  
-            {/* Why Participate */}
-            <div className="bg-[#e35654] rounded-2xl p-5 text-white">
-              <h3 className="mb-3" style={{ fontWeight: 700, fontSize: "0.9rem" }}>
-                🚀 لماذا تشارك؟
-              </h3>
-              <ul className="space-y-2 text-xs text-white/80">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-white" />
-                  جوائز تصل لـ {hackathon.prize}
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-white" />
-                  تواصل مع {hackathon.participants}+ مشارك متميز
-                </li>
-                <li className="flex items-start gap-2">
-                  <UserCheck className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-white" />
-                  شهادة مشاركة رسمية من {hackathon.org}
-                </li>
-                <li className="flex items-start gap-2">
-                  <Sparkles className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-white" />
-                  فرص توظيف وشراكات مع الرعاة
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
       </div>
@@ -1057,6 +1121,9 @@ export function ParticipantHackathonDetails() {
         <RegistrationModal
           hackathonId={hackathon.id}
           hackathonTitle={hackathon.title}
+          participationMode={hackathon.participationMode}
+          teamMin={hackathon.teamMin}
+          teamMax={hackathon.maxTeam}
           onClose={() => setShowRegModal(false)}
           onSuccess={handleRegistrationSuccess}
         />

@@ -42,6 +42,7 @@ import { ForgotPassword } from "./components/ForgotPassword";
 import { PublicHackathonPage } from "./components/PublicHackathonPage";
 import { SystemStatus } from "./components/SystemStatus";
 import { InviteAcceptPage } from "./components/InviteAcceptPage";
+import { TeamInviteAcceptPage } from "./components/TeamInviteAcceptPage";
 
 export const router = createBrowserRouter([
   {
@@ -63,6 +64,8 @@ export const router = createBrowserRouter([
       { path: "hackathon/:slug", Component: PublicHackathonPage },
       /* ── Invitation acceptance landing (public) ── */
       { path: "invite/:token", Component: InviteAcceptPage },
+      /* ── Team invitation acceptance (public; for participant-to-participant invites) ── */
+      { path: "team-invite/:token", Component: TeamInviteAcceptPage },
       /* ── Admin (independent layout) ── */
       {
         path: "admin",
