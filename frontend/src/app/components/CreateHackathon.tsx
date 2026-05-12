@@ -89,7 +89,7 @@ interface FormData {
   endDate: string;
   publicName: string;
   contactEmail: string;
-  visibility: '' | 'public' | 'private';
+  visibility: 'public';
   // Section 3 — registration
   registrationStart: string;
   registrationEnd: string;
@@ -128,8 +128,11 @@ const EMPTY_FORM: FormData = {
   startDate: '',
   endDate: '',
   publicName: '',
+  // Visibility is locked to public — the "private" hackathon flow was removed
+  // since its end-to-end behaviour was inconsistent (registration blocked but
+  // page accessible). Re-introduce only with a coordinated participant flow.
   contactEmail: '',
-  visibility: '',
+  visibility: 'public',
   registrationStart: '',
   registrationEnd: '',
   minAge: '',
@@ -195,8 +198,12 @@ const EMPTY_BRANDING: BrandingState = {
   bannerUploadDataUrl: null,
   bannerPattern: null,
   colorPalette: '',
+  // Default every public-page section to visible. The UI for toggling these
+  // off was never built, so keeping them `false` by default just hides
+  // everything (prizes, sponsors, timeline, etc.) for no reason. New hackathons
+  // start fully visible; we can add per-section toggles later if needed.
   visibleSections: VISIBLE_SECTION_KEYS.reduce(
-    (acc, k) => ({ ...acc, [k]: false }),
+    (acc, k) => ({ ...acc, [k]: true }),
     {} as Record<VisibleKey, boolean>
   ),
 };
@@ -673,7 +680,9 @@ export function CreateHackathon() {
           endDate: datetimeStr(h.H_EndDate),
           publicName: (h.H_public_name as string) ?? '',
           contactEmail: (h.H_contact_email as string) ?? '',
-          visibility: h.H_visibility === 'private' ? 'private' : h.H_visibility === 'public' ? 'public' : '',
+          // Forced to 'public' since the private flow was removed. Any legacy
+          // 'private' rows are surfaced as public from the editor's POV.
+          visibility: 'public',
           registrationStart: datetimeStr(h.H_Registration_StartDate),
           registrationEnd: datetimeStr(h.H_Registration_EndDate),
           // (announcementDate / winnersDate loaded below)
@@ -912,6 +921,18 @@ export function CreateHackathon() {
       // The user can only edit basic + branding in this mode; sending stale org/judge/
       // prize/package state would wipe accepted invitations and active applications.
       if (!isPublishedEdit) {
+        // Replace JUDGES first, then CO-MANAGERS. The co-managers endpoint
+        // runs a cross-role check against the live hackathon_judge table, so
+        // we need to refresh that table to the new state BEFORE the check —
+        // otherwise stale rows (judges the user just removed from the form)
+        // would still trigger a false 409 "role_conflict".
+        await apiPut(`/hackathons/${currentId}/judges`, {
+          judges: judges.map((j) => ({
+            fullName: j.name,
+            email: j.email,
+            specialty: j.specialty,
+          })),
+        });
         await apiPut(`/hackathons/${currentId}/co-managers`, {
           coManagers: organizers.map((o) => ({
             clientId: o.id,
@@ -921,13 +942,6 @@ export function CreateHackathon() {
             role: o.role,
             section: o.section || null,
             permissions: o.permissions,
-          })),
-        });
-        await apiPut(`/hackathons/${currentId}/judges`, {
-          judges: judges.map((j) => ({
-            fullName: j.name,
-            email: j.email,
-            specialty: j.specialty,
           })),
         });
 
@@ -977,7 +991,26 @@ export function CreateHackathon() {
       return true;
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 409) toast.error('الرابط المختصر مستخدم سابقاً');
+        const body = err.body as { error?: string; conflicts?: string[]; message?: string } | undefined;
+        if (err.status === 409) {
+          // 409 can be a slug clash OR a role conflict (same email in two
+          // roles). Read the body to surface the actual reason — the old
+          // catch-all message ("الرابط مستخدم") was misleading for everything
+          // except the slug case.
+          if (body?.error === 'role_conflict' && Array.isArray(body.conflicts) && body.conflicts.length > 0) {
+            toast.error('تعارض في الأدوار', {
+              description: body.conflicts.join(' — '),
+              duration: 8000,
+            });
+          } else if (body?.error === 'slug already in use') {
+            toast.error('الرابط المختصر مستخدم سابقاً');
+          } else {
+            toast.error(body?.message || 'تعارض في البيانات', {
+              description: Array.isArray(body?.conflicts) ? body!.conflicts!.join(' — ') : undefined,
+              duration: 7000,
+            });
+          }
+        }
         else if (err.status === 401) toast.error('انتهت الجلسة، سجّلي دخول من جديد');
         else if (err.status === 403) toast.error('ليس لديك صلاحية');
         else if (err.status === 404) toast.error('الـ endpoint غير موجود — تأكدي من تشغيل الباكند بآخر تحديث');
@@ -1825,40 +1858,10 @@ export function CreateHackathon() {
                       </div>
                     </div>
 
-                    {/* Visibility */}
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-3" style={{ fontWeight: 600 }}>
-                        الظهور <span className="text-red-500">*</span>
-                      </label>
-                      <div className="space-y-3">
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
-                          <input
-                            type="radio"
-                            name="visibility"
-                            className="mt-1"
-                            checked={form.visibility === 'public'}
-                            onChange={() => updateForm('visibility', 'public')}
-                          />
-                          <div>
-                            <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>هاكاثون عام (Public)</div>
-                            <div className="text-xs text-gray-500 mt-1">يظهر للجميع ويمكن لأي شخص التسجيل</div>
-                          </div>
-                        </label>
-                        <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-[#e35654] hover:bg-red-50 transition-all">
-                          <input
-                            type="radio"
-                            name="visibility"
-                            className="mt-1"
-                            checked={form.visibility === 'private'}
-                            onChange={() => updateForm('visibility', 'private')}
-                          />
-                          <div>
-                            <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>هاكاثون خاص (Private)</div>
-                            <div className="text-xs text-gray-500 mt-1">بدعوة فقط، يتطلب رمز دخول للتسجيل</div>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
+                    {/* Visibility — locked to public. The private flow was
+                        removed because the participant side (registration +
+                        details access) didn't honor it consistently. We keep
+                        the column in DB for future re-introduction. */}
                   </div>
                 </div>
               )}

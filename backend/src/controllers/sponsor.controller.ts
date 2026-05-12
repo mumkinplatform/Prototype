@@ -118,7 +118,7 @@ export const getMyProfile = async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'unauthenticated' });
   }
   if (req.user.role !== 'SPONSOR') {
-    return res.status(403).json({ error: 'sponsor role required' });
+    return res.status(403).json({ error: 'sponsor_required', message: 'هذه العملية متاحة للرعاة فقط' });
   }
 
   const [rows] = await pool.query<SponsorProfileRow[]>(
@@ -149,7 +149,7 @@ export const getMyProfile = async (req: Request, res: Response) => {
 
 export const listOpportunities = async (req: Request, res: Response) => {
   if (!req.user || req.user.role !== 'SPONSOR') {
-    return res.status(403).json({ error: 'sponsor role required' });
+    return res.status(403).json({ error: 'sponsor_required', message: 'هذه العملية متاحة للرعاة فقط' });
   }
 
   // Two-step query — same pattern as participant.listHackathons / listMyRegistered.

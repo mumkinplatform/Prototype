@@ -209,6 +209,9 @@ export function HackathonProjects() {
   // myAccess.role — drives the restricted "judge" view vs the full organizer
   // view of this section. Loaded from getHackathon; null while loading.
   const [myRole, setMyRole] = useState<'owner' | 'co_manager' | 'judge' | null>(null);
+  // For co-managers, also track manager-vs-staff. Date editing is a manager-
+  // only action even when the staff has access to the section.
+  const [myCoManagerRole, setMyCoManagerRole] = useState<'manager' | 'staff' | null>(null);
   const [loadingMyRole, setLoadingMyRole] = useState(true);
   // Live submission + judging dates from the hackathon row — used by the
   // header timeline cards and as bounds for the date-chain validation in the
@@ -231,7 +234,7 @@ export function HackathonProjects() {
   useEffect(() => {
     if (!hackathonId) return;
     apiGet<{
-      myAccess: { role: 'owner' | 'co_manager' | 'judge' } | null;
+      myAccess: { role: 'owner' | 'co_manager' | 'judge'; coManagerRole?: 'manager' | 'staff' } | null;
       hackathon: {
         H_Hackathon_StartDate: string | null;
         H_Submission_StartDate: string | null;
@@ -243,6 +246,7 @@ export function HackathonProjects() {
     }>(`/hackathons/${hackathonId}`)
       .then((r) => {
         setMyRole(r.myAccess?.role ?? null);
+        setMyCoManagerRole(r.myAccess?.coManagerRole ?? null);
         setHackathonDates({
           hackathonStart: r.hackathon.H_Hackathon_StartDate,
           submissionStart: r.hackathon.H_Submission_StartDate,
@@ -1102,7 +1106,10 @@ export function HackathonProjects() {
                     </p>
                   </div>
                 </div>
-                {!isJudge && (
+                {/* Edit-dates button: owners + section MANAGERS only.
+                    Staff have section access but date changes affect everyone
+                    in the hackathon, so we keep them at the manager tier. */}
+                {!isJudge && myCoManagerRole !== 'staff' && (
                   <button
                     onClick={() => setShowEditDeadlineModal(true)}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-sm text-sm transition-all"
@@ -1655,14 +1662,17 @@ export function HackathonProjects() {
                     <p className="text-base" style={{ fontWeight: 700 }}>{evaluationEnd}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowEditDeadlineModal(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-sm text-sm transition-all"
-                  style={{ fontWeight: 600 }}
-                >
-                  <Edit className="w-4 h-4" />
-                  تعديل المواعيد
-                </button>
+                {/* Edit-dates button: owners + section MANAGERS only. */}
+                {myCoManagerRole !== 'staff' && (
+                  <button
+                    onClick={() => setShowEditDeadlineModal(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-sm text-sm transition-all"
+                    style={{ fontWeight: 600 }}
+                  >
+                    <Edit className="w-4 h-4" />
+                    تعديل المواعيد
+                  </button>
+                )}
               </div>
             </div>
 

@@ -153,7 +153,11 @@ export function PublicHackathonPage() {
   const logoPattern = branding.logoMode === 'pattern' ? (branding.logoPattern as string) : null;
   const bannerUploadDataUrl = branding.bannerMode === 'upload' ? (branding.bannerUploadDataUrl as string) : null;
   const bannerPattern = branding.bannerMode === 'pattern' ? (branding.bannerPattern as string) : null;
-  const visibleSections = (branding.visibleSections as Record<string, boolean> | undefined) ?? {};
+  // `visibleSections` originally lived in the branding payload to drive
+  // participant-side tabs (announcements/sessions/etc.), not the public page.
+  // It was wired here by mistake, hiding prizes/sponsors/timeline whenever the
+  // organizer flag happened to be false. The public page now always shows a
+  // section if it has data — the flag is intentionally ignored.
 
   const renderLogo = (className = 'w-full h-full object-contain') => {
     if (logoUploadDataUrl) return <img src={logoUploadDataUrl} alt="logo" className={className} />;
@@ -190,9 +194,10 @@ export function PublicHackathonPage() {
   if (h.H_Hackathon_StartDate) milestones.push({ date: fmtDateShort(h.H_Hackathon_StartDate), label: 'بدء الهاكاثون' });
   if (h.H_Winners_Date) milestones.push({ date: fmtDateShort(h.H_Winners_Date), label: 'إعلان الفائزين' });
 
-  const showTimeline = visibleSections.timeline !== false && milestones.length > 0;
-  const showSponsors = visibleSections.sponsors !== false && data.sponsorPackages.length > 0;
-  const showPrizes = visibleSections.prizes !== false && data.prizes.length > 0;
+  // Sections appear on the public page whenever there's content to show.
+  const showTimeline = milestones.length > 0;
+  const showSponsors = data.sponsorPackages.length > 0;
+  const showPrizes = data.prizes.length > 0;
 
   return (
     <div dir="rtl" className="bg-white min-h-screen font-sans">

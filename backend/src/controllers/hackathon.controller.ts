@@ -183,6 +183,29 @@ async function ensureSectionAccess(
   return rows.length > 0;
 }
 
+// Stricter than `ensureSectionAccess`: requires the user to be the section's
+// MANAGER (HCM_Role='manager'), not just any staff with access. Used for
+// operations that change shared hackathon-wide state (dates, deadlines, etc.)
+// where staff-level access wouldn't be appropriate.
+async function ensureSectionManagerAccess(
+  hackathonId: number,
+  memberId: number,
+  section: Section,
+): Promise<boolean> {
+  if (await ensureOwner(hackathonId, memberId)) return true;
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT 1 FROM hackathon_co_manager
+       WHERE hackathon_ID = ?
+         AND M_ID = ?
+         AND HCM_Section = ?
+         AND HCM_Role = 'manager'
+         AND HCM_InviteStatus = 'accepted'
+       LIMIT 1`,
+    [hackathonId, memberId, section],
+  );
+  return rows.length > 0;
+}
+
 // Read-only access to the projects/evaluation section. Like ensureSectionAccess('projects')
 // but ALSO allows accepted judges since they need to view criteria + their assignments
 // to do their evaluations. Mutations (criteria edit, judge management, distribution)
@@ -268,7 +291,7 @@ export const listMyHackathons = async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'unauthenticated' });
   }
   if (req.user.role !== 'ORGANIZER') {
-    return res.status(403).json({ error: 'only organizers can list their hackathons' });
+    return res.status(403).json({ error: 'not_organizer', message: 'هذه الصفحة متاحة للمنظمين فقط' });
   }
 
   try {
@@ -369,7 +392,7 @@ export const checkSlug = async (req: Request, res: Response) => {
 
 export const createHackathon = async (req: Request, res: Response) => {
   if (!req.user || req.user.role !== 'ORGANIZER') {
-    return res.status(403).json({ error: 'only organizers can create hackathons' });
+    return res.status(403).json({ error: 'not_organizer', message: 'فقط المنظمون يقدرون ينشئون هاكاثون' });
   }
 
   const memberId = req.user.memberId;
@@ -380,7 +403,7 @@ export const createHackathon = async (req: Request, res: Response) => {
       [memberId]
     );
     if (adminRows.length === 0) {
-      return res.status(403).json({ error: 'organizer profile not initialized' });
+      return res.status(403).json({ error: 'organizer_profile_missing', message: 'ملف المنظم غير مفعّل، راجع الإدارة' });
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
@@ -419,7 +442,7 @@ export const getHackathon = async (req: Request, res: Response) => {
     // hackathons are visible to anyone authenticated.
     if (h.H_status === 'draft') {
       if (!req.user) {
-        return res.status(403).json({ error: 'forbidden' });
+        return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
       }
       if (req.user.memberId !== h.HAM_ID) {
         const [myRows] = await pool.query<RowDataPacket[]>(
@@ -428,7 +451,7 @@ export const getHackathon = async (req: Request, res: Response) => {
           [id, req.user.memberId],
         );
         if (myRows.length === 0) {
-          return res.status(403).json({ error: 'forbidden' });
+          return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
         }
       }
     }
@@ -552,12 +575,44 @@ export const updateHackathon = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'invalid id' });
   }
 
-  const owned = await ensureOwner(id, req.user.memberId);
-  if (!owned) {
-    return res.status(403).json({ error: 'forbidden' });
+  // Three tiers of write access on this endpoint:
+  //   1) owner            → may update any field
+  //   2) projects manager → may update submission + judging dates only
+  //   3) registrations    → may update registration + announcement dates only
+  // Anyone else gets 403. We compute the allowed-field whitelist based on the
+  // caller's role so the date-edit modals on the section pages work without
+  // exposing the rest of the hackathon to unauthorized edits.
+  const isOwner = await ensureOwner(id, req.user.memberId);
+  // Use the MANAGER-only check: staff have read/work access on their section
+  // but date changes are a manager-level decision (deadlines affect everyone).
+  const canEditProjectsSection = !isOwner
+    && (await ensureSectionManagerAccess(id, req.user.memberId, 'projects'));
+  const canEditRegistrationsSection = !isOwner && !canEditProjectsSection
+    && (await ensureSectionManagerAccess(id, req.user.memberId, 'registrations'));
+  if (!isOwner && !canEditProjectsSection && !canEditRegistrationsSection) {
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتعديل بيانات الهاكاثون' });
   }
 
+  // Per-section field whitelists. The keys match the request body fields the
+  // section managers actually send from their date-edit modals.
+  const PROJECTS_FIELDS = new Set(['submissionStart', 'submissionEnd', 'judgingStart', 'judgingEnd']);
+  const REGISTRATIONS_FIELDS = new Set(['registrationStart', 'registrationEnd', 'announcementDate']);
+
   const b = req.body ?? {};
+
+  // Reject the request early if a co-manager tries to touch fields outside
+  // their section. Cleaner than silently dropping them.
+  if (!isOwner) {
+    const allowed = canEditProjectsSection ? PROJECTS_FIELDS : REGISTRATIONS_FIELDS;
+    const submitted = Object.keys(b);
+    const disallowed = submitted.filter((k) => !allowed.has(k));
+    if (disallowed.length > 0) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: `ليس لديك صلاحية لتعديل: ${disallowed.join(', ')}`,
+      });
+    }
+  }
 
   const fields: { col: string; val: unknown }[] = [];
 
@@ -696,7 +751,7 @@ export const replaceTracks = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const tracks = Array.isArray(req.body?.tracks) ? req.body.tracks : null;
   if (!tracks) return res.status(400).json({ error: 'tracks must be an array' });
@@ -826,7 +881,7 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const items = Array.isArray(req.body?.coManagers) ? req.body.coManagers : null;
   if (!items) return res.status(400).json({ error: 'coManagers must be an array' });
@@ -890,10 +945,48 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
     });
   }
 
+  // Look up every co-manager already accepted (i.e. anyone who clicked their
+  // invite link and confirmed). Those rows are SACRED — we never delete or
+  // overwrite them in this endpoint, even if the organizer drops them from
+  // the form. The dedicated DELETE endpoint handles intentional removal.
+  // This protects against the "re-save after unpublish wipes accepted invites"
+  // regression we saw earlier.
+  const [acceptedRows] = await pool.query<RowDataPacket[]>(
+    `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section
+       FROM hackathon_co_manager
+      WHERE hackathon_ID = ? AND HCM_InviteStatus = 'accepted'`,
+    [id],
+  );
+  const acceptedEmails = new Set(
+    (acceptedRows as Array<{ HCM_Email: string }>).map((r) => r.HCM_Email.toLowerCase()),
+  );
+
+  // Snapshot the existing pending rows' "email-sent-at" stamps so we can
+  // restore them after the delete-and-reinsert. Without this snapshot,
+  // re-saving the draft resets EmailSentAt to NULL and the next publish
+  // re-emails users who were already notified.
+  const [pendingSnapshotRows] = await pool.query<RowDataPacket[]>(
+    `SELECT HCM_Email, HCM_InviteEmailSentAt
+       FROM hackathon_co_manager
+      WHERE hackathon_ID = ?
+        AND HCM_InviteStatus IN ('pending', 'declined')
+        AND HCM_InviteEmailSentAt IS NOT NULL`,
+    [id],
+  );
+  const previouslyEmailedAt = new Map<string, Date>();
+  for (const r of pendingSnapshotRows as Array<{ HCM_Email: string; HCM_InviteEmailSentAt: Date }>) {
+    previouslyEmailedAt.set(r.HCM_Email.toLowerCase(), r.HCM_InviteEmailSentAt);
+  }
+
+  // Filter `cleaned` so we don't re-insert anyone who is already accepted —
+  // they stay in DB untouched.
+  const toUpsert = cleaned.filter((c) => !acceptedEmails.has(c.email.toLowerCase()));
+
   // Cross-role conflict: same email already assigned to a different role
-  // (judge or participant) in this hackathon.
-  if (cleaned.length > 0) {
-    const emails = cleaned.map((c) => c.email);
+  // (judge or participant) in this hackathon. Only relevant for new/pending
+  // rows being upserted now.
+  if (toUpsert.length > 0) {
+    const emails = toUpsert.map((c) => c.email);
     const placeholders = emails.map(() => '?').join(', ');
 
     const [judgeConflicts] = await pool.query<RowDataPacket[]>(
@@ -916,9 +1009,19 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
     }
   }
 
-  // Enforce: at most one manager per section.
-  const mgrCountBySection = new Map<Section, number>();
-  for (const c of cleaned) {
+  // Manager-per-section rule: count BOTH accepted managers (preserved in DB)
+  // and incoming managers from the form. Two managers for one section is
+  // always rejected regardless of which payload they came in on.
+  const acceptedManagersBySection = new Map<Section, number>();
+  for (const r of acceptedRows as Array<{ HCM_Role: 'manager' | 'staff'; HCM_Section: Section | null }>) {
+    if (r.HCM_Role !== 'manager' || !r.HCM_Section) continue;
+    acceptedManagersBySection.set(
+      r.HCM_Section,
+      (acceptedManagersBySection.get(r.HCM_Section) ?? 0) + 1,
+    );
+  }
+  const mgrCountBySection = new Map<Section, number>(acceptedManagersBySection);
+  for (const c of toUpsert) {
     if (c.role !== 'manager') continue;
     mgrCountBySection.set(c.section, (mgrCountBySection.get(c.section) ?? 0) + 1);
   }
@@ -927,11 +1030,13 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
       errors.push(`قسم "${sec}" به ${count} مديرين — يُسمح بمدير واحد فقط لكل قسم`);
     }
   }
-  // Enforce: every staff must have a manager in their section (in the same payload).
-  const sectionsWithManager = new Set<Section>(
-    cleaned.filter((c) => c.role === 'manager').map((c) => c.section),
-  );
-  for (const c of cleaned) {
+  // Every staff must have a manager in their section — accepted managers
+  // count toward this since they're still active in the hackathon.
+  const sectionsWithManager = new Set<Section>([
+    ...acceptedManagersBySection.keys(),
+    ...toUpsert.filter((c) => c.role === 'manager').map((c) => c.section),
+  ]);
+  for (const c of toUpsert) {
     if (c.role === 'staff' && !sectionsWithManager.has(c.section)) {
       errors.push(`الموظف ${c.fullName} في قسم بدون مدير — أضف مديراً للقسم أولاً`);
     }
@@ -945,22 +1050,40 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
     });
   }
 
-  // Stage 2 — persist. We do parent linking in a second pass after IDs are known.
+  // Stage 2 — persist. We replace only the pending/declined slice, so
+  // accepted rows survive. Parent linking is computed in a second pass after
+  // IDs of the new managers are known.
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     try {
-      await conn.execute('DELETE FROM hackathon_co_manager WHERE hackathon_ID = ?', [id]);
+      await conn.execute(
+        `DELETE FROM hackathon_co_manager
+          WHERE hackathon_ID = ? AND HCM_InviteStatus <> 'accepted'`,
+        [id],
+      );
 
-      // First pass: insert managers, capture section → HCM_ID for staff auto-link.
+      // Build section → manager HCM_ID map. Seed it from accepted managers
+      // already in DB so staff (new or accepted) can still link to them.
       const sectionToManagerHCM = new Map<Section, number>();
-      for (const c of cleaned) {
+      for (const r of acceptedRows as Array<{ HCM_ID: number; HCM_Role: 'manager' | 'staff'; HCM_Section: Section | null }>) {
+        if (r.HCM_Role === 'manager' && r.HCM_Section) {
+          sectionToManagerHCM.set(r.HCM_Section, r.HCM_ID);
+        }
+      }
+
+      // First pass: insert managers from the form. Their IDs replace/extend
+      // the section→manager map. We carry forward HCM_InviteEmailSentAt from
+      // the snapshot so users that were already emailed in a previous publish
+      // don't get re-emailed on the next one.
+      for (const c of toUpsert) {
         if (c.role !== 'manager') continue;
+        const prevSent = previouslyEmailedAt.get(c.email.toLowerCase()) ?? null;
         const [result] = await conn.execute<ResultSetHeader>(
           `INSERT INTO hackathon_co_manager
              (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_Permissions,
-              HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+              HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_InviteEmailSentAt)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?, ?)`,
           [
             id,
             c.fullName,
@@ -970,20 +1093,22 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
             JSON.stringify(c.permissions),
             newInviteToken(),
             inviteExpiry(),
+            prevSent,
           ],
         );
         sectionToManagerHCM.set(c.section, result.insertId);
       }
 
       // Second pass: insert staff, auto-linking each to their section's manager.
-      for (const c of cleaned) {
+      for (const c of toUpsert) {
         if (c.role !== 'staff') continue;
         const parentId = sectionToManagerHCM.get(c.section) ?? null;
+        const prevSent = previouslyEmailedAt.get(c.email.toLowerCase()) ?? null;
         await conn.execute(
           `INSERT INTO hackathon_co_manager
              (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
-              HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+              HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_InviteEmailSentAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?, ?)`,
           [
             id,
             c.fullName,
@@ -994,6 +1119,7 @@ export const replaceCoManagers = async (req: Request, res: Response) => {
             JSON.stringify(c.permissions),
             newInviteToken(),
             inviteExpiry(),
+            prevSent,
           ],
         );
       }
@@ -1050,18 +1176,22 @@ async function findRoleConflicts(
   const conflicts: string[] = [];
   const orgEmail = await getOrganizerEmail(hackathonId);
   if (orgEmail && orgEmail.toLowerCase() === email.toLowerCase()) {
-    conflicts.push('لا يمكن دعوة منشئ الهاكاثون كمنظّم مساعد');
+    conflicts.push('هذا الإيميل مضاف في الهاكاثون كمنشئ الهاكاثون');
   }
 
+  // Look up the real role for this email so the conflict message can name it
+  // (مدير / موظف / حكم / مشارك) instead of a generic label.
   const [coRows] = await pool.query<RowDataPacket[]>(
-    `SELECT HCM_ID FROM hackathon_co_manager
+    `SELECT HCM_ID, HCM_Role FROM hackathon_co_manager
       WHERE hackathon_ID = ? AND LOWER(HCM_Email) = LOWER(?)${
         excludeHcmId ? ' AND HCM_ID <> ?' : ''
       }`,
     excludeHcmId ? [hackathonId, email, excludeHcmId] : [hackathonId, email],
   );
   if (coRows.length > 0) {
-    conflicts.push('هذا الإيميل مضاف أصلاً كمنظّم مساعد في هذا الهاكاثون');
+    const r = coRows[0] as { HCM_Role: 'manager' | 'staff' };
+    const roleLabel = r.HCM_Role === 'manager' ? 'مدير' : 'موظف';
+    conflicts.push(`هذا الإيميل مضاف في الهاكاثون كـ${roleLabel}`);
   }
 
   const [judgeRows] = await pool.query<RowDataPacket[]>(
@@ -1069,7 +1199,7 @@ async function findRoleConflicts(
     [hackathonId, email],
   );
   if (judgeRows.length > 0) {
-    conflicts.push('هذا الإيميل مرتبط بدور حكم في هذا الهاكاثون');
+    conflicts.push('هذا الإيميل مضاف في الهاكاثون كحكم');
   }
 
   const [appRows] = await pool.query<RowDataPacket[]>(
@@ -1079,7 +1209,7 @@ async function findRoleConflicts(
     [hackathonId, email],
   );
   if (appRows.length > 0) {
-    conflicts.push('هذا الإيميل مرتبط كمشارك في هذا الهاكاثون');
+    conflicts.push('هذا الإيميل مضاف في الهاكاثون كمشارك');
   }
 
   return conflicts;
@@ -1137,7 +1267,7 @@ export const addCoManager = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const validation = validateCoManagerInput(req.body);
   if (!validation.ok) {
@@ -1174,11 +1304,13 @@ export const addCoManager = async (req: Request, res: Response) => {
 
   try {
     const token = newInviteToken();
+    // Stamp HCM_InviteEmailSentAt up front since we send the email below.
+    // Prevents duplicate emails if the hackathon is later republished.
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO hackathon_co_manager
          (hackathon_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_ParentID, HCM_Permissions,
-          HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+          HCM_InviteStatus, HCM_InviteToken, HCM_InvitedAt, HCM_InviteExpiresAt, HCM_InviteEmailSentAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW(), ?, NOW())`,
       [id, fullName, email, role, section, resolvedParentId, JSON.stringify(permissions), token, inviteExpiry()],
     );
     const [rows] = await pool.query<CoManagerRow[]>(
@@ -1219,7 +1351,7 @@ export const updateCoManager = async (req: Request, res: Response) => {
   const hcmId = Number(req.params.hcmId);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(hcmId) || hcmId <= 0) return res.status(400).json({ error: 'invalid hcmId' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const [existing] = await pool.query<CoManagerRow[]>(
     'SELECT HCM_ID FROM hackathon_co_manager WHERE HCM_ID = ? AND hackathon_ID = ?',
@@ -1302,7 +1434,7 @@ export const removeCoManager = async (req: Request, res: Response) => {
   const hcmId = Number(req.params.hcmId);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(hcmId) || hcmId <= 0) return res.status(400).json({ error: 'invalid hcmId' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   try {
     const [result] = await pool.execute<ResultSetHeader>(
@@ -1327,7 +1459,7 @@ export const resendCoManagerInvite = async (req: Request, res: Response) => {
   const hcmId = Number(req.params.hcmId);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(hcmId) || hcmId <= 0) return res.status(400).json({ error: 'invalid hcmId' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   try {
     const [existing] = await pool.query<CoManagerRow[]>(
@@ -1346,9 +1478,12 @@ export const resendCoManagerInvite = async (req: Request, res: Response) => {
     }
 
     const token = newInviteToken();
+    // Explicit resend always sends an email AND stamps the sent-at column so
+    // the publish-hook query treats this user as "already notified".
     await pool.execute(
       `UPDATE hackathon_co_manager
-          SET HCM_InviteToken = ?, HCM_InvitedAt = NOW(), HCM_InviteExpiresAt = ?, HCM_InviteStatus = 'pending'
+          SET HCM_InviteToken = ?, HCM_InvitedAt = NOW(), HCM_InviteExpiresAt = ?,
+              HCM_InviteStatus = 'pending', HCM_InviteEmailSentAt = NOW()
         WHERE HCM_ID = ? AND hackathon_ID = ?`,
       [token, inviteExpiry(), hcmId, id],
     );
@@ -1561,24 +1696,66 @@ export const replaceJudges = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const items = Array.isArray(req.body?.judges) ? req.body.judges : null;
   if (!items) return res.status(400).json({ error: 'judges must be an array' });
+
+  // Preserve any judge who has already accepted their invitation. Same
+  // protection as replaceCoManagers: re-saving the draft after unpublish
+  // must not wipe accepted users back to pending.
+  const [acceptedJudgeRows] = await pool.query<RowDataPacket[]>(
+    `SELECT HJ_Email FROM hackathon_judge
+      WHERE hackathon_ID = ? AND HJ_InviteStatus = 'accepted'`,
+    [id],
+  );
+  const acceptedJudgeEmails = new Set(
+    (acceptedJudgeRows as Array<{ HJ_Email: string }>).map((r) => r.HJ_Email.toLowerCase()),
+  );
+
+  // Snapshot the existing pending rows' email-sent-at stamps so re-saving
+  // the draft doesn't reset them back to NULL (which would cause publish to
+  // re-email those judges).
+  const [pendingJudgeSnapshot] = await pool.query<RowDataPacket[]>(
+    `SELECT HJ_Email, HJ_InviteEmailSentAt
+       FROM hackathon_judge
+      WHERE hackathon_ID = ?
+        AND HJ_InviteStatus IN ('pending', 'declined')
+        AND HJ_InviteEmailSentAt IS NOT NULL`,
+    [id],
+  );
+  const judgePreviouslyEmailedAt = new Map<string, Date>();
+  for (const r of pendingJudgeSnapshot as Array<{ HJ_Email: string; HJ_InviteEmailSentAt: Date }>) {
+    judgePreviouslyEmailedAt.set(r.HJ_Email.toLowerCase(), r.HJ_InviteEmailSentAt);
+  }
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     try {
-      await conn.execute('DELETE FROM hackathon_judge WHERE hackathon_ID = ?', [id]);
+      // Delete only pending/declined rows. Accepted judges survive.
+      await conn.execute(
+        `DELETE FROM hackathon_judge
+          WHERE hackathon_ID = ? AND HJ_InviteStatus <> 'accepted'`,
+        [id],
+      );
       for (const j of items) {
         const fullName = strOrNull(j?.fullName);
         const email = strOrNull(j?.email);
         if (!fullName || !email) continue;
+        // Skip emails that already belong to an accepted judge — they're
+        // still in DB untouched, no need to re-insert.
+        if (acceptedJudgeEmails.has(email.toLowerCase())) continue;
         const specialty = strOrNull(j?.specialty);
+        // Carry forward HJ_InviteEmailSentAt from the snapshot so previously-
+        // emailed judges don't trigger another email on the next publish.
+        const prevSent = judgePreviouslyEmailedAt.get(email.toLowerCase()) ?? null;
         await conn.execute(
-          'INSERT INTO hackathon_judge (hackathon_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteStatus) VALUES (?, ?, ?, ?, ?)',
-          [id, fullName, email, specialty, 'pending']
+          `INSERT INTO hackathon_judge
+             (hackathon_ID, HJ_FullName, HJ_Email, HJ_Specialty,
+              HJ_InviteStatus, HJ_InviteToken, HJ_InvitedAt, HJ_InviteExpiresAt, HJ_InviteEmailSentAt)
+           VALUES (?, ?, ?, ?, 'pending', ?, NOW(), ?, ?)`,
+          [id, fullName, email, specialty, newInviteToken(), inviteExpiry(), prevSent],
         );
       }
       await conn.commit();
@@ -1607,7 +1784,7 @@ export const replacePrizes = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const items = Array.isArray(req.body?.prizes) ? req.body.prizes : null;
   if (!items) return res.status(400).json({ error: 'prizes must be an array' });
@@ -1654,7 +1831,7 @@ export const publishHackathon = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   try {
     const [rows] = await pool.query<HackathonRow[]>(
@@ -1747,7 +1924,15 @@ export const publishHackathon = async (req: Request, res: Response) => {
     if (!h.H_Project_Requirements) missing.push('projects:requirements');
 
     // Section 6 — evaluation
-    if (!h.H_JudgingCriteria) missing.push('evaluation:criteria');
+    // Criteria now live in `hackathon_evaluation_criteria` (since migration 017).
+    // The legacy `H_JudgingCriteria` text column is no longer authoritative.
+    const [critCountRows] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) AS c FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
+      [id],
+    );
+    if ((critCountRows[0] as { c: number }).c === 0) {
+      missing.push('evaluation:criteria');
+    }
     if (!h.H_Judging_StartDate) missing.push('evaluation:judgingStart');
     if (!h.H_Judging_EndDate) missing.push('evaluation:judgingEnd');
 
@@ -1834,16 +2019,21 @@ export const publishHackathon = async (req: Request, res: Response) => {
     if (wasDraft) {
       const ctx = await getHackathonInviteContext(id);
       if (ctx) {
+        // Only invite people who haven't been emailed yet. After we send the
+        // mail we stamp HCM_InviteEmailSentAt / HJ_InviteEmailSentAt so a
+        // later republish doesn't spam them again.
         const [pendingInvites] = await pool.query<RowDataPacket[]>(
-          `SELECT HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_InviteToken
+          `SELECT HCM_ID, HCM_FullName, HCM_Email, HCM_Role, HCM_Section, HCM_InviteToken
              FROM hackathon_co_manager
             WHERE hackathon_ID = ?
               AND HCM_InviteStatus = 'pending'
               AND M_ID IS NULL
-              AND HCM_InviteToken IS NOT NULL`,
+              AND HCM_InviteToken IS NOT NULL
+              AND HCM_InviteEmailSentAt IS NULL`,
           [id],
         );
         for (const r of pendingInvites as Array<{
+          HCM_ID: number;
           HCM_FullName: string;
           HCM_Email: string;
           HCM_Role: 'manager' | 'staff';
@@ -1859,6 +2049,46 @@ export const publishHackathon = async (req: Request, res: Response) => {
             section: r.HCM_Section,
             token: r.HCM_InviteToken,
           });
+          // Mark as sent immediately. If SMTP later fails, the safe wrapper
+          // logs; the row still won't be re-emailed automatically — we
+          // assume the organizer can use "resend invite" for that case.
+          await pool.execute(
+            'UPDATE hackathon_co_manager SET HCM_InviteEmailSentAt = NOW() WHERE HCM_ID = ?',
+            [r.HCM_ID],
+          );
+          invitesSent++;
+        }
+
+        // Same pattern for judges.
+        const [pendingJudgeInvites] = await pool.query<RowDataPacket[]>(
+          `SELECT HJ_ID, HJ_FullName, HJ_Email, HJ_Specialty, HJ_InviteToken
+             FROM hackathon_judge
+            WHERE hackathon_ID = ?
+              AND HJ_InviteStatus = 'pending'
+              AND M_ID IS NULL
+              AND HJ_InviteToken IS NOT NULL
+              AND HJ_InviteEmailSentAt IS NULL`,
+          [id],
+        );
+        for (const r of pendingJudgeInvites as Array<{
+          HJ_ID: number;
+          HJ_FullName: string;
+          HJ_Email: string;
+          HJ_Specialty: string | null;
+          HJ_InviteToken: string;
+        }>) {
+          void sendJudgeInviteEmailSafe({
+            to: r.HJ_Email,
+            inviteeName: r.HJ_FullName,
+            organizerName: ctx.organizerName,
+            hackathonTitle: ctx.title,
+            specialty: r.HJ_Specialty,
+            token: r.HJ_InviteToken,
+          });
+          await pool.execute(
+            'UPDATE hackathon_judge SET HJ_InviteEmailSentAt = NOW() WHERE HJ_ID = ?',
+            [r.HJ_ID],
+          );
           invitesSent++;
         }
       }
@@ -1878,7 +2108,7 @@ export const unpublishHackathon = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   try {
     const [rows] = await pool.query<HackathonRow[]>(
@@ -1911,7 +2141,7 @@ export const deleteHackathon = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   try {
     const [rows] = await pool.query<HackathonRow[]>(
@@ -1957,7 +2187,7 @@ export const replaceSponsorPackages = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden' });
+  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const items = Array.isArray(req.body?.sponsorPackages) ? req.body.sponsorPackages : null;
   if (!items) return res.status(400).json({ error: 'sponsorPackages must be an array' });
@@ -2014,7 +2244,7 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'registrations'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -2098,7 +2328,7 @@ export const updateRegistrationStatus = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid hackathon id' });
   if (!Number.isInteger(pmId) || pmId <= 0) return res.status(400).json({ error: 'invalid participant id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'registrations'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const status = req.body?.status;
@@ -2139,7 +2369,7 @@ export const notifyRegistrationDecision = async (req: Request, res: Response) =>
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'registrations'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const decision = req.body?.decision;
@@ -2269,7 +2499,7 @@ export const listEvaluationCriteria = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   // Read access — judges need this to know what to score by.
   if (!(await ensureProjectsReadAccess(id, req.user.memberId))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -2299,7 +2529,7 @@ export const replaceEvaluationCriteria = async (req: Request, res: Response) => 
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : null;
@@ -2378,7 +2608,7 @@ export const getEvaluationSettings = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const [rows] = await pool.query<RowDataPacket[]>(
@@ -2406,7 +2636,7 @@ export const updateEvaluationSettings = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const showEvaluations = req.body?.showEvaluations === true;
@@ -2463,7 +2693,7 @@ export const exportParticipantsCsv = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -2623,7 +2853,7 @@ export const listHackathonJudges = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -2664,7 +2894,7 @@ export const addHackathonJudge = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
@@ -2687,27 +2917,25 @@ export const addHackathonJudge = async (req: Request, res: Response) => {
     // The generic message references "co-manager" — swap to a judge-flavoured
     // wording when the conflict is "owner of the hackathon" since the user is
     // adding a judge, not a co-manager.
-    const judgeConflicts = conflicts.map((c) =>
-      c === 'لا يمكن دعوة منشئ الهاكاثون كمنظّم مساعد'
-        ? 'لا يمكن دعوة منشئ الهاكاثون كحكم'
-        : c === 'هذا الإيميل مرتبط بدور حكم في هذا الهاكاثون'
-        ? 'هذا الإيميل مدعو مسبقاً لهذا الهاكاثون كحكم'
-        : c,
-    );
+    // The unified messages from findRoleConflicts already read naturally for
+    // any caller ("هذا الإيميل مضاف في الهاكاثون كحكم/مدير/موظف/مشارك"), so
+    // we pass them through as-is.
     return res.status(409).json({
       error: 'role_conflict',
-      conflicts: judgeConflicts,
-      message: judgeConflicts[0] ?? 'تعارض في الأدوار',
+      conflicts,
+      message: conflicts[0] ?? 'تعارض في الأدوار',
     });
   }
 
   try {
     const token = newInviteToken();
+    // Stamp HJ_InviteEmailSentAt — email goes out below, so future republishes
+    // won't re-email this judge automatically.
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO hackathon_judge
          (hackathon_ID, HJ_FullName, HJ_Email, HJ_Specialty,
-          HJ_InviteStatus, HJ_InviteToken, HJ_InvitedAt, HJ_InviteExpiresAt)
-       VALUES (?, ?, ?, ?, 'pending', ?, NOW(), ?)`,
+          HJ_InviteStatus, HJ_InviteToken, HJ_InvitedAt, HJ_InviteExpiresAt, HJ_InviteEmailSentAt)
+       VALUES (?, ?, ?, ?, 'pending', ?, NOW(), ?, NOW())`,
       [id, fullName, email, specialty || null, token, inviteExpiry()],
     );
 
@@ -2750,7 +2978,7 @@ export const removeHackathonJudge = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(hjId) || hjId <= 0) return res.status(400).json({ error: 'invalid hjId' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const [existing] = await pool.query<RowDataPacket[]>(
@@ -2792,7 +3020,7 @@ export const resendJudgeInvite = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(hjId) || hjId <= 0) return res.status(400).json({ error: 'invalid hjId' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const [rows] = await pool.query<JudgeManageRow[]>(
@@ -2808,9 +3036,12 @@ export const resendJudgeInvite = async (req: Request, res: Response) => {
 
   try {
     const token = newInviteToken();
+    // Explicit resend stamps the sent-at column so publishHackathon won't
+    // automatically re-email this judge on a future republish.
     await pool.execute(
       `UPDATE hackathon_judge
-          SET HJ_InviteToken = ?, HJ_InvitedAt = NOW(), HJ_InviteExpiresAt = ?
+          SET HJ_InviteToken = ?, HJ_InvitedAt = NOW(), HJ_InviteExpiresAt = ?,
+              HJ_InviteEmailSentAt = NOW()
         WHERE HJ_ID = ?`,
       [token, inviteExpiry(), hjId],
     );
@@ -2845,7 +3076,7 @@ export const remindJudge = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(hjId) || hjId <= 0) return res.status(400).json({ error: 'invalid hjId' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   const [rows] = await pool.query<JudgeManageRow[]>(
@@ -2924,7 +3155,7 @@ export const listHackathonProjects = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -3110,7 +3341,7 @@ export const distributeJudging = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -3280,7 +3511,7 @@ export const listProjectEvaluations = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(tsId) || tsId <= 0) return res.status(400).json({ error: 'invalid tsId' });
   if (!(await ensureSectionAccess(id, req.user.memberId, 'projects'))) {
-    return res.status(403).json({ error: 'forbidden' });
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
   try {
@@ -3374,7 +3605,7 @@ export const listMyJudgeAssignments = async (req: Request, res: Response) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
 
   const hjId = await findMyJudgeId(req.user.memberId, id);
-  if (hjId === null) return res.status(403).json({ error: 'forbidden' });
+  if (hjId === null) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   try {
     const [rows] = await pool.query<RowDataPacket[]>(
@@ -3567,7 +3798,7 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
   }
 
   const hjId = await findMyJudgeId(req.user.memberId, hackathonId);
-  if (hjId === null) return res.status(403).json({ error: 'forbidden' });
+  if (hjId === null) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
 
   const [subRows] = await pool.query<RowDataPacket[]>(
     `SELECT T_ID, PM_ID, assigned_judge_id, TS_SubmittedAt
