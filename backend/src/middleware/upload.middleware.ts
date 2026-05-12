@@ -8,9 +8,13 @@ import { pool } from '../db/pool';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'submissions');
 const AVATARS_DIR = path.join(process.cwd(), 'uploads', 'avatars');
+const BANNERS_DIR = path.join(process.cwd(), 'uploads', 'banners');
+const RECEIPTS_DIR = path.join(process.cwd(), 'uploads', 'receipts');
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+if (!fs.existsSync(BANNERS_DIR)) fs.mkdirSync(BANNERS_DIR, { recursive: true });
+if (!fs.existsSync(RECEIPTS_DIR)) fs.mkdirSync(RECEIPTS_DIR, { recursive: true });
 
 function makeStorage(targetDir: string): multer.StorageEngine {
   return multer.diskStorage({
@@ -33,6 +37,18 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
 export const avatarUpload = multer({
   storage: makeStorage(AVATARS_DIR),
   limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_AVATAR_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('يجب أن يكون الملف صورة (JPG/PNG/WEBP/GIF)'));
+    }
+  },
+}).single('file');
+
+export const bannerUpload = multer({
+  storage: makeStorage(BANNERS_DIR),
+  limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_AVATAR_TYPES.includes(file.mimetype)) {
       cb(null, true);
@@ -132,4 +148,27 @@ export async function submissionUploadDynamic(
   });
 }
 
-export { UPLOADS_DIR, AVATARS_DIR };
+const ALLOWED_RECEIPT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+];
+
+/**
+ * Receipt upload: accepts a single payment proof (image or PDF) up to 10 MB.
+ * Form field name: "file".
+ */
+export const receiptUpload = multer({
+  storage: makeStorage(RECEIPTS_DIR),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_RECEIPT_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('نوع الملف غير مدعوم — استخدمي JPG أو PNG أو PDF'));
+    }
+  },
+}).single('file');
+
+export { UPLOADS_DIR, AVATARS_DIR, BANNERS_DIR, RECEIPTS_DIR };
