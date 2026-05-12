@@ -31,6 +31,7 @@ interface OpportunityRow extends RowDataPacket {
   prizeTotal: string | null;
   tagsRaw: string | null;
   packagesCount: number;
+  teamsCount: number;
   brandingRaw: string | null;
   views: number;
 }
@@ -251,6 +252,7 @@ export const listOpportunities = async (req: Request, res: Response) => {
        (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
           FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw,
        (SELECT COUNT(*) FROM sponsor_package WHERE hackathon_ID = h.hackathon_ID) AS packagesCount,
+       (SELECT COUNT(*) FROM team WHERE hackathon_ID = h.hackathon_ID) AS teamsCount,
        h.H_views AS views
        FROM hackathon h
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
@@ -282,6 +284,7 @@ export const listOpportunities = async (req: Request, res: Response) => {
     prizeTotal: r.prizeTotal ? Number(r.prizeTotal) : 0,
     tags: r.tagsRaw ? r.tagsRaw.split('|||') : [],
     packagesCount: r.packagesCount,
+    teamsCount: r.teamsCount,
     branding: extractBranding(brandingById.get(r.id) ?? null),
     views: r.views,
   }));

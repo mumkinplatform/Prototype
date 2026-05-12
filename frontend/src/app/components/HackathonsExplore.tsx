@@ -32,6 +32,7 @@ type OpportunityResponse = {
     prizeTotal: number;
     tags: string[];
     packagesCount: number;
+    teamsCount: number;
     branding: BrandingPayload | null;
     views: number;
   }>;
@@ -111,7 +112,7 @@ export function HackathonsExplore() {
           prize: `${it.prizeTotal.toLocaleString("ar-SA")} ر.س`,
           prizeValue: it.prizeTotal,
           viewers: it.views,
-          teams: 0,
+          teams: it.teamsCount,
           branding: it.branding,
           featured: false,
           packagesCount: it.packagesCount,
