@@ -19,7 +19,6 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   deleteNotification,
-  listMyCertificates,
   listMyEvaluations,
   getMySubmission,
   updateMySubmission,
@@ -61,7 +60,6 @@ router.put('/notifications/read-all', requireAuth, markAllNotificationsRead);
 router.put('/notifications/:id/read', requireAuth, markNotificationRead);
 router.delete('/notifications/:id', requireAuth, deleteNotification);
 
-router.get('/certificates', requireAuth, listMyCertificates);
 router.get('/hackathons/:id/evaluations', requireAuth, listMyEvaluations);
 
 router.get('/hackathons/:id/submission', requireAuth, getMySubmission);

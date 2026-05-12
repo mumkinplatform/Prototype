@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { apiGet, apiPut, apiDelete, apiPost, apiUpload, API_URL, ApiError } from "../../lib/api";
@@ -9,10 +9,8 @@ import {
   Calendar,
   Clock,
   Users,
-  Trophy,
   MapPin,
   Globe,
-  Award,
   Upload,
   FileText,
   Star,
@@ -26,16 +24,13 @@ import {
   Eye,
   Download,
   BarChart3,
-  UserCheck,
-  Sparkles,
   ArrowRight,
   Home,
-  Video,
-  ExternalLink,
   CalendarDays,
   Target,
   Flag,
   CheckCircle,
+  Circle,
   ListChecks,
   Mail,
   Trash2,
@@ -43,13 +38,6 @@ import {
   LogOut,
   UserCog,
 } from "lucide-react";
-
-const IMG_HERO = "https://images.unsplash.com/photo-1660165458059-57cfb6cc87e5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxBSSUyMGFydGlmaWNpYWwlMjBpbnRlbGxpZ2VuY2UlMjBkaWdpتالJTIwYWJzdHJhY3R8ZW58MXx8fHwxNzcyOTg4ODQ4fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral";
-
-// ─── Images ───────────────────────────────────────────────────────────────────
-const IMG_AI = "https://images.unsplash.com/photo-1540058404349-2e5fabf32d75?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=600";
-const IMG_CYBER = "https://images.unsplash.com/photo-1768839721176-2fa91fdce725?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=600";
-const IMG_CITY = "https://images.unsplash.com/photo-1758640098400-061795902273?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=600";
 
 // ── API Types ────────────────────────────────────────────────────
 interface ApiMyHackathon {
@@ -100,12 +88,6 @@ interface UiMyHackathon {
   location: string;
   tags: string[];
   description: string;
-  startDate: string;
-  endDate: string;
-  submissionDate: string;
-  daysLeft: number;
-  hoursLeft: number;
-  minutesLeft: number;
   submissionDeadlineRaw: string | null;
   hackathonStartDateRaw: string | null;
   hackathonEndDateRaw: string | null;
@@ -135,15 +117,19 @@ function formatDateAr(value: string | null): string {
   }).format(d);
 }
 
-function computeCountdown(deadline: string | null): { days: number; hours: number; minutes: number } {
-  if (!deadline) return { days: 0, hours: 0, minutes: 0 };
-  const target = new Date(deadline).getTime();
-  const now = Date.now();
-  const diff = Math.max(0, target - now);
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-  const minutes = Math.floor((diff / (1000 * 60)) % 60);
-  return { days, hours, minutes };
+// Date + time formatter for moments where the exact instant matters
+// (e.g., submission confirmation, matching what the organizer sees).
+function formatDateTimeAr(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
 }
 
 function formatRange(start: string | null, end: string | null): string {
@@ -197,8 +183,6 @@ function buildTimeline(h: ApiMyHackathon): UiTimelinePhase[] {
 }
 
 function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
-  const cd = computeCountdown(h.submissionDeadline);
-
   // Status badge derives from application_status first — pending/rejected take
   // precedence over team-state messaging because the participant has no access
   // to the workspace until the organizer accepts.
@@ -243,12 +227,6 @@ function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
     location: h.location ?? "—",
     tags: h.tags.length > 0 ? h.tags : (h.type ? [h.type] : []),
     description: h.description ?? "",
-    startDate: formatDateAr(h.hackathonStartDate),
-    endDate: formatDateAr(h.hackathonEndDate),
-    submissionDate: formatDateAr(h.submissionDeadline),
-    daysLeft: cd.days,
-    hoursLeft: cd.hours,
-    minutesLeft: cd.minutes,
     submissionDeadlineRaw: h.submissionDeadline,
     hackathonStartDateRaw: h.hackathonStartDate,
     hackathonEndDateRaw: h.hackathonEndDate,
@@ -266,16 +244,6 @@ function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
     hackathonStatus: h.status,
     timeline: buildTimeline(h),
   };
-}
-
-function hackathonStatusLabel(status: string): { value: string; color: string } {
-  switch (status) {
-    case "draft":     return { value: "مسودة",           color: "#6b7280" };
-    case "published": return { value: "مفتوح للتسجيل",  color: "#3b82f6" };
-    case "ongoing":   return { value: "نشط — قيد التنفيذ", color: "#10b981" };
-    case "completed": return { value: "منتهي",          color: "#6b7280" };
-    default:          return { value: status || "—",     color: "#6b7280" };
-  }
 }
 
 /**
@@ -314,7 +282,7 @@ function computeCurrentPhase(h: UiMyHackathon): { value: string; color: string }
 // ── Hackathons Data (legacy mock — kept for reference, unused) ───
 
 // ─── Types ──────────────────────────────────────────────
-type WorkspaceTab = "home" | "team" | "submission" | "evaluations" | "certificates" ;
+type WorkspaceTab = "home" | "team" | "submission" | "evaluations";
 
 // ─── Team Chat ────────────────────────────────────────────
 interface ApiTeamMessage {
@@ -352,24 +320,6 @@ interface ApiEvaluationsResponse {
   isRegistered: boolean;
   visibility: ApiEvaluationsVisibility;
 }
-
-// ─── Certificates ─────────────────────────────────────────
-interface ApiCertificate {
-  id: number;
-  hackathonId: number;
-  hackathonTitle: string;
-  title: string;
-  type: "participation" | "win" | "completion";
-  position: string | null;
-  fileUrl: string | null;
-  issuedAt: string;
-}
-
-const CERT_TYPE_STYLE: Record<ApiCertificate["type"], { color: string; label: string }> = {
-  participation: { color: "#6366f1", label: "مشاركة" },
-  win:           { color: "#f59e0b", label: "فوز" },
-  completion:    { color: "#10b981", label: "تدريب" },
-};
 
 // ─── Submission ───────────────────────────────────────────
 interface ApiSubmissionFile {
@@ -437,7 +387,6 @@ const sidebarCards: { tab: WorkspaceTab; icon: any; label: string; desc: string;
   { tab: "team", icon: Users, label: "بيانات الفريق", desc: "التواصل مع أعضاء فريقك", color: "#10b981", bg: "#f0fdf4" },
   { tab: "submission", icon: Upload, label: "رفع المشروع", desc: "رفع ومعاينة التسليمات", color: "#e35654", bg: "#fef2f2" },
   { tab: "evaluations", icon: BarChart3, label: "التقييمات", desc: "تقييمات الحكام لمشروعك", color: "#f59e0b", bg: "#fffbeb" },
-  { tab: "certificates", icon: Award, label: "الشهادات", desc: "عرض وتحميل شهاداتك", color: "#8b5cf6", bg: "#f5f3ff" },
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -783,7 +732,7 @@ function saveSeenCounts(hackathonId: number, seen: Partial<Record<WorkspaceTab, 
 // Tabs that may be deep-linked from a notification. The Team tab is the most
 // likely candidate (chat notifications), but other tabs are honoured too if a
 // future notification type targets them.
-const WORKSPACE_TAB_VALUES: WorkspaceTab[] = ["home", "team", "submission", "evaluations", "certificates"];
+const WORKSPACE_TAB_VALUES: WorkspaceTab[] = ["home", "team", "submission", "evaluations"];
 
 function parseTabParam(raw: string | null, fallback: WorkspaceTab): WorkspaceTab {
   if (raw && (WORKSPACE_TAB_VALUES as string[]).includes(raw)) {
@@ -869,7 +818,6 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
     team: 0,
     submission: 0,
     evaluations: 0,
-    certificates: 0,
   });
   // True only after counts have been loaded from the API (not initial zeros)
   const [countsLoaded, setCountsLoaded] = useState(false);
@@ -893,17 +841,15 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
     interface TeamResp { team: { members: unknown[] } | null }
     interface SubmissionResp { files: unknown[] }
     interface EvalResp { items: unknown[] }
-    interface CertResp { items: { hackathonId: number }[] }
 
     Promise.allSettled([
       apiGet<TeamResp>(`/participants/hackathons/${hid}/my-team`),
       apiGet<SubmissionResp>(`/participants/hackathons/${hid}/submission`),
       apiGet<EvalResp>(`/participants/hackathons/${hid}/evaluations`),
-      apiGet<CertResp>(`/participants/certificates`),
     ]).then((results) => {
       if (cancelled) return;
       const next: Record<WorkspaceTab, number> = {
-        home: 0, team: 0, submission: 0, evaluations: 0, certificates: 0,
+        home: 0, team: 0, submission: 0, evaluations: 0,
       };
 
       // Team: number of members (if a team exists)
@@ -911,20 +857,14 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
         next.team = results[0].value.team?.members.length ?? 0;
       }
 
-
       // Submission: number of uploaded files
-      if (results[2].status === 'fulfilled') {
-        next.submission = results[2].value.files.length;
+      if (results[1].status === 'fulfilled') {
+        next.submission = results[1].value.files.length;
       }
 
       // Evaluations: number of published evaluations
-      if (results[3].status === 'fulfilled') {
-        next.evaluations = results[3].value.items.length;
-      }
-
-      // Certificates: only those for this hackathon
-      if (results[4].status === 'fulfilled') {
-        next.certificates = results[4].value.items.filter((c) => c.hackathonId === hid).length;
+      if (results[2].status === 'fulfilled') {
+        next.evaluations = results[2].value.items.length;
       }
 
       setCounts(next);
@@ -1102,7 +1042,6 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
             {activeTab === "team" && <TeamTab hackathonId={hackathon.id} hackathonHasTeam={hackathon.hasTeam} />}
             {activeTab === "submission" && <SubmissionTab hackathonId={hackathon.id} />}
             {activeTab === "evaluations" && <EvaluationsTab hackathonId={hackathon.id} />}
-            {activeTab === "certificates" && <CertificatesTab />}
           </div>
         </div>
       </div>
@@ -2377,9 +2316,9 @@ function TeamChat({
 // ═══════════════════════════════════════════════════════════
 
 // Maps organizer submissionFields keys to actual editable DB columns.
-// Only the four entries here are rendered as inputs; the remaining keys
+// Only the four entries here render as inputs; the remaining keys
 // (video / presentation / images) are file-typed and handled by the
-// existing file uploader, so we don't show duplicate inputs for them.
+// uploader inside the same unified form below.
 const PROJECT_TEXT_FIELDS: Record<
   string,
   {
@@ -2395,172 +2334,34 @@ const PROJECT_TEXT_FIELDS: Record<
   demo:   { apiField: 'demoUrl',            type: 'url',      label: 'رابط النسخة التجريبية', placeholder: 'https://...' },
 };
 
-// Imperative handle exposed to SubmissionTab so the parent can flush
-// unsaved metadata before confirming the submission (otherwise the user
-// could fill the form, skip "Save", click "Confirm", and be told the
-// fields are empty — confusing).
-interface ProjectMetadataFormHandle {
-  saveIfDirty: () => Promise<boolean>;
+interface ProjectFormState {
+  projectName: string;
+  projectDescription: string;
+  repoUrl: string;
+  demoUrl: string;
 }
 
-const ProjectMetadataForm = forwardRef<
-  ProjectMetadataFormHandle,
-  {
-    submission: ApiSubmission;
-    canEdit: boolean;
-    hackathonId: number;
-    onSaved: () => Promise<void>;
-  }
->(function ProjectMetadataForm({ submission, canEdit, hackathonId, onSaved }, ref) {
-  // Lazy init from server data; local edits are trusted until the next save.
-  const [form, setForm] = useState(() => ({
-    projectName: submission.projectName ?? '',
-    projectDescription: submission.projectDescription ?? '',
-    repoUrl: submission.repoUrl ?? '',
-    demoUrl: submission.demoUrl ?? '',
-  }));
-  const [saving, setSaving] = useState(false);
-
-  const fieldsToRender = submission.submissionFields
-    .filter((id) => id in PROJECT_TEXT_FIELDS)
-    .map((id) => ({ id, ...PROJECT_TEXT_FIELDS[id] }));
-
-  // Compute diff payload of form vs submission. Used both for the manual
-  // save button and for the parent's pre-confirm flush.
-  const computePayload = (): Record<string, string | null> => {
-    const payload: Record<string, string | null> = {};
-    for (const f of fieldsToRender) {
-      const current = form[f.apiField].trim();
-      const original = (submission[f.apiField] ?? '').trim();
-      if (current !== original) {
-        payload[f.apiField] = current || null;
-      }
+// Returns a per-field readiness snapshot used by:
+//   (a) the dynamic checklist in the requirements section (informational +
+//       progress indicator in one), and
+//   (b) the submit button's enabled state (allFilled = can submit).
+// Text/URL fields are read from local form state (instant feedback while
+// typing); file-type fields are checked against the server's file list —
+// since we can't distinguish "this PDF is the presentation" from "this PDF
+// is the video", any uploaded file marks all file-type entries as filled.
+function computeSubmissionFieldStates(
+  data: ApiSubmission,
+  form: ProjectFormState,
+): Array<{ id: string; label: string; isFilled: boolean }> {
+  return data.submissionFields.map((fId) => {
+    const label = SUBMISSION_FIELD_LABELS[fId] ?? fId;
+    const textField = PROJECT_TEXT_FIELDS[fId];
+    if (textField) {
+      const val = form[textField.apiField];
+      return { id: fId, label, isFilled: !!(val && val.trim() !== '') };
     }
-    return payload;
-  };
-
-  // Persists the diff silently. Returns true on success / no-op, false on
-  // failure. Used by parent before confirming.
-  useImperativeHandle(ref, () => ({
-    saveIfDirty: async () => {
-      const payload = computePayload();
-      if (Object.keys(payload).length === 0) return true;
-      try {
-        await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
-        await onSaved();
-        return true;
-      } catch (e) {
-        const msg = e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع';
-        toast.error(msg);
-        return false;
-      }
-    },
-  }));
-
-  if (fieldsToRender.length === 0) return null;
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const payload = computePayload();
-      if (Object.keys(payload).length === 0) {
-        toast.success('لا توجد تغييرات');
-        return;
-      }
-      await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
-      await onSaved();
-      toast.success('تم حفظ بيانات المشروع');
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع';
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-6">
-      <div className="flex items-center gap-2 mb-5">
-        <FileText className="w-5 h-5" style={{ color: '#6366f1' }} />
-        <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: '1.1rem' }}>
-          بيانات المشروع
-        </h2>
-      </div>
-
-      <div className="space-y-4">
-        {fieldsToRender.map((f) => (
-          <div key={f.id}>
-            <label className="block text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
-              {f.label} <span className="text-red-500">*</span>
-            </label>
-            {f.type === 'textarea' ? (
-              <textarea
-                value={form[f.apiField]}
-                onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
-                disabled={!canEdit || saving}
-                rows={4}
-                placeholder={f.placeholder}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 focus:bg-white transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-            ) : (
-              <input
-                type={f.type}
-                dir={f.type === 'url' ? 'ltr' : 'rtl'}
-                value={form[f.apiField]}
-                onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
-                disabled={!canEdit || saving}
-                placeholder={f.placeholder}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 focus:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-            )}
-          </div>
-        ))}
-      </div>
-
-      <button
-        onClick={handleSave}
-        disabled={!canEdit || saving}
-        className="mt-5 w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{ background: '#6366f1', fontWeight: 600 }}
-      >
-        {saving ? 'جاري الحفظ...' : 'حفظ بيانات المشروع'}
-      </button>
-    </div>
-  );
-});
-
-// Computes the list of organizer-required items that the participant hasn't
-// filled yet. Mirrors the authoritative backend check in confirmSubmission.
-function computeMissingSubmissionItems(data: ApiSubmission): string[] {
-  const missing: string[] = [];
-  const TEXT_MAP: Record<
-    string,
-    { key: 'projectName' | 'projectDescription' | 'repoUrl' | 'demoUrl'; label: string }
-  > = {
-    title:  { key: 'projectName',        label: 'عنوان المشروع' },
-    desc:   { key: 'projectDescription', label: 'وصف المشروع' },
-    github: { key: 'repoUrl',            label: 'رابط GitHub' },
-    demo:   { key: 'demoUrl',            label: 'رابط النسخة التجريبية' },
-  };
-  for (const fId of data.submissionFields) {
-    const m = TEXT_MAP[fId];
-    if (m) {
-      const val = data[m.key];
-      if (val == null || (typeof val === 'string' && val.trim() === '')) {
-        missing.push(m.label);
-      }
-    }
-  }
-  const FILE_LABELS: Record<string, string> = {
-    video:        'فيديو توضيحي',
-    presentation: 'عرض تقديمي',
-    images:       'صور المشروع',
-  };
-  const requiredFileFields = data.submissionFields.filter((f) => f in FILE_LABELS);
-  if (requiredFileFields.length > 0 && data.files.length === 0) {
-    for (const f of requiredFileFields) missing.push(FILE_LABELS[f]);
-  }
-  return missing;
+    return { id: fId, label, isFilled: data.files.length > 0 };
+  });
 }
 
 function SubmissionTab({ hackathonId }: { hackathonId: number }) {
@@ -2569,9 +2370,25 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const metadataFormRef = useRef<ProjectMetadataFormHandle>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // Form is collapsed by default — the participant clicks the CTA to open it.
+  // This makes "submit" feel like a deliberate task rather than always-visible
+  // inputs. After a successful send the form auto-collapses and the CTA flips
+  // to "view/edit submission".
+  const [formOpen, setFormOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Metadata form state lives at this level so the single submit handler
+  // can save inputs + call the confirm endpoint in one click. Hydrated
+  // once from server data; we don't re-sync on refetch to preserve
+  // unsaved typing.
+  const [form, setForm] = useState<ProjectFormState>({
+    projectName: '',
+    projectDescription: '',
+    repoUrl: '',
+    demoUrl: '',
+  });
+  const formInitialized = useRef(false);
 
   const refetch = async () => {
     try {
@@ -2593,6 +2410,18 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [hackathonId]);
+
+  useEffect(() => {
+    if (data && !formInitialized.current) {
+      setForm({
+        projectName: data.projectName ?? '',
+        projectDescription: data.projectDescription ?? '',
+        repoUrl: data.repoUrl ?? '',
+        demoUrl: data.demoUrl ?? '',
+      });
+      formInitialized.current = true;
+    }
+  }, [data]);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -2620,8 +2449,6 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
     try {
       await apiDelete(`/participants/hackathons/${hackathonId}/submission/files/${fileId}`);
       await refetch();
-      // Red toast for a successful destructive action — the deletion happened,
-      // but the colour signals "something was removed" rather than affirming it.
       toast.error("تم حذف الملف");
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "فشل حذف الملف";
@@ -2630,29 +2457,39 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
     }
   };
 
-  const handleConfirm = async () => {
+  // One-shot submit action. Submission is final — no edits after, so this
+  // handler is only ever called once per participant. Saves any pending
+  // metadata changes, then fires the confirm endpoint which sets
+  // TS_SubmittedAt and creates the in-app notification.
+  const handleSubmit = async () => {
     if (!data) return;
-    setConfirming(true);
+    setSubmitting(true);
     try {
-      // Flush any unsaved metadata changes from the form first so the
-      // backend's required-field check sees the latest values. Without
-      // this, a participant who fills the form but doesn't click "save"
-      // would see "field missing" errors despite having typed the value.
-      if (metadataFormRef.current) {
-        const flushed = await metadataFormRef.current.saveIfDirty();
-        if (!flushed) {
-          setConfirming(false);
-          return;
+      const payload: Record<string, string | null> = {};
+      for (const fId of data.submissionFields) {
+        const m = PROJECT_TEXT_FIELDS[fId];
+        if (!m) continue;
+        const current = form[m.apiField].trim();
+        const original = (data[m.apiField] ?? '').trim();
+        if (current !== original) {
+          payload[m.apiField] = current || null;
         }
       }
+      if (Object.keys(payload).length > 0) {
+        await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
+      }
       await apiPost(`/participants/hackathons/${hackathonId}/submission/submit`, {});
+
       await refetch();
-      toast.success(data.submittedAt ? "تم إعادة تأكيد التسليم" : "تم تأكيد التسليم");
+      // Collapse the form back to the CTA view so the participant lands on
+      // their success state, not on the inputs they just submitted.
+      setFormOpen(false);
+      toast.success("تم إرسال المشروع");
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "فشل تأكيد التسليم";
+      const msg = e instanceof ApiError ? e.message : "فشل الإرسال";
       toast.error(msg);
     } finally {
-      setConfirming(false);
+      setSubmitting(false);
     }
   };
 
@@ -2670,6 +2507,12 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   const maxBytes = data.maxFileSizeMb * 1024 * 1024;
   const windowState = computeSubmissionWindow(data);
   const canEdit = windowState === "open";
+  const isSubmitted = data.submittedAt !== null;
+  const fieldStates = computeSubmissionFieldStates(data, form);
+  const allFilled = fieldStates.every((f) => f.isFilled);
+  const fieldsToRender = data.submissionFields
+    .filter((id) => id in PROJECT_TEXT_FIELDS)
+    .map((id) => ({ id, ...PROJECT_TEXT_FIELDS[id] }));
 
   return (
     <div className="space-y-6">
@@ -2714,10 +2557,11 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>متطلبات التسليم</h2>
         </div>
 
+        {/* Project briefing — neutral grey, not alert-coloured. */}
         {data.expectedProjectsDescription && (
-          <div className="p-4 rounded-xl mb-5 bg-gradient-to-br from-[#fef2f4] to-white border border-[#fecaca]">
-            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 700 }}>
-              وصف المشاريع المطلوبة
+          <div className="p-4 rounded-xl mb-5 bg-gray-50 border border-gray-100">
+            <p className="text-gray-500 text-xs mb-2" style={{ fontWeight: 600 }}>
+              نبذة عن المشاريع
             </p>
             <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
               {data.expectedProjectsDescription}
@@ -2725,37 +2569,74 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           </div>
         )}
 
-        {data.submissionDeadline && (
-          <div className="flex items-start gap-3 p-3 rounded-xl mb-5"
-            style={{ background: "#fef2f4", border: "1px solid #fecaca" }}>
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: "#e35654", color: "#fff" }}>
-              <ListChecks className="w-4 h-4" />
+        {/* Deadline + max file size — compact informational chips, side by
+            side. Icon containers use the section's amber accent via the
+            ${color}15 opacity pattern (matches HomeTab info chips and the
+            team-member cards) so the styling is consistent across tabs. */}
+        <div className="grid sm:grid-cols-2 gap-3 mb-5">
+          {data.submissionDeadline && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-white border border-gray-100">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                   style={{ background: "#f59e0b15", color: "#f59e0b" }}>
+                <Calendar className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-gray-400 text-xs">موعد الإغلاق</p>
+                <p className="text-gray-900 text-sm truncate" style={{ fontWeight: 600 }}>
+                  {formatDateAr(data.submissionDeadline)}
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                موعد إغلاق التسليم
+          )}
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-white border border-gray-100">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                 style={{ background: "#f59e0b15", color: "#f59e0b" }}>
+              <FileText className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-gray-400 text-xs">الحد الأقصى للملف</p>
+              <p className="text-gray-900 text-sm" style={{ fontWeight: 600 }}>
+                {data.maxFileSizeMb} MB
               </p>
-              <p className="text-gray-600 text-sm mt-0.5">{formatDateAr(data.submissionDeadline)}</p>
             </div>
           </div>
-        )}
+        </div>
 
-        {data.submissionFields.length > 0 && (
-          <div className="mb-5">
-            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
-              الحقول المطلوبة في التسليم
-            </p>
+        {/* Dynamic submission checklist — informational + progress in one.
+            Pending uses neutral grey (not amber, which read as warning). */}
+        {fieldStates.length > 0 && (
+          <div className="pt-5 mt-1 border-t border-gray-100 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-gray-700 text-xs" style={{ fontWeight: 600 }}>
+                متطلبات الإرسال
+              </p>
+              <p className="text-gray-400 text-xs">
+                {fieldStates.filter((f) => f.isFilled).length} من {fieldStates.length} مكتمل
+              </p>
+            </div>
             <div className="grid sm:grid-cols-2 gap-2">
-              {data.submissionFields.map((fieldId) => (
-                <div key={fieldId}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-gray-100">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ background: "#10b98115", color: "#10b981" }}>
-                    <CheckCircle className="w-3.5 h-3.5" />
+              {fieldStates.map((f) => (
+                <div
+                  key={f.id}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+                    f.isFilled
+                      ? 'border-green-100 bg-green-50/40'
+                      : 'border-gray-100 bg-gray-50/60'
+                  }`}
+                >
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{
+                      background: f.isFilled ? '#10b98115' : '#9ca3af15',
+                      color: f.isFilled ? '#10b981' : '#9ca3af',
+                    }}
+                  >
+                    {f.isFilled
+                      ? <CheckCircle className="w-3.5 h-3.5" />
+                      : <Circle      className="w-3.5 h-3.5" />}
                   </div>
-                  <p className="text-gray-700 text-sm flex-1">
-                    {SUBMISSION_FIELD_LABELS[fieldId] ?? fieldId}
+                  <p className={`text-sm flex-1 ${f.isFilled ? 'text-gray-800' : 'text-gray-500'}`}>
+                    {f.label}
                   </p>
                 </div>
               ))}
@@ -2763,163 +2644,216 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           </div>
         )}
 
+        {/* Conditions — kept amber but compact (no boxed rows) so it reads as
+            a brief checklist rather than competing for attention. */}
         {data.requirements.length > 0 && (
-          <div>
-            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
-              الشروط الإضافية
+          <div className="pt-5 border-t border-gray-100">
+            <p className="text-gray-700 text-xs mb-3" style={{ fontWeight: 600 }}>
+              شروط إضافية
             </p>
-            <div className="space-y-2">
+            <ul className="space-y-2">
               {data.requirements.map((req, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ background: "#f59e0b15", color: "#f59e0b" }}>
-                    <CheckCircle className="w-3.5 h-3.5" />
-                  </div>
-                  <p className="text-gray-700 text-sm leading-relaxed flex-1">{req}</p>
-                </div>
+                <li key={i} className="flex items-start gap-2.5">
+                  <span className="text-amber-500 flex-shrink-0 leading-relaxed mt-0.5">•</span>
+                  <p className="text-gray-600 text-sm leading-relaxed flex-1">{req}</p>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
 
         {data.submissionFields.length === 0 && data.requirements.length === 0 && !data.submissionDeadline && !data.expectedProjectsDescription && (
           <p className="text-gray-400 text-sm text-center py-6">لم يحدّد المنظّم متطلبات بعد</p>
         )}
-
-        <p className="text-gray-400 text-xs mt-5 pt-4 border-t border-gray-100">
-          الحد الأقصى لحجم الملف الواحد: <span style={{ fontWeight: 600, color: "#374151" }}>{data.maxFileSizeMb} MB</span>
-        </p>
       </div>
 
-      {/* Project metadata form — rendered only if the organizer asks for
-          any of the supported text/URL fields. */}
-      <ProjectMetadataForm
-        ref={metadataFormRef}
-        submission={data}
-        canEdit={canEdit}
-        hackathonId={hackathonId}
-        onSaved={refetch}
-      />
-
-      {/* Upload Section */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Upload className="w-5 h-5" style={{ color: "#e35654" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>رفع المشروع</h2>
-        </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
-        />
-
-        {/* Upload Area — locked outside the submission window. */}
-        <div
-          onClick={() => canEdit && !uploading && fileInputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            if (canEdit) handleFiles(e.dataTransfer.files);
-          }}
-          className={`border-2 border-dashed rounded-2xl p-8 text-center mb-5 transition-all ${
-            !canEdit
-              ? "opacity-50 cursor-not-allowed"
-              : uploading
-              ? "opacity-50 cursor-wait"
-              : "cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30"
-          }`}
-          style={{ borderColor: "#e5e7eb" }}
-        >
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "#fef2f2" }}>
-            <Upload className="w-8 h-8" style={{ color: "#e35654" }} />
+      {/* Success banner — sits above the form so participants see
+          confirmation before scrolling. The submission is final, so we
+          surface that explicitly to set expectations. */}
+      {isSubmitted && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-green-900 text-sm" style={{ fontWeight: 700 }}>
+              تم إرسال مشروعك بنجاح
+            </p>
+            <p className="text-green-700 text-xs mt-1">
+              تاريخ التسليم: {formatDateTimeAr(data.submittedAt)}
+            </p>
           </div>
-          <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-            {!canEdit
-              ? "الرفع غير متاح حالياً"
-              : uploading
-              ? "جاري الرفع..."
-              : "اسحب الملفات هنا أو انقر للتحميل"}
-          </h3>
-          <p className="text-gray-400 text-sm">
-            الحد الأقصى لكل ملف: {data.maxFileSizeMb} MB
-          </p>
+        </div>
+      )}
+
+      {/* Collapsed CTA — the entry point. Form stays hidden until the
+          participant clicks; after a successful send the form auto-collapses
+          back to this same card and the CTA flips to "view/edit". */}
+      {!formOpen && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                   style={{ background: isSubmitted ? "#6366f115" : "#10b98115" }}>
+                <Upload className="w-5 h-5" style={{ color: isSubmitted ? "#6366f1" : "#10b981" }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                  {isSubmitted ? "تسليمك مُرسَل" : "أرسل مشروعك"}
+                </h3>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  {isSubmitted
+                    ? "اضغط لعرض ما أرسلته"
+                    : "أكمل البيانات وارفع الملفات لإرسال مشروعك"}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFormOpen(true)}
+              disabled={!canEdit && !isSubmitted}
+              className="px-5 py-2.5 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              style={{ background: isSubmitted ? "#6366f1" : "#10b981", fontWeight: 600 }}
+            >
+              {isSubmitted ? "عرض التسليم" : "إرسال المشروع"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded form view — fills inputs and uploads when editable
+          (pre-submission), purely a read-only summary after submission. */}
+      {formOpen && (
+      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+        <div className="flex items-center justify-between gap-2 mb-5">
+          <div className="flex items-center gap-2">
+            <Upload className="w-5 h-5" style={{ color: "#e35654" }} />
+            <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+              {isSubmitted ? "عرض التسليم" : "تسليم المشروع"}
+            </h2>
+          </div>
+          <button
+            onClick={() => setFormOpen(false)}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            title="إغلاق"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {uploadError && (
-          <p className="text-red-500 text-sm mb-3 text-center">{uploadError}</p>
+        {/* Text/URL inputs — only the ones the organizer requested */}
+        {fieldsToRender.length > 0 && (
+          <div className="space-y-4 mb-5">
+            {fieldsToRender.map((f) => (
+              <div key={f.id}>
+                <label className="block text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
+                  {f.label} <span className="text-red-500">*</span>
+                </label>
+                {f.type === 'textarea' ? (
+                  <textarea
+                    value={form[f.apiField]}
+                    onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
+                    disabled={!canEdit || submitting}
+                    rows={4}
+                    placeholder={f.placeholder}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                ) : (
+                  <input
+                    type={f.type}
+                    dir={f.type === 'url' ? 'ltr' : 'rtl'}
+                    value={form[f.apiField]}
+                    onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
+                    disabled={!canEdit || submitting}
+                    placeholder={f.placeholder}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
-        <button
-          disabled={uploading || !canEdit}
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: "#e35654", fontWeight: 600 }}
-        >
-          <Plus className="w-4 h-4 inline-block ml-2" />
-          إضافة ملفات
-        </button>
-        <p className="text-gray-300 text-xs text-center mt-2">
-          أقصى حجم لكل ملف: {formatFileSize(maxBytes)}
+        {/* File uploader — hidden after submission since the submission is
+            final. The files list below stays visible (read-only). */}
+        <p className="block text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
+          ملفات المشروع
         </p>
-      </div>
+        {!isSubmitted && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            <div
+              onClick={() => canEdit && !uploading && fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (canEdit) handleFiles(e.dataTransfer.files);
+              }}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center mb-3 transition-all ${
+                !canEdit
+                  ? "opacity-50 cursor-not-allowed"
+                  : uploading
+                  ? "opacity-50 cursor-wait"
+                  : "cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30"
+              }`}
+              style={{ borderColor: "#e5e7eb" }}
+            >
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3"
+                style={{ background: "#fef2f2" }}>
+                <Upload className="w-6 h-6" style={{ color: "#e35654" }} />
+              </div>
+              <p className="text-gray-900 text-sm" style={{ fontWeight: 600 }}>
+                {!canEdit
+                  ? "الرفع غير متاح حالياً"
+                  : uploading
+                  ? "جاري الرفع..."
+                  : "اسحب الملفات هنا أو انقر للتحميل"}
+              </p>
+              <p className="text-gray-400 text-xs mt-1">
+                أقصى حجم لكل ملف: {formatFileSize(maxBytes)}
+              </p>
+            </div>
 
-      {/* Uploaded Files */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <FileText className="w-5 h-5" style={{ color: "#6366f1" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-            الملفات المرفوعة ({data.files.length})
-          </h2>
-        </div>
+            {uploadError && (
+              <p className="text-red-500 text-sm mb-3 text-center">{uploadError}</p>
+            )}
+          </>
+        )}
 
-        {data.files.length === 0 ? (
-          <div className="text-center py-10">
-            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لم يتم رفع أي ملف بعد</p>
-            <p className="text-gray-400 text-xs mt-1">الملفات اللي ترفعها بتظهر هنا</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
+        {/* Uploaded files — inline list, no separate section */}
+        {data.files.length > 0 && (
+          <div className="space-y-2 mb-5">
             {data.files.map((file, i) => {
               const color = FILE_COLOR_PALETTE[i % FILE_COLOR_PALETTE.length];
               const fullUrl = `${API_URL}${file.url}`;
               return (
                 <div
                   key={file.id}
-                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group"
+                  className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-gray-200 transition-all group"
                 >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ background: `${color}15` }}>
-                    <FileText className="w-5 h-5" style={{ color }} />
+                    <FileText className="w-4 h-4" style={{ color }} />
                   </div>
-
                   <div className="flex-1 min-w-0">
-                    <p className="text-gray-900 text-sm mb-1 truncate" style={{ fontWeight: 600 }}>
+                    <p className="text-gray-900 text-sm mb-0.5 truncate" style={{ fontWeight: 600 }}>
                       {file.name}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                       <span>{formatFileSize(file.size)}</span>
                       <span>•</span>
                       <span>{formatDateAr(file.uploadedAt)}</span>
-                      {file.uploaderName && (
-                        <>
-                          <span>•</span>
-                          <span>{file.uploaderName}</span>
-                        </>
-                      )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <a
                       href={fullUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#6366f1] hover:bg-blue-50 transition-colors"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#6366f1] hover:bg-blue-50 transition-colors"
                       title="معاينة"
                     >
                       <Eye className="w-4 h-4" />
@@ -2927,105 +2861,43 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
                     <a
                       href={fullUrl}
                       download={file.name}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#10b981] hover:bg-green-50 transition-colors"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#10b981] hover:bg-green-50 transition-colors"
                       title="تحميل"
                     >
                       <Download className="w-4 h-4" />
                     </a>
-                    <button
-                      onClick={() => handleDelete(file.id)}
-                      disabled={!canEdit}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                      title={canEdit ? "حذف" : "الحذف غير متاح حالياً"}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isSubmitted && (
+                      <button
+                        onClick={() => handleDelete(file.id)}
+                        disabled={!canEdit}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                        title={canEdit ? "حذف" : "الحذف غير متاح حالياً"}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
         )}
+
+        {/* Submit button — hidden after submission since edits aren't
+            allowed. Disabled outside the window, mid-flight, or while the
+            checklist isn't fully green. */}
+        {!isSubmitted && (
+          <button
+            onClick={handleSubmit}
+            disabled={!canEdit || submitting || !allFilled}
+            className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: "#10b981", fontWeight: 600 }}
+          >
+            {submitting ? "جاري الإرسال..." : "إرسال المشروع"}
+          </button>
+        )}
       </div>
-
-      {/* Confirm Submission — gates the judging pipeline. The judge endpoint
-          refuses to evaluate a project whose TS_SubmittedAt is null, so this
-          is the participant's explicit "I'm done" moment. They can still edit
-          metadata/files until the window closes; clicking again just bumps
-          the timestamp. */}
-      {(() => {
-        const missing = computeMissingSubmissionItems(data);
-        const isSubmitted = data.submittedAt !== null;
-        // Detect files uploaded after the last confirmation so we can prompt
-        // a re-confirm. We can only see file timestamps (metadata edits have
-        // no recorded timestamp), so this covers the most common drift.
-        const submittedAtMs = data.submittedAt ? new Date(data.submittedAt).getTime() : 0;
-        const hasFilesAfterConfirm = isSubmitted
-          && data.files.some((f) => new Date(f.uploadedAt).getTime() > submittedAtMs);
-        return (
-          <div className="bg-white rounded-2xl border border-gray-100 p-6">
-            <div className="flex items-center gap-2 mb-5">
-              <CheckCircle2 className="w-5 h-5" style={{ color: "#10b981" }} />
-              <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                تأكيد التسليم النهائي
-              </h2>
-            </div>
-
-            {isSubmitted ? (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-5 flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-green-900 text-sm" style={{ fontWeight: 700 }}>
-                    تم تأكيد التسليم في {formatDateAr(data.submittedAt)}
-                  </p>
-                  <p className="text-green-700 text-xs mt-1">
-                    يمكنك تعديل البيانات والملفات حتى موعد الإغلاق. إذا عدّلت شيئاً، أعد الضغط لإعادة تأكيد التسليم.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-600 text-sm mb-5 leading-relaxed">
-                اضغط لتأكيد تسليمك. سيُتاح مشروعك للحكّام للتقييم بعد ذلك.
-              </p>
-            )}
-
-            {hasFilesAfterConfirm && canEdit && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 flex items-start gap-3">
-                <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-amber-900 text-sm leading-relaxed">
-                  لديك ملفات أُضيفت بعد آخر تأكيد. اضغط <span style={{ fontWeight: 700 }}>"إعادة تأكيد التسليم"</span> لتسجيل النسخة الأحدث.
-                </p>
-              </div>
-            )}
-
-            {missing.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
-                <p className="text-amber-900 text-sm mb-2" style={{ fontWeight: 700 }}>
-                  مطلوب قبل التأكيد
-                </p>
-                <ul className="space-y-1 text-amber-800 text-xs leading-relaxed">
-                  {missing.map((item, i) => (
-                    <li key={i}>• {item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <button
-              onClick={handleConfirm}
-              disabled={!canEdit || confirming || missing.length > 0}
-              className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: "#10b981", fontWeight: 600 }}
-            >
-              {confirming
-                ? "جاري التأكيد..."
-                : isSubmitted
-                ? "إعادة تأكيد التسليم"
-                : "تأكيد التسليم النهائي"}
-            </button>
-          </div>
-        );
-      })()}
+      )}
     </div>
   );
 }
@@ -3174,105 +3046,3 @@ function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// Tab: Certificates
-// ═══════════════════════════════════════════════════════════
-function CertificatesTab() {
-  const [certificates, setCertificates] = useState<ApiCertificate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiGet<{ items: ApiCertificate[] }>("/participants/certificates")
-      .then((data) => {
-        if (cancelled) return;
-        setCertificates(data.items);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : "فشل تحميل الشهادات");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleDownload = (cert: ApiCertificate) => {
-    if (cert.fileUrl) {
-      window.open(cert.fileUrl, "_blank", "noopener,noreferrer");
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Award className="w-5 h-5" style={{ color: "#8b5cf6" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>شهاداتي</h2>
-        </div>
-
-        {loading ? (
-          <div className="text-center py-10 text-gray-400 text-sm">جاري تحميل الشهادات...</div>
-        ) : error ? (
-          <div className="text-center py-10 text-red-500 text-sm">{error}</div>
-        ) : certificates.length === 0 ? (
-          <div className="text-center py-10">
-            <Award className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لا توجد شهادات بعد</p>
-            <p className="text-gray-400 text-xs mt-1">ستظهر هنا شهاداتك بعد المشاركة في الهاكاثونات</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {certificates.map((cert) => {
-              const style = CERT_TYPE_STYLE[cert.type];
-              return (
-                <div
-                  key={cert.id}
-                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
-                >
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${style.color}15` }}
-                  >
-                    <Award className="w-6 h-6" style={{ color: style.color }} />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                        {cert.title}
-                      </h3>
-                      <span
-                        className="text-[10px] px-2 py-0.5 rounded-full"
-                        style={{ background: `${style.color}15`, color: style.color, fontWeight: 600 }}
-                      >
-                        {style.label}
-                      </span>
-                    </div>
-                    <p className="text-gray-400 text-xs mb-1">{cert.hackathonTitle}</p>
-                    <p className="text-gray-300 text-xs">{formatDateAr(cert.issuedAt)}</p>
-                  </div>
-
-                  <button
-                    onClick={() => handleDownload(cert)}
-                    disabled={!cert.fileUrl}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: style.color, fontWeight: 600 }}
-                    title={cert.fileUrl ? "تحميل الشهادة" : "ملف الشهادة غير متاح"}
-                  >
-                    <Download className="w-4 h-4" />
-                    تحميل
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
