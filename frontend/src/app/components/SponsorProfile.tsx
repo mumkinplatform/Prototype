@@ -1,18 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { apiGet, apiPut, ApiError } from "../../lib/api";
-
-type SponsorMeResponse = {
-  id: number;
-  email: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  bio: string | null;
-  brandName: string | null;
-  crNumber: string | null;
-};
 import {
   User,
   Mail,
@@ -26,119 +13,196 @@ import {
   Edit3,
   Save,
   X,
-  Key,
-  Handshake,
-  CreditCard,
-  TrendingUp,
   Award,
-  Eye,
-  FileText,
   Target,
-  LogOut,
-  ArrowRight,
+  Loader2,
+  Image as ImageIcon,
 } from "lucide-react";
+import { apiGet, apiPut, ApiError } from "../../lib/api";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
+type SponsorMeResponse = {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  bio: string | null;
+  phone: string | null;
+  location: string | null;
+  avatar: string | null;
+  joinedAt: string;
+  brandName: string | null;
+  crNumber: string | null;
+  position: string | null;
+  industry: string | null;
+  website: string | null;
+  banner: string | null;
+};
+
+interface ProfileForm {
+  fullName: string;
+  email: string; // read-only
+  brandName: string;
+  crNumber: string;
+  bio: string;
+  phone: string;
+  location: string;
+  position: string;
+  industry: string;
+  website: string;
+}
+
+const EMPTY_FORM: ProfileForm = {
+  fullName: "",
+  email: "",
+  brandName: "",
+  crNumber: "",
+  bio: "",
+  phone: "",
+  location: "",
+  position: "",
+  industry: "",
+  website: "",
+};
+
+function toForm(data: SponsorMeResponse): ProfileForm {
+  return {
+    fullName: data.fullName,
+    email: data.email,
+    brandName: data.brandName ?? "",
+    crNumber: data.crNumber ?? "",
+    bio: data.bio ?? "",
+    phone: data.phone ?? "",
+    location: data.location ?? "",
+    position: data.position ?? "",
+    industry: data.industry ?? "",
+    website: data.website ?? "",
+  };
+}
+
+function formatJoinedDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long" });
+}
+
+async function uploadProfileImage(
+  endpoint: "avatar" | "banner",
+  file: File
+): Promise<{ avatar?: string; banner?: string }> {
+  const token = localStorage.getItem("mumkin_token");
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/sponsors/me/${endpoint}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = (data as { error?: string }).error || `HTTP ${res.status}`;
+    throw new ApiError(res.status, message);
+  }
+  return data;
+}
 
 export function SponsorProfile() {
-  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"info" | "stats" | "security">("info");
-
-  const initialProfile = {
-    companyName: "",
-    contactName: "",
-    email: "",
-    phone: "—",
-    position: "—",
-    commercialRegister: "",
-    location: "—",
-    website: "—",
-    industry: "—",
-    bio: "",
-    joinDate: "—",
-  };
-
-  const [profileData, setProfileData] = useState(initialProfile);
-  const [snapshotData, setSnapshotData] = useState(initialProfile);
+  const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
+  const [snapshot, setSnapshot] = useState<ProfileForm>(EMPTY_FORM);
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [joinedAt, setJoinedAt] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
     apiGet<SponsorMeResponse>("/sponsors/me")
       .then((data) => {
-        const next = {
-          ...initialProfile,
-          companyName: data.brandName ?? "",
-          contactName: data.fullName,
-          email: data.email,
-          commercialRegister: data.crNumber ?? "",
-          bio: data.bio ?? "",
-        };
-        setProfileData(next);
-        setSnapshotData(next);
+        if (cancelled) return;
+        const f = toForm(data);
+        setForm(f);
+        setSnapshot(f);
+        setAvatar(data.avatar);
+        setBanner(data.banner);
+        setJoinedAt(data.joinedAt);
       })
-      .catch((err) => setLoadError(err.message))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadError(err instanceof ApiError ? err.message : "تعذّر تحميل الملف");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const stats = [
-    { label: "إجمالي الرعايات", value: "12", icon: Handshake, color: "#e35654", bg: "#fef2f2" },
-    { label: "إجمالي الاستثمار", value: "485K", icon: CreditCard, color: "#10b981", bg: "#f0fdf4" },
-    { label: "هاكاثونات مدعومة", value: "8", icon: Target, color: "#6366f1", bg: "#eef2ff" },
-    { label: "عقود موقعة", value: "10", icon: FileText, color: "#f59e0b", bg: "#fffbeb" },
-  ];
-
-  const sponsorshipHistory = [
-    { name: "هاكاثون الذكاء الاصطناعي العالمي", package: "ماسي", date: "أكتوبر 2024", status: "مكتمل", statusColor: "#10b981", statusBg: "#f0fdf4" },
-    { name: "تحدي الأمن السيبراني الإقليمي", package: "ذهبي", date: "ديسمبر 2024", status: "نشط", statusColor: "#6366f1", statusBg: "#eef2ff" },
-    { name: "هاكاثون الجامعات الناشئة", package: "فضي", date: "نوفمبر 2024", status: "نشط", statusColor: "#6366f1", statusBg: "#eef2ff" },
-    { name: "هاكاثون التقنية المالية 2024", package: "شريك إستراتيجي", date: "سبتمبر 2024", status: "مكتمل", statusColor: "#10b981", statusBg: "#f0fdf4" },
-    { name: "هاكاثون NEOM 2025", package: "ذهبي", date: "مارس 2025", status: "قيد التقديم", statusColor: "#f59e0b", statusBg: "#fffbeb" },
-  ];
-
-  const achievements = [
-    { title: "راعي ماسي", desc: "رعاية بباقة ماسية لأول مرة", icon: "💎", earned: true },
-    { title: "داعم متميز", desc: "رعاية أكثر من 5 هاكاثونات", icon: "🏆", earned: true },
-    { title: "شريك موثوق", desc: "جميع العقود موقعة في الوقت المحدد", icon: "🤝", earned: true },
-    { title: "مستثمر رائد", desc: "استثمار أكثر من 500K ر.س", icon: "🚀", earned: false },
-  ];
-
   const handleCancel = () => {
-    setProfileData(snapshotData);
+    setForm(snapshot);
     setIsEditing(false);
   };
 
   const handleSave = async () => {
-    // التحقق من المدخلات قبل الإرسال
-    if (!profileData.contactName.trim() || profileData.contactName.trim().length < 2) {
-      toast.error("الاسم الكامل مطلوب (حرفين على الأقل)");
+    // كل الحقول إلزامية (ما عدا النبذة والبريد المقروء فقط)
+    const requiredFields: { key: keyof ProfileForm; label: string }[] = [
+      { key: "brandName", label: "اسم الشركة" },
+      { key: "fullName", label: "اسم المسؤول" },
+      { key: "phone", label: "رقم الهاتف" },
+      { key: "position", label: "المسمى الوظيفي" },
+      { key: "crNumber", label: "السجل التجاري" },
+      { key: "location", label: "الموقع" },
+      { key: "website", label: "الموقع الإلكتروني" },
+      { key: "industry", label: "القطاع" },
+    ];
+    for (const f of requiredFields) {
+      if (!form[f.key].trim()) {
+        toast.error(`الرجاء تعبئة حقل "${f.label}"`);
+        return;
+      }
+    }
+    if (form.fullName.trim().length < 2) {
+      toast.error("الاسم الكامل يجب أن يكون حرفين على الأقل");
       return;
     }
-    const cr = profileData.commercialRegister.trim();
-    if (cr && !/^\d{10}$/.test(cr)) {
+    const cr = form.crNumber.trim();
+    if (!/^\d{10}$/.test(cr)) {
       toast.error("السجل التجاري يجب أن يكون 10 أرقام بالضبط");
+      return;
+    }
+    const phone = form.phone.trim();
+    if (!/^[\d+\-\s()]{5,20}$/.test(phone)) {
+      toast.error("رقم الهاتف غير صالح");
       return;
     }
 
     setSaving(true);
     try {
       const updated = await apiPut<SponsorMeResponse>("/sponsors/me", {
-        fullName: profileData.contactName.trim(),
-        bio: profileData.bio.trim() || null,
-        brandName: profileData.companyName.trim() || null,
+        fullName: form.fullName.trim(),
+        bio: form.bio.trim() || null,
+        brandName: form.brandName.trim() || null,
         crNumber: cr || null,
+        phone: phone || null,
+        location: form.location.trim() || null,
+        position: form.position.trim() || null,
+        industry: form.industry.trim() || null,
+        website: form.website.trim() || null,
       });
-
-      const next = {
-        ...profileData,
-        companyName: updated.brandName ?? "",
-        contactName: updated.fullName,
-        commercialRegister: updated.crNumber ?? "",
-        bio: updated.bio ?? "",
-      };
-      setProfileData(next);
-      setSnapshotData(next);
+      const f = toForm(updated);
+      setForm(f);
+      setSnapshot(f);
       setIsEditing(false);
       toast.success("تم حفظ التعديلات بنجاح");
     } catch (err: unknown) {
@@ -149,398 +213,322 @@ export function SponsorProfile() {
     }
   };
 
-  const tabs = [
-    { id: "info" as const, label: "معلومات الشركة" },
-    { id: "stats" as const, label: "الإحصائيات والإنجازات" },
-    { id: "security" as const, label: "الأمان والخصوصية" },
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const res = await uploadProfileImage("avatar", file);
+      const newAvatar = res.avatar ?? null;
+      setAvatar(newAvatar);
+      // أبلغ الـ navbar حتى يحدّث الصورة فوراً
+      window.dispatchEvent(
+        new CustomEvent("mumkin:avatar-updated", { detail: { avatar: newAvatar } })
+      );
+      toast.success("تم تحديث الصورة الشخصية");
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : "تعذّر رفع الصورة";
+      toast.error(message);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleBannerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadingBanner(true);
+    try {
+      const res = await uploadProfileImage("banner", file);
+      setBanner(res.banner ?? null);
+      toast.success("تم تحديث صورة الغلاف");
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : "تعذّر رفع الصورة";
+      toast.error(message);
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
+  const avatarLetter = (form.fullName.trim()[0] || form.brandName.trim()[0] || "?").toUpperCase();
+  const avatarUrl = avatar ? `${API_URL}/uploads/avatars/${avatar}` : null;
+  const bannerUrl = banner ? `${API_URL}/uploads/banners/${banner}` : null;
+
+  const FIELDS: {
+    label: string;
+    key: keyof ProfileForm;
+    icon: typeof User;
+    type?: string;
+    editable?: boolean;
+    placeholder?: string;
+    required?: boolean;
+  }[] = [
+    { label: "اسم الشركة / العلامة", key: "brandName", icon: Building2, placeholder: "مثال: TechCo", required: true },
+    { label: "اسم المسؤول", key: "fullName", icon: User, placeholder: "الاسم الكامل", required: true },
+    { label: "البريد الإلكتروني", key: "email", icon: Mail, editable: false },
+    { label: "رقم الهاتف", key: "phone", icon: Phone, type: "tel", placeholder: "+9665XXXXXXXX", required: true },
+    { label: "المسمى الوظيفي", key: "position", icon: Award, placeholder: "مدير الشراكات", required: true },
+    { label: "السجل التجاري", key: "crNumber", icon: Shield, placeholder: "10 أرقام", required: true },
+    { label: "الموقع", key: "location", icon: MapPin, placeholder: "الرياض، السعودية", required: true },
+    { label: "الموقع الإلكتروني", key: "website", icon: Globe, type: "url", placeholder: "https://...", required: true },
+    { label: "القطاع", key: "industry", icon: Target, placeholder: "تقنية، صحة، تعليم...", required: true },
   ];
 
   return (
     <>
-      {/* Profile Banner */}
-      <div className="h-28" style={{ background: "linear-gradient(135deg, #e35654 0%, #cc4a48 100%)" }} />
+      {/* Banner — hero مع overlay */}
+      <div
+        className="relative h-56 group overflow-hidden"
+        style={{
+          background: bannerUrl
+            ? `url(${bannerUrl}) center / cover no-repeat`
+            : "linear-gradient(135deg, #e35654 0%, #cc4a48 50%, #a83b3a 100%)",
+        }}
+      >
+        {/* Pattern overlay لو ما فيه صورة */}
+        {!bannerUrl && (
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle at 25% 30%, rgba(255,255,255,0.4) 0%, transparent 40%), radial-gradient(circle at 75% 70%, rgba(255,255,255,0.3) 0%, transparent 40%)",
+            }}
+          />
+        )}
+        <input
+          ref={bannerInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handleBannerChange}
+        />
+        {/* زر تغيير الغلاف يظهر فقط في وضع التعديل */}
+        {isEditing && (
+          <button
+            onClick={() => bannerInputRef.current?.click()}
+            disabled={uploadingBanner}
+            className="absolute bottom-5 left-5 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/95 backdrop-blur-sm text-gray-800 text-xs hover:bg-white shadow-lg transition-all disabled:opacity-60"
+            style={{ fontWeight: 600 }}
+          >
+            {uploadingBanner ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ImageIcon className="w-4 h-4 text-[#e35654]" />
+            )}
+            {uploadingBanner ? "جاري الرفع..." : "تغيير صورة الغلاف"}
+          </button>
+        )}
+      </div>
 
       {loading && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 text-sm text-gray-500">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 text-sm text-gray-500 flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
           جاري تحميل الملف الشخصي...
         </div>
       )}
       {loadError && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
             تعذّر تحميل الملف: {loadError}
           </div>
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        {/* Profile Header Card */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 -mt-8 mb-6 shadow-sm">
-          <div className="flex items-end gap-5">
-            {/* Company Avatar */}
-            <div className="relative group">
-              <div
-                className="w-20 h-20 rounded-2xl border-4 border-white shadow-md flex items-center justify-center text-white -mt-14 flex-shrink-0"
-                style={{
-                  background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
-                  fontWeight: 800,
-                  fontSize: "1.5rem",
-                }}
-              >
-                ش
-              </div>
-              <button className="absolute bottom-2 right-2 w-6 h-6 rounded-lg bg-white shadow-lg flex items-center justify-center text-[#e35654] opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera className="w-3.5 h-3.5" />
-              </button>
-              <span
-                className="absolute bottom-1 left-1 w-4 h-4 rounded-full border-2 border-white"
-                style={{ background: "#10b981" }}
-              />
-            </div>
-
-            {/* Info */}
-            <div className="flex-1">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h1 className="text-gray-900 mb-1" style={{ fontWeight: 800, fontSize: "1.6rem" }}>
-                    {profileData.companyName}
-                  </h1>
-                  <p className="text-gray-600 text-sm">{profileData.contactName} — {profileData.position}</p>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5" />
-                      {profileData.location}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" />
-                      انضم {profileData.joinDate}
-                    </span>
-                  </div>
+      {!loading && !loadError && (
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+          {/* Profile Header Card — Avatar في الأعلى يمين + المعلومات تحته */}
+          <div className="bg-white rounded-2xl border border-gray-100 -mt-16 mb-6 shadow-sm relative">
+            {/* Avatar absolute, متداخل مع البنر */}
+            <div className="absolute -top-14 right-6 sm:right-8 z-10">
+              <div className="relative">
+                <div
+                  className="w-28 h-28 rounded-3xl border-4 border-white shadow-xl flex items-center justify-center text-white overflow-hidden"
+                  style={{
+                    background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
+                    fontWeight: 800,
+                    fontSize: "2rem",
+                  }}
+                >
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    avatarLetter
+                  )}
                 </div>
-                {!isEditing ? (
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+                {/* زر الكاميرا يظهر فقط في وضع التعديل */}
+                {isEditing && (
                   <button
-                    onClick={() => setIsEditing(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:text-[#e35654] hover:bg-[#fef2f2] transition-all"
-                    style={{ fontWeight: 600 }}
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="absolute -bottom-1 -left-1 w-9 h-9 rounded-xl bg-white shadow-md flex items-center justify-center text-[#e35654] border-2 border-gray-50 hover:bg-[#fef2f2] hover:border-[#e35654] transition-all disabled:opacity-60"
+                    title="تغيير الصورة الشخصية"
                   >
-                    <Edit3 className="w-4 h-4" />
-                    تعديل
+                    {uploadingAvatar ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Camera className="w-4 h-4" />
+                    )}
                   </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <Save className="w-4 h-4" />
-                      {saving ? "جاري الحفظ..." : "حفظ"}
-                    </button>
-                    <button
-                      onClick={handleCancel}
-                      disabled={saving}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <X className="w-4 h-4" />
-                      إلغاء
-                    </button>
-                  </div>
                 )}
               </div>
+            </div>
 
-              {/* Quick Stats */}
-              <div className="grid grid-cols-4 gap-3">
-                {stats.map((s, i) => (
-                  <div
-                    key={i}
-                    className="bg-gray-50 rounded-xl p-3.5 border border-gray-100 hover:shadow-md transition-all"
+            {/* Edit / Save / Cancel — أعلى يسار */}
+            <div className="absolute top-4 left-4 sm:left-6 z-10 flex items-center gap-2">
+              {!isEditing ? (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-sm shadow-[#e35654]/20"
+                  style={{ fontWeight: 600 }}
+                >
+                  <Edit3 className="w-4 h-4" />
+                  تعديل البيانات
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-sm shadow-[#e35654]/20"
+                    style={{ fontWeight: 600 }}
                   >
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center mb-2"
-                      style={{ background: s.bg }}
-                    >
-                      <s.icon className="w-4.5 h-4.5" style={{ color: s.color }} />
-                    </div>
-                    <p className="text-gray-900" style={{ fontWeight: 800, fontSize: "1.3rem" }}>{s.value}</p>
-                    <p className="text-gray-400 mt-0.5" style={{ fontSize: "0.7rem" }}>{s.label}</p>
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {saving ? "جاري الحفظ..." : "حفظ"}
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
+                    style={{ fontWeight: 600 }}
+                  >
+                    <X className="w-4 h-4" />
+                    إلغاء
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Info — تحت الـ Avatar بمسافة آمنة */}
+            <div className="px-6 sm:px-8 pt-20 pb-6">
+              <h1
+                className="text-gray-900 mb-1.5 break-words"
+                style={{ fontWeight: 800, fontSize: "1.6rem", lineHeight: 1.2 }}
+              >
+                {form.brandName || "—"}
+              </h1>
+              <p className="text-gray-600 text-sm mb-3">
+                {form.fullName || "—"}
+                {form.position && (
+                  <>
+                    <span className="text-gray-300 mx-2">•</span>
+                    <span className="text-gray-500">{form.position}</span>
+                  </>
+                )}
+              </p>
+              <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
+                {form.location && (
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                    {form.location}
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                  انضم {formatJoinedDate(joinedAt)}
+                </span>
+                {form.email && (
+                  <span className="flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-gray-400" />
+                    {form.email}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Info Card */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
+            <h2 className="text-gray-900 mb-6" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+              معلومات الحساب
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {FIELDS.map((field) => {
+                const editable = field.editable !== false;
+                const Icon = field.icon;
+                const required = field.required === true;
+                const isEmpty = !form[field.key].trim();
+                const showMissing = isEditing && editable && required && isEmpty;
+                return (
+                  <div key={field.key}>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
+                      <Icon className="w-4 h-4 text-gray-400" />
+                      {field.label}
+                      {required && <span className="text-[#e35654] mr-0.5">*</span>}
+                      {!editable && isEditing && (
+                        <span className="text-[10px] text-gray-400 mr-1">(غير قابل للتعديل)</span>
+                      )}
+                    </label>
+                    {isEditing && editable ? (
+                      <input
+                        type={field.type ?? "text"}
+                        value={form[field.key]}
+                        placeholder={field.placeholder}
+                        required={required}
+                        onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                        className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all ${
+                          showMissing
+                            ? "border-[#e35654] focus:border-[#e35654] focus:ring-[#e35654]/20 bg-[#fef2f2]/40"
+                            : "border-gray-200 focus:border-[#e35654] focus:ring-[#e35654]/10"
+                        }`}
+                      />
+                    ) : (
+                      <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm break-words">
+                        {form[field.key] || "—"}
+                      </p>
+                    )}
+                    {showMissing && (
+                      <p className="text-[#e35654] text-xs mt-1" style={{ fontWeight: 500 }}>
+                        هذا الحقل مطلوب
+                      </p>
+                    )}
                   </div>
-                ))}
+                );
+              })}
+
+              {/* Bio */}
+              <div className="sm:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
+                  <User className="w-4 h-4 text-gray-400" />
+                  نبذة عن الشركة
+                </label>
+                {isEditing ? (
+                  <textarea
+                    value={form.bio}
+                    onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                    rows={3}
+                    placeholder="اكتب نبذة قصيرة عن الشركة..."
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all resize-none"
+                  />
+                ) : (
+                  <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap">
+                    {form.bio || "—"}
+                  </p>
+                )}
               </div>
             </div>
           </div>
         </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-6 mb-6 border-b border-gray-200">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-3.5 px-1 border-b-2 text-sm transition-all ${
-                activeTab === tab.id
-                  ? "border-[#e35654] text-[#e35654]"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-              style={{ fontWeight: 600 }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div>
-          {activeTab === "info" && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
-              <h2 className="text-gray-900 mb-6" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                بيانات الشركة
-              </h2>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {[
-                  { label: "اسم الشركة", key: "companyName", icon: Building2, type: "text", editable: true },
-                  { label: "اسم المسؤول", key: "contactName", icon: User, type: "text", editable: true },
-                  { label: "البريد الإلكتروني", key: "email", icon: Mail, type: "email", editable: false },
-                  { label: "رقم الهاتف", key: "phone", icon: Phone, type: "tel", editable: false },
-                  { label: "المسمى الوظيفي", key: "position", icon: Award, type: "text", editable: false },
-                  { label: "السجل التجاري", key: "commercialRegister", icon: Shield, type: "text", editable: true },
-                  { label: "الموقع", key: "location", icon: MapPin, type: "text", editable: false },
-                  { label: "الموقع الإلكتروني", key: "website", icon: Globe, type: "url", editable: false },
-                  { label: "القطاع", key: "industry", icon: Target, type: "text", editable: false },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                      <field.icon className="w-4 h-4 text-gray-400" />
-                      {field.label}
-                      {!field.editable && isEditing && (
-                        <span className="text-[10px] text-gray-400 mr-1">(غير قابل للتعديل)</span>
-                      )}
-                    </label>
-                    {isEditing && field.editable ? (
-                      <input
-                        type={field.type}
-                        value={(profileData as any)[field.key]}
-                        onChange={(e) =>
-                          setProfileData({ ...profileData, [field.key]: e.target.value })
-                        }
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
-                      />
-                    ) : (
-                      <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm">
-                        {(profileData as any)[field.key] || "—"}
-                      </p>
-                    )}
-                  </div>
-                ))}
-
-                {/* Bio - Full Width */}
-                <div className="sm:col-span-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                    <User className="w-4 h-4 text-gray-400" />
-                    نبذة عن الشركة
-                  </label>
-                  {isEditing ? (
-                    <textarea
-                      value={profileData.bio}
-                      onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
-                      rows={3}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all resize-none"
-                    />
-                  ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm leading-relaxed">
-                      {profileData.bio}
-                    </p>
-                  )}
-                </div>
-
-                {/* Join Date */}
-                <div className="sm:col-span-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    تاريخ الانضمام
-                  </label>
-                  <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl text-sm">{profileData.joinDate}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "stats" && (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {stats.map((s, i) => (
-                  <div
-                    key={i}
-                    className="bg-white rounded-2xl border border-gray-100 p-5 text-center hover:shadow-md transition-all"
-                  >
-                    <div
-                      className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3"
-                      style={{ background: s.bg }}
-                    >
-                      <s.icon className="w-6 h-6" style={{ color: s.color }} />
-                    </div>
-                    <p className="text-gray-900" style={{ fontWeight: 800, fontSize: "1.5rem" }}>{s.value}</p>
-                    <p className="text-gray-400 mt-1 text-xs">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Achievements */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
-                <h2 className="text-gray-900 mb-5" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                  الإنجازات والأوسمة
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {achievements.map((ach, i) => (
-                    <div
-                      key={i}
-                      className={`rounded-2xl border p-4 text-center transition-all ${
-                        ach.earned
-                          ? "border-[#e35654]/20 bg-[#fffbfb] hover:shadow-sm"
-                          : "border-gray-100 bg-gray-50 opacity-50"
-                      }`}
-                    >
-                      <span style={{ fontSize: "1.8rem" }}>{ach.icon}</span>
-                      <p className="text-gray-900 text-sm mt-2" style={{ fontWeight: 700 }}>{ach.title}</p>
-                      <p className="text-gray-400 mt-1" style={{ fontSize: "0.68rem" }}>{ach.desc}</p>
-                      {!ach.earned && (
-                        <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-500" style={{ fontWeight: 500 }}>
-                          غير مكتمل
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Sponsorship History */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
-                <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                    سجل الرعايات
-                  </h2>
-                  <button
-                    onClick={() => navigate("/sponsor/sponsorships")}
-                    className="text-[#e35654] text-xs hover:underline"
-                    style={{ fontWeight: 500 }}
-                  >
-                    عرض الكل
-                  </button>
-                </div>
-                <div className="space-y-2.5">
-                  {sponsorshipHistory.map((sp, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between p-3.5 rounded-xl hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-[#fef2f2] flex items-center justify-center">
-                          <Handshake className="w-4 h-4 text-[#e35654]" />
-                        </div>
-                        <div>
-                          <p className="text-gray-800 text-sm" style={{ fontWeight: 600 }}>{sp.name}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{sp.package} — {sp.date}</p>
-                        </div>
-                      </div>
-                      <span
-                        className="text-xs px-2.5 py-1 rounded-full"
-                        style={{ background: sp.statusBg, color: sp.statusColor, fontWeight: 600 }}
-                      >
-                        {sp.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "security" && (
-            <div className="space-y-6">
-              {/* Change Password */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
-                <h2 className="text-gray-900 mb-5 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                  <Key className="w-5 h-5 text-gray-400" />
-                  تغيير كلمة المرور
-                </h2>
-                <div className="space-y-4 max-w-md">
-                  {[
-                    { label: "كلمة المرور الحالية" },
-                    { label: "كلمة المرور الجديدة" },
-                    { label: "تأكيد كلمة المرور الجديدة" },
-                  ].map((f, i) => (
-                    <div key={i}>
-                      <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                        {f.label}
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all"
-                      />
-                    </div>
-                  ))}
-                  <button
-                    className="px-6 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
-                    style={{ fontWeight: 600 }}
-                  >
-                    تحديث كلمة المرور
-                  </button>
-                </div>
-              </div>
-
-              {/* Security Settings */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
-                <h2 className="text-gray-900 mb-5 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                  <Shield className="w-5 h-5 text-gray-400" />
-                  إعدادات الأمان
-                </h2>
-                <div className="space-y-3">
-                  {[
-                    { title: "المصادقة الثنائية", desc: "حماية إضافية لحسابك عند تسجيل الدخول" },
-                    { title: "إشعارات تسجيل الدخول", desc: "تنبيه عند تسجيل الدخول من جهاز جديد" },
-                    { title: "إشعارات العقود", desc: "تنبيه فوري عند أي تحديث في العقود" },
-                  ].map((setting, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-all"
-                    >
-                      <div>
-                        <p className="text-gray-900 text-sm" style={{ fontWeight: 600 }}>{setting.title}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{setting.desc}</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" defaultChecked={i === 2} />
-                        <div className="w-10 h-5.5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#e35654]" style={{ width: 40, height: 22 }} />
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Danger Zone */}
-              <div className="bg-white rounded-2xl border border-[#fce7eb] p-6 sm:p-8">
-                <h2 className="text-[#cc4a48] mb-3 flex items-center gap-2" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-                  <LogOut className="w-5 h-5" />
-                  منطقة الخطر
-                </h2>
-                <p className="text-gray-500 text-sm mb-4">
-                  بمجرد حذف حسابك، سيتم حذف جميع بياناتك وعقودك بشكل نهائي. لا يمكن التراجع عن هذا الإجراء.
-                </p>
-                <button
-                  className="px-5 py-2.5 rounded-xl border-2 border-[#fad1d8] text-[#e35654] text-sm hover:bg-[#fef2f4] hover:border-[#f8bac7] transition-all"
-                  style={{ fontWeight: 600 }}
-                >
-                  حذف الحساب نهائيًا
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </>
   );
 }
