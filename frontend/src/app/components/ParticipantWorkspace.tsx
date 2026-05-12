@@ -333,7 +333,7 @@ interface ApiEvaluation {
   judgeSpecialty: string | null;
   comment: string | null;
   evaluatedAt: string;
-  criteria: { name: string; score: number }[];
+  criteria: { name: string; score: number; max: number }[];
   totalScore: number;
   maxScore: number;
 }
@@ -3134,25 +3134,29 @@ function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
                   </div>
                 </div>
 
-                {/* Criteria */}
+                {/* Criteria — each scored 0..max where max = criterion weight.
+                    Bar fill is score/max so the visual matches the rubric. */}
                 {ev.criteria.length > 0 && (
                   <div className="grid grid-cols-2 gap-3 mb-4">
-                    {ev.criteria.map((c, idx) => (
-                      <div key={idx} className="bg-white rounded-xl p-3 border border-gray-100">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-gray-600 text-xs">{c.name}</p>
-                          <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#f59e0b" }}>
-                            {c.score}
-                          </span>
+                    {ev.criteria.map((c, idx) => {
+                      const pct = c.max > 0 ? Math.min(100, Math.max(0, (c.score / c.max) * 100)) : 0;
+                      return (
+                        <div key={idx} className="bg-white rounded-xl p-3 border border-gray-100">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-gray-600 text-xs">{c.name}</p>
+                            <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#f59e0b" }}>
+                              {c.score}/{c.max}
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-1.5">
+                            <div
+                              className="h-1.5 rounded-full"
+                              style={{ width: `${pct}%`, background: "#f59e0b" }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-full bg-gray-100 rounded-full h-1.5">
-                          <div
-                            className="h-1.5 rounded-full"
-                            style={{ width: `${c.score}%`, background: "#f59e0b" }}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

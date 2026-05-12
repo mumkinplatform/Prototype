@@ -543,8 +543,8 @@ export function HackathonProjects() {
         toast.error(`أدخل درجة المعيار "${c.name}"`);
         return;
       }
-      if (n < 0 || n > 100) {
-        toast.error(`درجة "${c.name}" يجب أن تكون بين ٠ و ١٠٠`);
+      if (n < 0 || n > c.weight) {
+        toast.error(`درجة "${c.name}" يجب أن تكون بين ٠ و ${c.weight}`);
         return;
       }
       scores.push({ name: c.name, score: n });
@@ -2059,15 +2059,12 @@ export function HackathonProjects() {
                   )}
 
                   {projectEvaluations.map((evaluation) => {
-                    // Compute this judge's weighted total using the global
-                    // criteria weights (matches the backend's logic).
+                    // New rubric: criterion score is 0..weight, project total
+                    // is just the sum (lands on 0..100 since weights sum to 100).
                     const weightOf = (name: string) =>
                       criteria.find((c) => c.name === name)?.weight ?? 0;
                     const weightedTotal = Math.round(
-                      evaluation.scores.reduce(
-                        (sum, s) => sum + (s.score * weightOf(s.name)) / 100,
-                        0,
-                      ),
+                      evaluation.scores.reduce((sum, s) => sum + s.score, 0),
                     );
                     const initial = evaluation.judgeName.trim()[0] ?? 'م';
                     return (
@@ -2091,22 +2088,26 @@ export function HackathonProjects() {
                         </div>
 
                         <div className="space-y-3 mb-4">
-                          {evaluation.scores.map((s, sIdx) => (
-                            <div key={sIdx} className="flex items-center justify-between">
-                              <span className="text-sm text-gray-700">{s.name}</span>
-                              <div className="flex items-center gap-2">
-                                <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-blue-600 rounded-full"
-                                    style={{ width: `${s.score}%` }}
-                                  ></div>
+                          {evaluation.scores.map((s, sIdx) => {
+                            const max = weightOf(s.name) || 1;
+                            const pct = Math.min(100, Math.max(0, (s.score / max) * 100));
+                            return (
+                              <div key={sIdx} className="flex items-center justify-between">
+                                <span className="text-sm text-gray-700">{s.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-blue-600 rounded-full"
+                                      style={{ width: `${pct}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-sm text-gray-900 w-16 text-left" style={{ fontWeight: 600 }}>
+                                    {s.score}/{weightOf(s.name)}
+                                  </span>
                                 </div>
-                                <span className="text-sm text-gray-900 w-16 text-left" style={{ fontWeight: 600 }}>
-                                  {s.score}/100
-                                </span>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {evaluation.comment && (
@@ -2172,20 +2173,20 @@ export function HackathonProjects() {
                           )}
                         </div>
                         <span className="text-xs text-[#e35654] bg-white px-2 py-1 rounded-lg flex-shrink-0" style={{ fontWeight: 700 }}>
-                          وزن {c.weight}%
+                          من {c.weight}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
                           min={0}
-                          max={100}
+                          max={c.weight}
                           value={evalScores[c.name] ?? ''}
                           onChange={(e) => setEvalScores((s) => ({ ...s, [c.name]: e.target.value }))}
-                          placeholder="٠ - ١٠٠"
+                          placeholder={`٠ - ${c.weight}`}
                           className="w-24 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-indigo-500"
                         />
-                        <span className="text-xs text-gray-500">من ١٠٠</span>
+                        <span className="text-xs text-gray-500">من {c.weight}</span>
                       </div>
                     </div>
                   ))}
@@ -2262,23 +2263,24 @@ export function HackathonProjects() {
 
               {viewingMyEvaluation.myEvaluation.scores.map((s, idx) => {
                 const weight = criteria.find((c) => c.name === s.name)?.weight ?? 0;
+                const pct = weight > 0 ? Math.min(100, Math.max(0, (s.score / weight) * 100)) : 0;
                 return (
                   <div key={idx} className="bg-gray-50 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{s.name}</p>
                       <span className="text-xs text-[#e35654] bg-white px-2 py-1 rounded-lg" style={{ fontWeight: 700 }}>
-                        وزن {weight}%
+                        من {weight}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-indigo-600 rounded-full"
-                          style={{ width: `${s.score}%` }}
+                          style={{ width: `${pct}%` }}
                         ></div>
                       </div>
                       <span className="text-sm text-gray-900 w-16 text-left" style={{ fontWeight: 700 }}>
-                        {s.score}/100
+                        {s.score}/{weight}
                       </span>
                     </div>
                   </div>

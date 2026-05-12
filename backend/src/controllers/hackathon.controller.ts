@@ -2263,12 +2263,14 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
          a.reviewed_at          AS reviewedAt,
          a.notification_sent_at AS notificationSentAt,
          a.T_ID                 AS teamId,
+         t.T_name                AS teamName,
          (SELECT GROUP_CONCAT(P_skills SEPARATOR '|||')
             FROM participant_skills WHERE PM_ID = a.PM_ID) AS skillsRaw,
          (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
             FROM hackathon_track WHERE hackathon_ID = a.hackathon_ID) AS trackName
          FROM applies_hackathon a
          JOIN member m ON m.M_ID = a.PM_ID
+    LEFT JOIN team t   ON t.T_ID = a.T_ID
         WHERE a.hackathon_ID = ?
         ORDER BY a.applied_at DESC`,
       [id],
@@ -2288,6 +2290,7 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
       reviewedAt: string | null;
       notificationSentAt: string | null;
       teamId: number | null;
+      teamName: string | null;
       skillsRaw: string | null;
       trackName: string | null;
     }>).map((r) => ({
@@ -2304,6 +2307,7 @@ export const listHackathonRegistrations = async (req: Request, res: Response) =>
       reviewedAt: r.reviewedAt,
       notificationSentAt: r.notificationSentAt,
       teamId: r.teamId,
+      teamName: r.teamName,
       skills: r.skillsRaw ? r.skillsRaw.split('|||').filter(Boolean) : [],
       // Hackathon-level track. Multiple tracks (if any) joined with " · " to display.
       trackName: r.trackName ? r.trackName.split('|||').filter(Boolean).join(' · ') : null,
@@ -3239,20 +3243,21 @@ export const listHackathonProjects = async (req: Request, res: Response) => {
 
     // Compute a single 0-100 score per project by averaging weighted totals
     // across evaluations. Returns null when no evaluations exist yet.
+    // New rubric: each criterion's score is already in 0..weight, and the
+    // project total is just the sum of those (lands on 0..100 since weights
+    // sum to 100). When a project has multiple evaluations we average the
+    // per-judge totals.
     const scoreForProject = (teamId: number | null, participantId: number | null): number | null => {
       const key = teamId !== null ? `t:${teamId}` : `p:${participantId}`;
       const evalMap = scoresByTarget.get(key);
       if (!evalMap || evalMap.size === 0) return null;
-      const weightedTotals: number[] = [];
+      const perJudgeTotals: number[] = [];
       for (const scores of evalMap.values()) {
         let total = 0;
-        for (const s of scores) {
-          const w = criteriaWeights.get(s.name) ?? 0;
-          total += (s.score * w) / 100;
-        }
-        weightedTotals.push(total);
+        for (const s of scores) total += s.score;
+        perJudgeTotals.push(total);
       }
-      const avg = weightedTotals.reduce((a, b) => a + b, 0) / weightedTotals.length;
+      const avg = perJudgeTotals.reduce((a, b) => a + b, 0) / perJudgeTotals.length;
       return Math.round(avg);
     };
 
@@ -3703,14 +3708,6 @@ export const listMyJudgeAssignments = async (req: Request, res: Response) => {
         .map((r) => r.myEvaluationId)
         .filter((x): x is number => x !== null);
       if (evalIds.length > 0) {
-        const [critRows] = await pool.query<RowDataPacket[]>(
-          'SELECT HEC_Name, HEC_Weight FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
-          [id],
-        );
-        const weights = new Map<string, number>();
-        for (const c of critRows as Array<{ HEC_Name: string; HEC_Weight: number }>) {
-          weights.set(c.HEC_Name, Number(c.HEC_Weight));
-        }
         const ph = evalIds.map(() => '?').join(',');
         const [scoreRows] = await pool.query<RowDataPacket[]>(
           `SELECT E_ID, ES_CriterionName, ES_Score, ES_SortOrder
@@ -3718,10 +3715,11 @@ export const listMyJudgeAssignments = async (req: Request, res: Response) => {
             ORDER BY ES_SortOrder, ES_ID`,
           evalIds,
         );
+        // Sum scores directly — each criterion is already capped at its weight,
+        // so the sum lands on 0..100 (since weights total 100).
         const totals = new Map<number, number>();
         for (const s of scoreRows as Array<{ E_ID: number; ES_CriterionName: string; ES_Score: number }>) {
-          const w = weights.get(s.ES_CriterionName) ?? 0;
-          totals.set(s.E_ID, (totals.get(s.E_ID) ?? 0) + (Number(s.ES_Score) * w) / 100);
+          totals.set(s.E_ID, (totals.get(s.E_ID) ?? 0) + Number(s.ES_Score));
           const list = scoresByEvalId.get(s.E_ID) ?? [];
           list.push({ name: s.ES_CriterionName, score: Number(s.ES_Score) });
           scoresByEvalId.set(s.E_ID, list);
@@ -3819,10 +3817,13 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'المشروع لم يُسلَّم بعد' });
   }
 
-  // Load criteria so we can validate that submitted scores reference real
-  // criteria for THIS hackathon (no inventing scores).
+  // Load criteria — name, sort order, AND weight. Weight doubles as the
+  // criterion's max score in the new "weight = ceiling" rubric: a 25% weight
+  // criterion can score 0..25, a 10% weight criterion can score 0..10, and
+  // the final project score is the SUM of these (which lands on 0..100 since
+  // weights sum to 100).
   const [critRows] = await pool.query<RowDataPacket[]>(
-    `SELECT HEC_Name, HEC_SortOrder
+    `SELECT HEC_Name, HEC_SortOrder, HEC_Weight
        FROM hackathon_evaluation_criteria
       WHERE hackathon_ID = ?
       ORDER BY HEC_SortOrder, HEC_ID`,
@@ -3831,9 +3832,9 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
   if (critRows.length === 0) {
     return res.status(400).json({ error: 'لم يحدد المنظم معايير التقييم' });
   }
-  const criteriaIndex = new Map<string, number>();
-  for (const c of critRows as Array<{ HEC_Name: string; HEC_SortOrder: number }>) {
-    criteriaIndex.set(c.HEC_Name, c.HEC_SortOrder);
+  const criteriaIndex = new Map<string, { sortOrder: number; max: number }>();
+  for (const c of critRows as Array<{ HEC_Name: string; HEC_SortOrder: number; HEC_Weight: number }>) {
+    criteriaIndex.set(c.HEC_Name, { sortOrder: c.HEC_SortOrder, max: Number(c.HEC_Weight) });
   }
 
   const normalizedScores: Array<{ name: string; score: number; sortOrder: number }> = [];
@@ -3841,17 +3842,20 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
     const s = rawScores[i] as { name?: unknown; score?: unknown } | null;
     if (!s || typeof s !== 'object') return res.status(400).json({ error: `score ${i + 1} invalid` });
     const name = typeof s.name === 'string' ? s.name.trim() : '';
-    if (!name || !criteriaIndex.has(name)) {
+    const meta = criteriaIndex.get(name);
+    if (!name || !meta) {
       return res.status(400).json({ error: `معيار غير معروف: ${name}` });
     }
     const score = Number(s.score);
-    if (!Number.isFinite(score) || score < 0 || score > 100) {
-      return res.status(400).json({ error: `درجة المعيار "${name}" غير صالحة (٠ - ١٠٠)` });
+    if (!Number.isFinite(score) || score < 0 || score > meta.max) {
+      return res.status(400).json({
+        error: `درجة المعيار "${name}" غير صالحة (٠ - ${meta.max})`,
+      });
     }
     normalizedScores.push({
       name,
       score: Math.round(score),
-      sortOrder: criteriaIndex.get(name)!,
+      sortOrder: meta.sortOrder,
     });
   }
 

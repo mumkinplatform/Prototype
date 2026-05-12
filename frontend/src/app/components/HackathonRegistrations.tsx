@@ -21,6 +21,8 @@ interface Registration {
   ideaTitle: string;
   ideaDescription: string;
   notificationSentAt: string | null;
+  teamId: number | null;
+  teamName: string | null;
 }
 
 interface ApiRegistration {
@@ -37,6 +39,7 @@ interface ApiRegistration {
   reviewedAt: string | null;
   notificationSentAt: string | null;
   teamId: number | null;
+  teamName: string | null;
   skills: string[];
   trackName: string | null;
 }
@@ -85,6 +88,8 @@ function toUiRegistration(r: ApiRegistration): Registration {
     ideaTitle: r.ideaTitle,
     ideaDescription: r.ideaDescription,
     notificationSentAt: r.notificationSentAt,
+    teamId: r.teamId,
+    teamName: r.teamName,
   };
 }
 
@@ -333,11 +338,57 @@ export function HackathonRegistrations() {
     return matchSearch && matchType && matchStatus;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredRegistrations.length / itemsPerPage);
+  // Group manual-team members into a single row so the organizer reviews the
+  // team as a unit (accept/reject + notification apply to every member). Solo
+  // participants stay as standalone entries. AI-team members are still solo
+  // applications at this stage (their team is assigned post-acceptance), so
+  // they remain individual.
+  type RegistrationGroup =
+    | { kind: 'solo'; reg: Registration }
+    | {
+        kind: 'team';
+        teamId: number;
+        teamName: string;
+        members: Registration[];
+        leader: Registration; // first registered member — used for avatar/track
+      };
+  const groupedItems: RegistrationGroup[] = (() => {
+    const teamMap = new Map<number, Registration[]>();
+    const solos: Registration[] = [];
+    for (const r of filteredRegistrations) {
+      if (r.teamId != null && r.type === 'فريق يدوي') {
+        const list = teamMap.get(r.teamId) ?? [];
+        list.push(r);
+        teamMap.set(r.teamId, list);
+      } else {
+        solos.push(r);
+      }
+    }
+    const groups: RegistrationGroup[] = [];
+    for (const [teamId, members] of teamMap) {
+      groups.push({
+        kind: 'team',
+        teamId,
+        teamName: members[0].teamName ?? `فريق #${teamId}`,
+        members,
+        leader: members[0],
+      });
+    }
+    for (const r of solos) groups.push({ kind: 'solo', reg: r });
+    return groups;
+  })();
+
+  // Pagination operates over grouped items, not raw registrations, so each
+  // page row is "one unit of work" for the organizer.
+  const totalPages = Math.ceil(groupedItems.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentRegistrations = filteredRegistrations.slice(startIndex, endIndex);
+  const currentGroups = groupedItems.slice(startIndex, endIndex);
+  // Flat list of registrations on the current page — kept for legacy code
+  // (CSV export, etc.) that still expects individual rows.
+  const currentRegistrations = currentGroups.flatMap((g) =>
+    g.kind === 'team' ? g.members : [g.reg],
+  );
 
   // Skill frequency across all registrations. Counts each skill once per
   // participant (case-insensitive, trimmed). Percentage is "share of participants
@@ -372,12 +423,15 @@ export function HackathonRegistrations() {
     }
   };
 
+  // Functional setState so callers that loop (e.g. team-row toggles selecting
+  // every member in one go) see each other's updates instead of clobbering
+  // the array with stale state.
   const handleSelectOne = (id: number, checked: boolean) => {
-    if (checked) {
-      setSelectedIds([...selectedIds, id]);
-    } else {
-      setSelectedIds(selectedIds.filter(sid => sid !== id));
-    }
+    setSelectedIds((prev) =>
+      checked
+        ? prev.includes(id) ? prev : [...prev, id]
+        : prev.filter((sid) => sid !== id),
+    );
   };
 
   // Persist status to the backend then mirror in local state. Note that on a 'pending'
@@ -977,84 +1031,144 @@ export function HackathonRegistrations() {
               </tr>
             </thead>
             <tbody>
-              {currentRegistrations.map((reg) => (
-                <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(reg.id)}
-                      onChange={(e) => handleSelectOne(reg.id, e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      {reg.avatar ? (
-                        <img
-                          src={reg.avatar}
-                          alt={reg.name}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
+              {currentGroups.map((group) => {
+                // For a team group, the row represents all members. Status is
+                // the leader's (all members move in lockstep when actioned).
+                const ids = group.kind === 'team' ? group.members.map((m) => m.id) : [group.reg.id];
+                const allSelected = ids.every((id) => selectedIds.includes(id));
+                const primary = group.kind === 'team' ? group.leader : group.reg;
+                const status = primary.status;
+                const anyNotified =
+                  group.kind === 'team'
+                    ? group.members.some((m) => m.notificationSentAt)
+                    : group.reg.notificationSentAt != null;
+                const onToggle = (checked: boolean) => {
+                  for (const id of ids) handleSelectOne(id, checked);
+                };
+                const onAcceptAll = () => {
+                  for (const id of ids) handleAccept(id);
+                };
+                const onRejectAll = () => {
+                  for (const id of ids) handleReject(id);
+                };
+                return (
+                  <tr key={group.kind === 'team' ? `team-${group.teamId}` : `solo-${group.reg.id}`} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={(e) => onToggle(e.target.checked)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </td>
+                    <td className="px-6 py-4">
+                      {group.kind === 'team' ? (
+                        <div>
+                          {/* Team header — name + member count */}
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs" style={{ fontWeight: 700 }}>
+                              👥
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-900" style={{ fontWeight: 700 }}>
+                                {group.teamName}
+                                <span className="text-xs text-gray-500 mr-2" style={{ fontWeight: 500 }}>
+                                  ({group.members.length} أعضاء)
+                                </span>
+                              </p>
+                              <p className="text-xs text-gray-500">يتم القبول/الرفض للفريق كاملاً</p>
+                            </div>
+                          </div>
+                          {/* Members list */}
+                          <div className="space-y-1.5 pr-6 border-r-2 border-gray-100">
+                            {group.members.map((m) => (
+                              <div key={m.id} className="flex items-center gap-2">
+                                {m.avatar ? (
+                                  <img src={m.avatar} alt={m.name} className="w-6 h-6 rounded-full object-cover" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-[10px]" style={{ fontWeight: 700 }}>
+                                    {getInitials(m.name)}
+                                  </div>
+                                )}
+                                <span className="text-xs text-gray-700">{m.name}</span>
+                                <span className="text-[11px] text-gray-400">·</span>
+                                <span className="text-[11px] text-gray-500">{m.email}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#e35654] to-[#cc4a48] text-white flex items-center justify-center text-xs" style={{ fontWeight: 700 }}>
-                          {getInitials(reg.name)}
+                        <div className="flex items-center gap-3">
+                          {group.reg.avatar ? (
+                            <img
+                              src={group.reg.avatar}
+                              alt={group.reg.name}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#e35654] to-[#cc4a48] text-white flex items-center justify-center text-xs" style={{ fontWeight: 700 }}>
+                              {getInitials(group.reg.name)}
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{group.reg.name}</p>
+                            <p className="text-xs text-gray-500">{group.reg.email}</p>
+                          </div>
                         </div>
                       )}
-                      <div>
-                        <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{reg.name}</p>
-                        <p className="text-xs text-gray-500">{reg.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-gray-700">{reg.type}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-gray-700">{reg.track}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm text-gray-500">{reg.registrationDate}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-3 py-1 rounded-lg text-xs border ${getStatusBadge(reg.status)}`} style={{ fontWeight: 600 }}>
-                        {reg.status}
-                      </span>
-                      {reg.notificationSentAt && (
-                        <span title="تم إرسال إشعار للمشارك" className="text-blue-500" aria-label="notified">
-                          <Mail className="w-3.5 h-3.5" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-sm text-gray-700">{primary.type}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-sm text-gray-700">{primary.track}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-sm text-gray-500">{primary.registrationDate}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-lg text-xs border ${getStatusBadge(status)}`} style={{ fontWeight: 600 }}>
+                          {status}
                         </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1">
-                      {reg.status === 'قيد الانتظار' && (
-                        <>
-                          <button
-                            onClick={() => handleReject(reg.id)}
-                            className="w-8 h-8 rounded-lg bg-gray-50 text-[#cc4a48] flex items-center justify-center hover:bg-[#fef2f4] transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleAccept(reg.id)}
-                            className="w-8 h-8 rounded-lg bg-gray-50 text-green-600 flex items-center justify-center hover:bg-green-50 transition-colors"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => setSelectedRegistration(reg)}
-                        className="w-8 h-8 rounded-lg bg-gray-50 text-blue-600 flex items-center justify-center hover:bg-blue-50 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {anyNotified && (
+                          <span title="تم إرسال إشعار للمشارك" className="text-blue-500" aria-label="notified">
+                            <Mail className="w-3.5 h-3.5" />
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1">
+                        {status === 'قيد الانتظار' && (
+                          <>
+                            <button
+                              onClick={onRejectAll}
+                              title={group.kind === 'team' ? `رفض الفريق (${ids.length})` : 'رفض الطلب'}
+                              className="w-8 h-8 rounded-lg bg-gray-50 text-[#cc4a48] flex items-center justify-center hover:bg-[#fef2f4] transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={onAcceptAll}
+                              title={group.kind === 'team' ? `قبول الفريق (${ids.length})` : 'قبول الطلب'}
+                              className="w-8 h-8 rounded-lg bg-gray-50 text-green-600 flex items-center justify-center hover:bg-green-50 transition-colors"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => setSelectedRegistration(primary)}
+                          className="w-8 h-8 rounded-lg bg-gray-50 text-blue-600 flex items-center justify-center hover:bg-blue-50 transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
