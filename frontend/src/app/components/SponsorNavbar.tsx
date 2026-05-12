@@ -1,12 +1,21 @@
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { Search, Bell, MessageCircle, Sparkles, LogOut } from "lucide-react";
+import { Sparkles, LogOut } from "lucide-react";
 import { clearAuth } from "../../lib/auth";
+import { apiGet } from "../../lib/api";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
+interface MeShape {
+  fullName?: string;
+  brandName?: string | null;
+  avatar?: string | null;
+}
 
 export type SponsorNavPage =
   | "home"
   | "sponsorships"
   | "opportunities"
-  | "payments"
   | "messages"
   | "notifications"
   | "profile";
@@ -14,27 +23,56 @@ export type SponsorNavPage =
 interface SponsorNavbarProps {
   /** الصفحة الحالية لتحديد الزر النشط */
   activePage: SponsorNavPage;
-  /** عند النقر على الـ Avatar */
-  onAvatarClick?: () => void;
 }
 
 const NAV_ITEMS: { label: string; page: SponsorNavPage; path: string }[] = [
   { label: "الرئيسية", page: "home", path: "/sponsor" },
   { label: "رعاياتي", page: "sponsorships", path: "/sponsor/sponsorships" },
   { label: "فرص الرعاية", page: "opportunities", path: "/sponsor/opportunities" },
-  { label: "المدفوعات", page: "payments", path: "/sponsor/payments" },
   { label: "الرسائل", page: "messages", path: "/sponsor/messages" },
 ];
 
-export function SponsorNavbar({ activePage, onAvatarClick }: SponsorNavbarProps) {
+export function SponsorNavbar({ activePage }: SponsorNavbarProps) {
   const navigate = useNavigate();
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [avatarLetter, setAvatarLetter] = useState<string>("ش");
 
-  const handleAvatar = () => {
-    if (onAvatarClick) {
-      onAvatarClick();
-    } else {
-      navigate("/sponsor");
-    }
+  // اجلب الـ avatar من الـ API + استمع لأي تحديث للصورة من البروفايل
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await apiGet<MeShape>("/sponsors/me");
+        if (cancelled) return;
+        setAvatar(data.avatar ?? null);
+        const letter =
+          (data.brandName?.trim()[0] || data.fullName?.trim()[0] || "ش").toUpperCase();
+        setAvatarLetter(letter);
+      } catch {
+        // تجاهل الخطأ — الحرف الافتراضي يكفي
+      }
+    };
+    load();
+
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ avatar?: string | null }>).detail;
+      if (detail && "avatar" in detail) {
+        setAvatar(detail.avatar ?? null);
+      }
+    };
+    window.addEventListener("mumkin:avatar-updated", handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("mumkin:avatar-updated", handler);
+    };
+  }, []);
+
+  const avatarUrl = avatar ? `${API_URL}/uploads/avatars/${avatar}` : null;
+
+  const handleConfirmLogout = () => {
+    clearAuth();
+    navigate("/");
   };
 
   return (
@@ -73,55 +111,24 @@ export function SponsorNavbar({ activePage, onAvatarClick }: SponsorNavbarProps)
 
         {/* ── Actions (left side in RTL) ── */}
         <div className="flex items-center gap-1.5">
-          {/* Search */}
-          <div className="relative hidden lg:block">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              placeholder="ابحث..."
-              className="pr-9 pl-4 py-2 rounded-xl border border-gray-100 bg-gray-50 text-xs w-36 focus:outline-none focus:border-[#e35654] focus:bg-white focus:w-44 transition-all duration-200"
-            />
-          </div>
-
-          {/* Messages */}
-          <button
-            onClick={() => navigate("/sponsor/messages")}
-            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-[#fef2f2] text-gray-400 hover:text-[#e35654]"
-            style={{ border: "1px solid #f3f4f6" }}
-          >
-            <MessageCircle className="w-4 h-4" />
-            <span
-              className="absolute top-1 right-1 w-4 h-4 bg-[#e35654] rounded-full text-white flex items-center justify-center"
-              style={{ fontSize: 9, fontWeight: 700 }}
-            >
-              7
-            </span>
-          </button>
-
-          {/* Bell */}
-          <button
-            onClick={() => navigate("/sponsor/notifications")}
-            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-[#fef2f2] text-gray-400 hover:text-[#e35654]"
-            style={{ border: "1px solid #f3f4f6" }}
-          >
-            <Bell className="w-4 h-4" />
-            <span
-              className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white"
-              style={{ background: "#e35654" }}
-            />
-          </button>
-
           {/* Avatar */}
           <button
             onClick={() => navigate("/sponsor/profile")}
-            className="relative w-9 h-9 rounded-xl flex items-center justify-center text-white transition-transform hover:scale-105"
+            className="relative w-9 h-9 rounded-xl flex items-center justify-center text-white transition-transform hover:scale-105 overflow-hidden"
             style={{
-              background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
+              background: avatarUrl
+                ? "transparent"
+                : "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
               fontWeight: 800,
               fontSize: "0.8rem",
               boxShadow: "0 4px 10px rgba(227,86,84,0.3)",
             }}
           >
-            ش
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+            ) : (
+              avatarLetter
+            )}
             <span
               className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
               style={{ background: "#10b981" }}
@@ -130,10 +137,7 @@ export function SponsorNavbar({ activePage, onAvatarClick }: SponsorNavbarProps)
 
           {/* Logout */}
           <button
-            onClick={() => {
-              clearAuth();
-              navigate("/");
-            }}
+            onClick={() => setConfirmingLogout(true)}
             title="تسجيل الخروج"
             aria-label="تسجيل الخروج"
             className="w-9 h-9 rounded-xl flex items-center justify-center transition-all text-gray-400 hover:bg-[#fef2f2] hover:text-[#e35654]"
@@ -164,6 +168,50 @@ export function SponsorNavbar({ activePage, onAvatarClick }: SponsorNavbarProps)
           })}
         </div>
       </div>
+
+      {/* Logout Confirmation Dialog */}
+      {confirmingLogout && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={() => setConfirmingLogout(false)}
+        >
+          <div
+            dir="rtl"
+            className="bg-white rounded-2xl p-6 max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#fef2f2] flex items-center justify-center flex-shrink-0">
+                <LogOut className="w-5 h-5 text-[#e35654]" />
+              </div>
+              <div>
+                <h3 className="text-gray-900 mb-1" style={{ fontWeight: 700, fontSize: "1.05rem" }}>
+                  تسجيل الخروج
+                </h3>
+                <p className="text-sm text-gray-500">
+                  هل أنت متأكد من تسجيل الخروج من حسابك؟
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmingLogout(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-700 hover:bg-gray-50"
+                style={{ fontWeight: 600 }}
+              >
+                تراجع
+              </button>
+              <button
+                onClick={handleConfirmLogout}
+                className="flex-1 py-2.5 rounded-xl text-sm text-white bg-[#e35654] hover:bg-[#cc4a48]"
+                style={{ fontWeight: 600 }}
+              >
+                نعم، سجّل خروجي
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

@@ -43,8 +43,14 @@ async function request<T>(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    const body = data as { error?: string; detail?: string };
-    const message = body.detail
+    const body = data as { error?: string; detail?: string; message?: string };
+    // Prefer the human-readable `message` over the technical `error` code so
+    // toast.error(e.message) shows "هذا الإيميل مرتبط أصلاً..." instead of
+    // "role_conflict". `error` remains accessible via err.body.error for code
+    // paths that need to branch on the type of failure.
+    const message = body.message
+      ? body.message
+      : body.detail
       ? `${body.error ?? 'error'}: ${body.detail}`
       : body.error ?? `HTTP ${res.status}`;
     throw new ApiError(res.status, message, data);

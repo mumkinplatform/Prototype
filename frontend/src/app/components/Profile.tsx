@@ -1,14 +1,11 @@
-import { Link } from 'react-router';
-import { 
-  Bell, 
-  Search,
+import { useEffect, useState } from 'react';
+import {
   User,
   Mail,
   Phone,
   MapPin,
   Building2,
   Globe,
-  Calendar,
   Shield,
   Camera,
   Edit3,
@@ -18,45 +15,204 @@ import {
   Award,
   TrendingUp,
   Users,
-  Target
+  Target,
 } from 'lucide-react';
-import { useState } from 'react';
+import { toast } from 'sonner';
+import { apiGet, apiPut, ApiError } from '../../lib/api';
+
+interface OrganizerProfile {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  bio: string | null;
+  phone: string | null;
+  location: string | null;
+  avatar: string | null;
+  company: string | null;
+  position: string | null;
+  website: string | null;
+  crNumber: string | null;
+}
+
+interface OrganizerStats {
+  hackathonsTotal: number;
+  hackathonsPublished: number;
+  hackathonsCompleted: number;
+  participantsTotal: number;
+  prizesTotal: number;
+  successRate: number;
+}
+
+interface RecentActivityItem {
+  id: number;
+  title: string | null;
+  status: 'draft' | 'published' | 'ongoing' | 'completed';
+  createdAt: string;
+}
+
+interface ProfileResponse extends OrganizerProfile {
+  stats: OrganizerStats;
+  recentActivity: RecentActivityItem[];
+}
+
+const EMPTY_FORM = {
+  fullName: '',
+  email: '',
+  phone: '',
+  position: '',
+  company: '',
+  location: '',
+  website: '',
+  bio: '',
+  crNumber: '',
+};
+
+// Display helpers
+const formatNumber = (n: number) => new Intl.NumberFormat('ar-SA').format(n);
+
+const STATUS_LABEL: Record<RecentActivityItem['status'], { label: string; color: string }> = {
+  draft: { label: 'تم إنشاء مسودة', color: 'gray' },
+  published: { label: 'تم نشر هاكاثون', color: 'green' },
+  ongoing: { label: 'هاكاثون قائم', color: 'blue' },
+  completed: { label: 'هاكاثون مكتمل', color: 'purple' },
+};
+
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const diffMs = Date.now() - t;
+  const day = 24 * 60 * 60 * 1000;
+  const days = Math.floor(diffMs / day);
+  if (days <= 0) return 'اليوم';
+  if (days === 1) return 'منذ يوم';
+  if (days < 7) return `منذ ${days} أيام`;
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return 'منذ أسبوع';
+  if (weeks < 5) return `منذ ${weeks} أسابيع`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return 'منذ شهر';
+  return `منذ ${months} أشهر`;
+}
 
 export function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'stats' | 'security'>('info');
-  
-  const [profileData, setProfileData] = useState({
-    name: 'محمد أحمد العتيبي',
-    email: 'mohammed.alotaibi@example.com',
-    phone: '+966 50 123 4567',
-    position: 'مدير التقنية',
-    company: 'شركة الابتكار التقني',
-    location: 'الرياض، المملكة العربية السعودية',
-    website: 'www.tech-innovation.com',
-    bio: 'منظم هاكاثونات محترف مع خبرة 5 سنوات في تنظيم الفعاليات التقنية الكبرى. شغوف بدعم المواهب الشابة والابتكار التقني.',
-    commercialRegister: '1234567890',
-    joinDate: 'يناير 2022'
-  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const stats = [
-    { label: 'هاكاثونات منظمة', value: '24', icon: Target, color: 'blue' },
-    { label: 'إجمالي المشاركين', value: '8,420', icon: Users, color: 'green' },
-    { label: 'معدل النجاح', value: '96%', icon: TrendingUp, color: 'purple' },
-    { label: 'جوائز موزعة', value: '180', icon: Award, color: 'orange' }
-  ];
+  const [profile, setProfile] = useState<OrganizerProfile | null>(null);
+  const [stats, setStats] = useState<OrganizerStats | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // Save logic here
+  // Form mirrors the editable subset of the profile; loaded from API and
+  // committed via PUT on save. Keep separate from `profile` so cancel can
+  // revert without a refetch.
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiGet<ProfileResponse>('/organizers/me')
+      .then((data) => {
+        if (cancelled) return;
+        setProfile(data);
+        setStats(data.stats);
+        setRecentActivity(data.recentActivity);
+        setForm({
+          fullName: data.fullName || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          position: data.position || '',
+          company: data.company || '',
+          location: data.location || '',
+          website: data.website || '',
+          bio: data.bio || '',
+          crNumber: data.crNumber || '',
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 403) {
+          toast.error('هذه الصفحة مخصصة للمنظمين');
+        } else {
+          toast.error('تعذّر تحميل الملف الشخصي');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const updated = await apiPut<OrganizerProfile>('/organizers/me', {
+        fullName: form.fullName,
+        bio: form.bio,
+        phone: form.phone,
+        location: form.location,
+        company: form.company,
+        position: form.position,
+        website: form.website,
+        crNumber: form.crNumber,
+      });
+      setProfile(updated);
+      setIsEditing(false);
+      toast.success('تم حفظ التغييرات');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.message || 'تعذّر الحفظ');
+      } else {
+        toast.error('تعذّر الاتصال بالخادم');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
+    if (!profile) return;
+    // Revert form back to last-saved state without a re-fetch.
+    setForm({
+      fullName: profile.fullName || '',
+      email: profile.email || '',
+      phone: profile.phone || '',
+      position: profile.position || '',
+      company: profile.company || '',
+      location: profile.location || '',
+      website: profile.website || '',
+      bio: profile.bio || '',
+      crNumber: profile.crNumber || '',
+    });
     setIsEditing(false);
-    // Reset data logic here
   };
 
-  const unreadCount = 3;
+  // Avatar initial — derived from the saved name (not the live form input)
+  // so it doesn't flicker as the user types.
+  const avatarInitial = (profile?.firstName?.trim()?.[0] || profile?.email?.[0] || '?').toUpperCase();
+
+  // Render-time stats array — built from the API response, falling back to
+  // zeros while the request is in flight so the layout doesn't pop.
+  const statsCards = [
+    { label: 'هاكاثونات منظمة', value: formatNumber(stats?.hackathonsTotal ?? 0), icon: Target, color: 'blue' as const },
+    { label: 'إجمالي المشاركين', value: formatNumber(stats?.participantsTotal ?? 0), icon: Users, color: 'green' as const },
+    { label: 'معدل النشر', value: `${stats?.successRate ?? 0}%`, icon: TrendingUp, color: 'purple' as const },
+    { label: 'إجمالي الجوائز', value: formatNumber(stats?.prizesTotal ?? 0), icon: Award, color: 'orange' as const },
+  ];
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center text-gray-500">
+        جاري تحميل الملف الشخصي…
+      </div>
+    );
+  }
 
   return (
     <>
@@ -70,14 +226,18 @@ export function Profile() {
             {/* Avatar */}
             <div className="relative group">
               <div
-                className="w-20 h-20 rounded-2xl border-4 border-white shadow-md flex items-center justify-center text-white -mt-14 flex-shrink-0"
+                className="w-20 h-20 rounded-2xl border-4 border-white shadow-md flex items-center justify-center text-white -mt-14 flex-shrink-0 overflow-hidden"
                 style={{
                   background: "linear-gradient(135deg,#e35654 0%,#cc4a48 100%)",
                   fontWeight: 800,
                   fontSize: "1.5rem",
                 }}
               >
-                م
+                {profile?.avatar ? (
+                  <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  avatarInitial
+                )}
               </div>
               <button className="absolute bottom-2 right-2 w-6 h-6 rounded-lg bg-white shadow-lg flex items-center justify-center text-[#e35654] opacity-0 group-hover:opacity-100 transition-opacity">
                 <Camera className="w-3.5 h-3.5" />
@@ -93,10 +253,10 @@ export function Profile() {
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <h1 className="text-gray-900 mb-1" style={{ fontWeight: 800, fontSize: "1.6rem" }}>
-                    {profileData.name}
+                    {profile?.fullName || '—'}
                   </h1>
-                  <p className="text-gray-600 text-sm">{profileData.position}</p>
-                  <p className="text-gray-500 text-sm">{profileData.company}</p>
+                  <p className="text-gray-600 text-sm">{profile?.position || '—'}</p>
+                  <p className="text-gray-500 text-sm">{profile?.company || '—'}</p>
                 </div>
                 {!isEditing ? (
                   <button
@@ -111,14 +271,16 @@ export function Profile() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleSave}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
+                      disabled={saving}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all disabled:opacity-60"
                       style={{ fontWeight: 600 }}
                     >
                       <Save className="w-4 h-4" />
-                      حفظ
+                      {saving ? 'جاري الحفظ…' : 'حفظ'}
                     </button>
                     <button
                       onClick={handleCancel}
+                      disabled={saving}
                       className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
                       style={{ fontWeight: 600 }}
                     >
@@ -131,7 +293,7 @@ export function Profile() {
 
               {/* Quick Stats */}
               <div className="grid grid-cols-4 gap-3">
-                {stats.map((stat, index) => (
+                {statsCards.map((stat, index) => (
                   <div
                     key={index}
                     className="bg-gray-50 rounded-xl p-3.5 border border-gray-100 hover:shadow-md transition-all"
@@ -213,31 +375,22 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={profileData.name}
-                      onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                      value={form.fullName}
+                      onChange={(e) => setForm({ ...form, fullName: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.name}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.fullName || '—'}</p>
                   )}
                 </div>
 
-                {/* Email */}
+                {/* Email — read-only (changing email requires re-verification) */}
                 <div>
                   <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
                     <Mail className="w-4 h-4" />
                     البريد الإلكتروني
                   </label>
-                  {isEditing ? (
-                    <input
-                      type="email"
-                      value={profileData.email}
-                      onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
-                    />
-                  ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.email}</p>
-                  )}
+                  <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.email || '—'}</p>
                 </div>
 
                 {/* Phone */}
@@ -249,12 +402,12 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="tel"
-                      value={profileData.phone}
-                      onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.phone}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.phone || '—'}</p>
                   )}
                 </div>
 
@@ -267,12 +420,12 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={profileData.position}
-                      onChange={(e) => setProfileData({ ...profileData, position: e.target.value })}
+                      value={form.position}
+                      onChange={(e) => setForm({ ...form, position: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.position}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.position || '—'}</p>
                   )}
                 </div>
 
@@ -285,12 +438,12 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={profileData.company}
-                      onChange={(e) => setProfileData({ ...profileData, company: e.target.value })}
+                      value={form.company}
+                      onChange={(e) => setForm({ ...form, company: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.company}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.company || '—'}</p>
                   )}
                 </div>
 
@@ -303,12 +456,13 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={profileData.commercialRegister}
-                      onChange={(e) => setProfileData({ ...profileData, commercialRegister: e.target.value })}
+                      value={form.crNumber}
+                      onChange={(e) => setForm({ ...form, crNumber: e.target.value })}
+                      placeholder="10 أرقام"
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.commercialRegister}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.crNumber || '—'}</p>
                   )}
                 </div>
 
@@ -321,12 +475,12 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="text"
-                      value={profileData.location}
-                      onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
+                      value={form.location}
+                      onChange={(e) => setForm({ ...form, location: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.location}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.location || '—'}</p>
                   )}
                 </div>
 
@@ -339,12 +493,12 @@ export function Profile() {
                   {isEditing ? (
                     <input
                       type="url"
-                      value={profileData.website}
-                      onChange={(e) => setProfileData({ ...profileData, website: e.target.value })}
+                      value={form.website}
+                      onChange={(e) => setForm({ ...form, website: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.website}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{form.website || '—'}</p>
                   )}
                 </div>
 
@@ -356,23 +510,14 @@ export function Profile() {
                   </label>
                   {isEditing ? (
                     <textarea
-                      value={profileData.bio}
-                      onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
+                      value={form.bio}
+                      onChange={(e) => setForm({ ...form, bio: e.target.value })}
                       rows={4}
                       className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654] transition-all resize-none"
                     />
                   ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl leading-relaxed">{profileData.bio}</p>
+                    <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl leading-relaxed">{form.bio || '—'}</p>
                   )}
-                </div>
-
-                {/* Join Date - Read Only */}
-                <div className="col-span-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                    <Calendar className="w-4 h-4" />
-                    تاريخ الانضمام
-                  </label>
-                  <p className="text-gray-900 bg-gray-50 px-4 py-3 rounded-xl">{profileData.joinDate}</p>
                 </div>
               </div>
             </div>
@@ -382,7 +527,7 @@ export function Profile() {
             <div className="space-y-6">
               {/* Main Stats */}
               <div className="grid grid-cols-4 gap-6">
-                {stats.map((stat, index) => (
+                {statsCards.map((stat, index) => (
                   <div
                     key={index}
                     className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:scale-105 transition-all cursor-pointer"
@@ -406,30 +551,35 @@ export function Profile() {
                 ))}
               </div>
 
-              {/* Recent Activity */}
+              {/* Recent Activity — sourced from the organizer's most recent hackathons */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8">
                 <h2 className="text-xl text-gray-900 mb-6" style={{ fontWeight: 700 }}>
                   النشاط الأخير
                 </h2>
-                <div className="space-y-4">
-                  {[
-                    { title: 'إطلاق هاكاثون الابتكار', time: 'منذ يومين', color: 'green' },
-                    { title: 'قبول 45 مشارك جديد', time: 'منذ 3 أيام', color: 'blue' },
-                    { title: 'توقيع اتفاقية رعاية', time: 'منذ أسبوع', color: 'purple' },
-                    { title: 'اختتام هاكاثون التقنية', time: 'منذ أسبوعين', color: 'orange' }
-                  ].map((activity, index) => (
-                    <div key={index} className="flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 transition-all">
-                      <div className={`w-2 h-2 rounded-full ${
-                        activity.color === 'green' ? 'bg-green-500' :
-                        activity.color === 'blue' ? 'bg-blue-500' :
-                        activity.color === 'purple' ? 'bg-purple-500' :
-                        'bg-orange-500'
-                      }`} />
-                      <p className="flex-1 text-gray-900" style={{ fontWeight: 600 }}>{activity.title}</p>
-                      <span className="text-sm text-gray-500">{activity.time}</span>
-                    </div>
-                  ))}
-                </div>
+                {recentActivity.length === 0 ? (
+                  <p className="text-gray-500 text-sm">لا يوجد نشاط حتى الآن.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {recentActivity.map((a) => {
+                      const meta = STATUS_LABEL[a.status];
+                      return (
+                        <div key={a.id} className="flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 transition-all">
+                          <div className={`w-2 h-2 rounded-full ${
+                            meta.color === 'green' ? 'bg-green-500' :
+                            meta.color === 'blue' ? 'bg-blue-500' :
+                            meta.color === 'purple' ? 'bg-purple-500' :
+                            meta.color === 'gray' ? 'bg-gray-400' :
+                            'bg-orange-500'
+                          }`} />
+                          <p className="flex-1 text-gray-900" style={{ fontWeight: 600 }}>
+                            {meta.label}: {a.title || 'بدون عنوان'}
+                          </p>
+                          <span className="text-sm text-gray-500">{formatRelative(a.createdAt)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

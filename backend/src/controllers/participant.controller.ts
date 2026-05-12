@@ -1720,34 +1720,35 @@ export const listMyEvaluations = async (req: Request, res: Response) => {
     [evIds]
   );
 
-  const scoresByEval = new Map<number, { name: string; score: number }[]>();
-  for (const r of scoreRows) {
-    if (!scoresByEval.has(r.evaluationId)) scoresByEval.set(r.evaluationId, []);
-    scoresByEval.get(r.evaluationId)!.push({ name: r.criterionName, score: r.score });
-  }
-
-  // Pull criteria weights so we can compute the same weighted total the
-  // organizer + judge see. Falls back to equal weight if a name doesn't match.
-  const [critRows] = await pool.query<RowDataPacket[]>(
+  // Pull weights so we can surface `max` for each criterion in the response.
+  // The participant UI uses `max` to render the per-criterion progress bar
+  // (filled = score/max) and the "X / Y" label.
+  const [critWeightRows] = await pool.query<RowDataPacket[]>(
     'SELECT HEC_Name, HEC_Weight FROM hackathon_evaluation_criteria WHERE hackathon_ID = ?',
     [hackathonId],
   );
   const weights = new Map<string, number>();
-  for (const c of critRows as Array<{ HEC_Name: string; HEC_Weight: number }>) {
+  for (const c of critWeightRows as Array<{ HEC_Name: string; HEC_Weight: number }>) {
     weights.set(c.HEC_Name, Number(c.HEC_Weight));
+  }
+
+  const scoresByEval = new Map<number, { name: string; score: number; max: number }[]>();
+  for (const r of scoreRows) {
+    if (!scoresByEval.has(r.evaluationId)) scoresByEval.set(r.evaluationId, []);
+    scoresByEval.get(r.evaluationId)!.push({
+      name: r.criterionName,
+      score: r.score,
+      max: weights.get(r.criterionName) ?? 0,
+    });
   }
 
   const items = evRows.map((r) => {
     const criteria = scoresByEval.get(r.id) ?? [];
-    // Weighted total: Σ (score × weight%) / 100. Matches the organizer view.
+    // Each criterion is scored 0..weight; the project total is just the sum
+    // and lands on 0..100 since weights are required to sum to 100.
     const total =
       criteria.length > 0
-        ? Math.round(
-            criteria.reduce(
-              (sum, c) => sum + (c.score * (weights.get(c.name) ?? 0)) / 100,
-              0,
-            ),
-          )
+        ? Math.round(criteria.reduce((sum, c) => sum + c.score, 0))
         : 0;
     return {
       id: r.id,

@@ -1,31 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { apiGet } from "../../lib/api";
-import { HackathonCover, BrandingPayload } from "./HackathonCover";
-
-type OpportunityResponse = {
-  items: Array<{
-    id: number;
-    title: string;
-    slug: string | null;
-    type: string | null;
-    startDate: string | null;
-    registrationDeadline: string | null;
-    org: string | null;
-    prizeTotal: number;
-    tags: string[];
-    packagesCount: number;
-    branding: BrandingPayload | null;
-  }>;
-};
-
-const TAG_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4"];
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
-}
 import {
   Search,
   ArrowRight,
@@ -40,7 +14,36 @@ import {
   Clock,
   Star,
   ChevronDown,
+  CheckCircle2,
 } from "lucide-react";
+import { apiGet } from "../../lib/api";
+import { HackathonCover, BrandingPayload } from "./HackathonCover";
+import { LogoPattern } from "./LogoPatterns";
+
+type OpportunityResponse = {
+  items: Array<{
+    id: number;
+    title: string;
+    slug: string | null;
+    type: string | null;
+    startDate: string | null;
+    registrationDeadline: string | null;
+    org: string | null;
+    prizeTotal: number;
+    tags: string[];
+    packagesCount: number;
+    branding: BrandingPayload | null;
+    views: number;
+  }>;
+};
+
+const TAG_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4"];
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+}
 
 const typeOptions = ["الكل", "حضوري", "إلكتروني", "هجين"];
 const sortOptions = ["الأحدث", "الجائزة الأكبر", "الأكثر مشاهدة"];
@@ -57,12 +60,19 @@ type DisplayHackathon = {
   typeBg: string;
   date: string;
   deadline: string;
+  rawDeadline: string | null;
   prize: string;
+  prizeValue: number;
   viewers: number;
   teams: number;
   branding: BrandingPayload | null;
   featured: boolean;
   packagesCount: number;
+  hasApplied: boolean;
+};
+
+type ApplicationsResp = {
+  items: Array<{ hackathon: { id: number } }>;
 };
 
 export function HackathonsExplore() {
@@ -70,15 +80,22 @@ export function HackathonsExplore() {
   const [search, setSearch] = useState("");
   const [activeType, setActiveType] = useState("الكل");
   const [sort, setSort] = useState("الأحدث");
-  const [onlyFeatured, setOnlyFeatured] = useState(false);
   const [hackathons, setHackathons] = useState<DisplayHackathon[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<OpportunityResponse>("/sponsors/opportunities")
-      .then((res) => {
-        const mapped: DisplayHackathon[] = res.items.map((it) => ({
+    let cancelled = false;
+    Promise.all([
+      apiGet<OpportunityResponse>("/sponsors/opportunities"),
+      apiGet<ApplicationsResp>("/sponsors/applications").catch(() => ({ items: [] as ApplicationsResp["items"] })),
+    ])
+      .then(([oppsRes, appsRes]) => {
+        if (cancelled) return;
+        const appliedHackathonIds = new Set(
+          appsRes.items.map((a) => a.hackathon.id)
+        );
+        const mapped: DisplayHackathon[] = oppsRes.items.map((it) => ({
           id: it.id,
           title: it.title,
           slug: it.slug,
@@ -90,17 +107,27 @@ export function HackathonsExplore() {
           typeBg: "#fef2f2",
           date: formatDate(it.startDate),
           deadline: formatDate(it.registrationDeadline),
+          rawDeadline: it.registrationDeadline,
           prize: `${it.prizeTotal.toLocaleString("ar-SA")} ر.س`,
-          viewers: 0,
+          prizeValue: it.prizeTotal,
+          viewers: it.views,
           teams: 0,
           branding: it.branding,
           featured: false,
           packagesCount: it.packagesCount,
+          hasApplied: appliedHackathonIds.has(it.id),
         }));
         setHackathons(mapped);
       })
-      .catch((err) => setLoadError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filtered = hackathons
@@ -110,16 +137,12 @@ export function HackathonsExplore() {
         h.org.includes(search) ||
         h.tags.some((t) => t.includes(search));
       const matchType = activeType === "الكل" || h.type === activeType;
-      const matchFeatured = !onlyFeatured || h.featured;
-      return matchSearch && matchType && matchFeatured;
+      return matchSearch && matchType;
     })
     .sort((a, b) => {
-      if (sort === "الجائزة الأكبر")
-        return (
-          parseInt(b.prize.replace(/\D/g, "")) -
-          parseInt(a.prize.replace(/\D/g, ""))
-        );
+      if (sort === "الجائزة الأكبر") return b.prizeValue - a.prizeValue;
       if (sort === "الأكثر مشاهدة") return b.viewers - a.viewers;
+      // الأحدث (الافتراضي) — حسب الـ ID تنازلياً
       return b.id - a.id;
     });
 
@@ -192,20 +215,8 @@ export function HackathonsExplore() {
             </div>
           </div>
 
-          {/* Quick Toggle */}
+          {/* Results count */}
           <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={() => setOnlyFeatured(!onlyFeatured)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs border transition-all ${
-                onlyFeatured
-                  ? "bg-[#e35654] text-white border-[#e35654]"
-                  : "bg-white text-gray-500 border-gray-200 hover:border-[#e35654]/40"
-              }`}
-              style={{ fontWeight: 600 }}
-            >
-              <Star className="w-3.5 h-3.5" />
-              المميزة فقط
-            </button>
             <span className="text-gray-400 text-xs">
               {filtered.length} نتيجة
             </span>
@@ -238,13 +249,46 @@ export function HackathonsExplore() {
             {filtered.map((h) => (
               <div
                 key={h.id}
-                className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-200 group flex flex-col"
+                className={`bg-white rounded-2xl border-2 overflow-hidden transition-all duration-200 group flex flex-col ${
+                  h.hasApplied
+                    ? "border-gray-300 opacity-75 grayscale-[20%]"
+                    : "border-gray-100 hover:shadow-lg"
+                }`}
               >
                 {/* Cover — uses organizer-uploaded image/pattern/palette from branding */}
                 <div className="h-44 relative overflow-hidden flex items-end p-4">
                   <HackathonCover branding={h.branding} id={h.id} />
+                  {/* Hackathon logo — small brand mark anchored to the bottom-right
+                      of the cover so it reads like an avatar over the banner. */}
+                  {(() => {
+                    const b = h.branding;
+                    if (b?.logoMode === "upload" && b.logoUploadDataUrl) {
+                      return (
+                        <div className="absolute bottom-3 left-3 w-12 h-12 rounded-xl bg-white p-1 shadow-md z-10 overflow-hidden">
+                          <img src={b.logoUploadDataUrl} alt="" className="w-full h-full object-cover rounded-lg" />
+                        </div>
+                      );
+                    }
+                    if (b?.logoMode === "pattern" && b.logoPattern) {
+                      return (
+                        <div className="absolute bottom-3 left-3 w-12 h-12 rounded-xl bg-white p-0.5 shadow-md z-10 overflow-hidden">
+                          <LogoPattern pattern={b.logoPattern} colorPalette={b.colorPalette || "red"} />
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  {/* Applied badge (highest priority) */}
+                  {h.hasApplied && (
+                    <div className="absolute top-3 right-3 z-10">
+                      <span className="flex items-center gap-1 bg-gray-700 text-white text-xs px-2.5 py-1 rounded-full shadow-md" style={{ fontWeight: 600 }}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        تم التقديم
+                      </span>
+                    </div>
+                  )}
                   {/* Featured badge */}
-                  {h.featured && (
+                  {h.featured && !h.hasApplied && (
                     <div className="absolute top-3 right-3 z-10">
                       <span className="flex items-center gap-1 bg-[#e35654] text-white text-xs px-2.5 py-1 rounded-full shadow-md" style={{ fontWeight: 600 }}>
                         <Star className="w-3 h-3" />
@@ -325,11 +369,15 @@ export function HackathonsExplore() {
                       </span>
                       <button
                         onClick={() => navigate(`/sponsor/hackathon/${h.id}`)}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20 transition-all group-hover:shadow-md"
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs transition-all ${
+                          h.hasApplied
+                            ? "bg-gray-500 hover:bg-gray-600"
+                            : "bg-[#e35654] hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20 group-hover:shadow-md"
+                        }`}
                         style={{ fontWeight: 600 }}
                       >
                         <Handshake className="w-3.5 h-3.5" />
-                        طلب رعاية
+                        {h.hasApplied ? "عرض التقديم" : "طلب رعاية"}
                       </button>
                     </div>
                   </div>

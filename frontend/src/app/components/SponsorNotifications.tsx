@@ -4,15 +4,11 @@ import {
   Bell,
   CheckCheck,
   Trash2,
-  Filter,
   CheckCircle2,
   AlertCircle,
-  CreditCard,
   MessageCircle,
   FileText,
   Handshake,
-  Calendar,
-  Info,
   ChevronLeft,
   ArrowRight,
   Loader2,
@@ -100,128 +96,6 @@ interface Notification {
   bg: string;
   link?: string;
 }
-
-const initialNotifications: Notification[] = [
-  {
-    id: 1,
-    type: "alert",
-    title: "عقد بانتظار التوقيع",
-    message: "هاكاثون NEOM 2025 — الباقة الذهبية. يُرجى مراجعة البنود وإتمام التوقيع الرقمي قبل 15 مارس.",
-    time: "منذ 30 دقيقة",
-    read: false,
-    icon: FileText,
-    color: "#e35654",
-    bg: "#fef2f2",
-    link: "/sponsor/negotiation",
-  },
-  {
-    id: 2,
-    type: "success",
-    title: "تم تأكيد الدفعة بنجاح",
-    message: "تم استلام مبلغ 75,000 ر.س لرعاية هاكاثون الذكاء الاصطناعي العالمي 2024.",
-    time: "منذ ساعتين",
-    read: false,
-    icon: CreditCard,
-    color: "#10b981",
-    bg: "#f0fdf4",
-    link: "/sponsor/payments",
-  },
-  {
-    id: 3,
-    type: "info",
-    title: "رسالة جديدة من منظم TechVision",
-    message: "مرحبًا، نود مناقشة تفاصيل الباقة البلاتينية وتحديد موعد الاجتماع.",
-    time: "منذ 3 ساعات",
-    read: false,
-    icon: MessageCircle,
-    color: "#8b5cf6",
-    bg: "#f5f3ff",
-    link: "/sponsor/messages",
-  },
-  {
-    id: 4,
-    type: "warning",
-    title: "موعد سداد فاتورة قريب",
-    message: "فاتورة رعاية تحدي الأمن السيبراني بقيمة 40,000 ر.س مستحقة خلال 3 أيام.",
-    time: "منذ 5 ساعات",
-    read: false,
-    icon: AlertCircle,
-    color: "#f59e0b",
-    bg: "#fffbeb",
-    link: "/sponsor/payments",
-  },
-  {
-    id: 5,
-    type: "success",
-    title: "تم قبول طلب الرعاية",
-    message: "تهانينا! تم قبول طلب رعايتك لهاكاثون التقنية المالية 2024 - باقة شريك إستراتيجي.",
-    time: "أمس 2:30 م",
-    read: true,
-    icon: Handshake,
-    color: "#10b981",
-    bg: "#f0fdf4",
-    link: "/sponsor/sponsorships",
-  },
-  {
-    id: 6,
-    type: "info",
-    title: "تحديث في جدول الهاكاثون",
-    message: "تم تعديل موعد هاكاثون الجامعات الناشئة من 20 نوفمبر إلى 25 نوفمبر 2024.",
-    time: "أمس 10:15 ص",
-    read: true,
-    icon: Calendar,
-    color: "#6366f1",
-    bg: "#eef2ff",
-    link: "/sponsor/sponsorships",
-  },
-  {
-    id: 7,
-    type: "success",
-    title: "تقرير ترويجي جاهز",
-    message: "تقرير أداء رعايتك لهاكاثون الذكاء الاصطناعي جاهز للتحميل — 12,400 مشاهدة و 3,200 تفاعل.",
-    time: "منذ يومين",
-    read: true,
-    icon: CheckCircle2,
-    color: "#10b981",
-    bg: "#f0fdf4",
-    link: "/sponsor/sponsorships",
-  },
-  {
-    id: 8,
-    type: "info",
-    title: "دعوة لحضور حفل الختام",
-    message: "تمت دعوتك لحضور حفل ختام هاكاثون الطاقة المتجددة يوم 22 نوفمبر في قاعة المؤتمرات.",
-    time: "منذ 3 أيام",
-    read: true,
-    icon: Info,
-    color: "#06b6d4",
-    bg: "#ecfeff",
-  },
-  {
-    id: 9,
-    type: "warning",
-    title: "تنبيه: مستندات مطلوبة",
-    message: "يُرجى رفع نسخة من السجل التجاري المحدث لإتمام إجراءات عقد رعاية NEOM 2025.",
-    time: "منذ 4 أيام",
-    read: true,
-    icon: AlertCircle,
-    color: "#f59e0b",
-    bg: "#fffbeb",
-    link: "/sponsor/profile",
-  },
-  {
-    id: 10,
-    type: "success",
-    title: "تم رفع العقد الموقع",
-    message: "تم رفع نسخة العقد الموقعة بنجاح لهاكاثون الرياض التقني.",
-    time: "منذ أسبوع",
-    read: true,
-    icon: FileText,
-    color: "#10b981",
-    bg: "#f0fdf4",
-    link: "/sponsor/negotiation",
-  },
-];
 
 const filterTabs = ["الكل", "غير مقروء", "تنبيهات", "رسائل", "عقود"];
 
@@ -445,13 +319,13 @@ export function SponsorNotifications() {
               </div>
               <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
                 {notifications.length === 0
-                  ? "ما عندك إشعارات حالياً"
+                  ? "لا توجد إشعارات حالياً"
                   : "لا توجد إشعارات في هذه الفئة"}
               </p>
               <p className="text-gray-400 text-xs mt-1">
                 {notifications.length === 0
-                  ? "ستظهر هنا تنبيهات تقديماتك ومستجدات الرعاية."
-                  : "جرب تغيير الفلتر لعرض إشعارات أخرى"}
+                  ? "ستظهر هنا تنبيهات تقديماتكِ ومستجدات الرعاية."
+                  : "حاولي تغيير الفلتر لعرض إشعارات أخرى."}
               </p>
             </div>
           )}
