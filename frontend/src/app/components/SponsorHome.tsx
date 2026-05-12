@@ -1,101 +1,69 @@
 import { useNavigate } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Handshake,
-  FileText,
-  CreditCard,
   MessageCircle,
   BarChart3,
-  ChevronLeft,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Calendar,
-  MapPin,
   Building2,
-  GraduationCap,
-  Share2,
-  EyeOff,
+  Package,
   TrendingUp,
   Award,
   DollarSign,
   Rocket,
   Target,
   Star,
-  Zap
+  Zap,
+  Loader2,
 } from "lucide-react";
+import { apiGet, ApiError } from "../../lib/api";
 
-const activities = [
-  {
-    icon: CheckCircle2,
-    color: "#10b981",
-    bg: "#f0fdf4",
-    title: "تم رفع نسخة العقد الموقعة",
-    sub: "هاكاثون الرياض التقني",
-    time: "منذ ساعتين",
-  },
-  {
-    icon: CreditCard,
-    color: "#f59e0b",
-    bg: "#fffbeb",
-    title: "تأكيد استلام الدفعة الأولى",
-    sub: "هاكاثون الذكاء الاصطناعي للمستقبل",
-    time: "أمس 4:15 م",
-  },
-  {
-    icon: MessageCircle,
-    color: "#8b5cf6",
-    bg: "#f5f3ff",
-    title: "رسالة جديدة من TechVision",
-    sub: "استفسار حول باقة الرعاية البلاتينية",
-    time: "أمس 1:00 ص",
-  },
-  {
-    icon: AlertCircle,
-    color: "#e35654",
-    bg: "#fef2f2",
-    title: "تحديث في متطلبات الرعاية",
-    sub: "هاكاثون الطاقة المتجددة",
-    time: "منذ أسبوع",
-  },
-];
+interface InsightsResponse {
+  organizers: { name: string; count: number }[];
+  packages: { name: string; count: number }[];
+  statuses: { label: string; count: number }[];
+}
 
-const currentSponsorships = [
-  {
-    name: "هاكاثون الذكاء الاصطناعي 2024",
-    package: "ماسي",
-    packageColor: "#06b6d4",
-    status: "مكتمل",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    progress: 75,
-    date: "15 - 18 أكتوبر 2024",
-  },
-  {
-    name: "قمة الأمن السيبراني",
-    package: "فضي",
-    packageColor: "#6b7280",
-    status: "نشط",
-    statusColor: "#10b981",
-    statusBg: "#f0fdf4",
-    progress: 40,
-    date: "5 - 7 ديسمبر 2024",
-  },
-  {
-    name: "هاكاثون الطاقة المتجددة",
-    package: "برونزي",
-    packageColor: "#b45309",
-    status: "انتظار الباقة",
-    statusColor: "#f59e0b",
-    statusBg: "#fffbeb",
-    progress: 15,
-    date: "20 - 22 نوفمبر 2024",
-  },
-];
+const STATUS_COLOR: Record<string, { color: string; bg: string }> = {
+  "مكتمل": { color: "#10b981", bg: "#f0fdf4" },
+  "قيد التفاوض": { color: "#6366f1", bg: "#eef2ff" },
+  "قيد التقديم": { color: "#f59e0b", bg: "#fffbeb" },
+  "مرفوض": { color: "#ef4444", bg: "#fef2f2" },
+  "أخرى": { color: "#64748b", bg: "#f8fafc" },
+};
 
 export function SponsorHome() {
   const navigate = useNavigate();
-  const [showInsightsOnProfile, setShowInsightsOnProfile] = useState(false);
+  const [insights, setInsights] = useState<InsightsResponse | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(true);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<InsightsResponse>("/sponsors/me/insights")
+      .then((data) => {
+        if (cancelled) return;
+        setInsights(data);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setInsightsError(err instanceof ApiError ? err.message : "تعذّر تحميل الإحصائيات");
+      })
+      .finally(() => {
+        if (!cancelled) setInsightsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const maxOrganizerCount = Math.max(1, ...(insights?.organizers ?? []).map((o) => o.count));
+  const maxPackageCount = Math.max(1, ...(insights?.packages ?? []).map((p) => p.count));
+  const maxStatusCount = Math.max(1, ...(insights?.statuses ?? []).map((s) => s.count));
+  const hasInsightsData =
+    insights !== null &&
+    (insights.organizers.length > 0 ||
+      insights.packages.length > 0 ||
+      insights.statuses.length > 0);
 
   return (
     <>
@@ -299,7 +267,7 @@ export function SponsorHome() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <h2 className="text-2xl text-gray-900 mb-6" style={{ fontWeight: 700 }}>الخدمات السريعة</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Service Card 1 - رعاياتي */}
             <button
               onClick={() => navigate("/sponsor/sponsorships")}
@@ -334,24 +302,7 @@ export function SponsorHome() {
               </span>
             </button>
 
-            {/* Service Card 3 - المدفوعات */}
-            <button
-              onClick={() => navigate("/sponsor/payments")}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-green-400 transition-all cursor-pointer text-right"
-            >
-              <div className="w-14 h-14 rounded-xl bg-green-50 flex items-center justify-center mb-4">
-                <CreditCard className="w-6 h-6 text-green-600" />
-              </div>
-              <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>المدفوعات</h3>
-              <p className="text-gray-500 text-sm mb-4 leading-relaxed">
-                تتبع الفواتير والمستحقات المالية لجميع الرعايات بسهولة.
-              </p>
-              <span className="w-full py-2.5 rounded-xl border-2 border-gray-100 text-[#00bcd4] text-sm hover:bg-cyan-50 hover:border-[#00bcd4] transition-all inline-block text-center" style={{ fontWeight: 600 }}>
-                عرض المدفوعات
-              </span>
-            </button>
-
-            {/* Service Card 4 - الرسائل */}
+            {/* Service Card - الرسائل */}
             <button
               onClick={() => navigate("/sponsor/messages")}
               className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-purple-400 transition-all cursor-pointer text-right"
@@ -376,133 +327,154 @@ export function SponsorHome() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
             {/* Header with toggle */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-[#fef2f2] flex items-center justify-center">
-                  <MapPin className="w-4 h-4 text-[#e35654]" />
-                </div>
-                <div>
-                  <p className="text-gray-800 text-sm" style={{ fontWeight: 700 }}>نظرة على رعاياتك</p>
-                  <p className="text-gray-400" style={{ fontSize: "0.68rem" }}>توزيع الرعايات حسب الجهات والمدن</p>
-                </div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-[#fef2f2] flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 text-[#e35654]" />
               </div>
-              <button
-                onClick={() => setShowInsightsOnProfile(!showInsightsOnProfile)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs transition-all"
-                style={{
-                  fontWeight: 600,
-                  background: showInsightsOnProfile ? "#f0fdf4" : "#f9fafb",
-                  borderColor: showInsightsOnProfile ? "#a7f3d0" : "#e5e7eb",
-                  color: showInsightsOnProfile ? "#10b981" : "#6b7280",
-                }}
-              >
-                {showInsightsOnProfile ? (
-                  <>
-                    <Share2 className="w-3.5 h-3.5" />
-                    ظاهر في ملفك
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="w-3.5 h-3.5" />
-                    مخفي من ملفك
-                  </>
-                )}
-              </button>
+              <div>
+                <p className="text-gray-800 text-sm" style={{ fontWeight: 700 }}>نظرة على رعاياتك</p>
+                <p className="text-gray-400" style={{ fontSize: "0.68rem" }}>توزيع رعاياتك حسب المنظمين والباقات والحالة</p>
+              </div>
             </div>
 
             {/* Insights Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Top Companies */}
-              <div className="bg-white rounded-xl border border-gray-100 p-4">
-                <div className="flex items-center gap-1.5 mb-3">
-                  <Building2 className="w-3.5 h-3.5 text-[#6366f1]" />
-                  <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>أكثر الشركات تعاونًا</p>
+            {insightsLoading ? (
+              <div className="flex items-center justify-center py-10 text-gray-500 text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                جاري تحميل الإحصائيات...
+              </div>
+            ) : insightsError ? (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
+                {insightsError}
+              </div>
+            ) : !hasInsightsData ? (
+              <div className="text-center py-10 bg-gray-50 rounded-xl">
+                <BarChart3 className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  لا توجد بيانات بعد
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  ستظهر الإحصائيات هنا بعد تقديمك على أول رعاية.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Top Organizers */}
+                <div className="bg-white rounded-xl border border-gray-100 p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Building2 className="w-3.5 h-3.5 text-[#6366f1]" />
+                    <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
+                      أكثر المنظمين تعاوناً
+                    </p>
+                  </div>
+                  <div className="space-y-2.5">
+                    {insights!.organizers.length === 0 ? (
+                      <p className="text-gray-400 text-xs">لا توجد بيانات بعد</p>
+                    ) : (
+                      insights!.organizers.map((o, i) => (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                              {o.name}
+                            </span>
+                            <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>
+                              {o.count} رعايات
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-1.5">
+                            <div
+                              className="h-1.5 rounded-full"
+                              style={{
+                                width: `${(o.count / maxOrganizerCount) * 100}%`,
+                                background: "#6366f1",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-2.5">
-                  {[
-                    { name: "TechVision", count: 3, pct: 75 },
-                    { name: "مؤسسة نيوم", count: 2, pct: 50 },
-                    { name: "STC Solutions", count: 1, pct: 25 },
-                  ].map((c, i) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>{c.name}</span>
-                        <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>{c.count} رعايات</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full"
-                          style={{ width: `${c.pct}%`, background: "#6366f1" }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+
+                {/* Top Packages */}
+                <div className="bg-white rounded-xl border border-gray-100 p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Package className="w-3.5 h-3.5 text-[#f59e0b]" />
+                    <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
+                      أكثر الباقات اختياراً
+                    </p>
+                  </div>
+                  <div className="space-y-2.5">
+                    {insights!.packages.length === 0 ? (
+                      <p className="text-gray-400 text-xs">لا توجد بيانات بعد</p>
+                    ) : (
+                      insights!.packages.map((p, i) => (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                              {p.name}
+                            </span>
+                            <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>
+                              {p.count} مرّات
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-1.5">
+                            <div
+                              className="h-1.5 rounded-full"
+                              style={{
+                                width: `${(p.count / maxPackageCount) * 100}%`,
+                                background: "#f59e0b",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Status Breakdown */}
+                <div className="bg-white rounded-xl border border-gray-100 p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <BarChart3 className="w-3.5 h-3.5 text-[#10b981]" />
+                    <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
+                      حالة الرعايات
+                    </p>
+                  </div>
+                  <div className="space-y-2.5">
+                    {insights!.statuses.length === 0 ? (
+                      <p className="text-gray-400 text-xs">لا توجد بيانات بعد</p>
+                    ) : (
+                      insights!.statuses.map((s, i) => {
+                        const palette = STATUS_COLOR[s.label] ?? STATUS_COLOR["أخرى"];
+                        return (
+                          <div key={i}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
+                                {s.label}
+                              </span>
+                              <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>
+                                {s.count} رعاية
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                              <div
+                                className="h-1.5 rounded-full"
+                                style={{
+                                  width: `${(s.count / maxStatusCount) * 100}%`,
+                                  background: palette.color,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* Top Universities */}
-              <div className="bg-white rounded-xl border border-gray-100 p-4">
-                <div className="flex items-center gap-1.5 mb-3">
-                  <GraduationCap className="w-3.5 h-3.5 text-[#f59e0b]" />
-                  <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>أكثر الجامعات تعاونًا</p>
-                </div>
-                <div className="space-y-2.5">
-                  {[
-                    { name: "جامعة الملك سعود", count: 2, pct: 65 },
-                    { name: "جامعة الأميرة نورة", count: 2, pct: 65 },
-                    { name: "جامعة الملك فهد", count: 1, pct: 30 },
-                  ].map((u, i) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>{u.name}</span>
-                        <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>{u.count} هاكاثون</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full"
-                          style={{ width: `${u.pct}%`, background: "#f59e0b" }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Top Cities */}
-              <div className="bg-white rounded-xl border border-gray-100 p-4">
-                <div className="flex items-center gap-1.5 mb-3">
-                  <MapPin className="w-3.5 h-3.5 text-[#10b981]" />
-                  <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>المدن الأكثر نشاطًا</p>
-                </div>
-                <div className="space-y-2.5">
-                  {[
-                    { name: "الرياض", count: 5, pct: 80 },
-                    { name: "جدة", count: 2, pct: 40 },
-                    { name: "الدمام", count: 1, pct: 20 },
-                  ].map((city, i) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>{city.name}</span>
-                        <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>{city.count} رعايات</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full"
-                          style={{ width: `${city.pct}%`, background: "#10b981" }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Visibility Note */}
-            <p className="text-gray-400 mt-3 text-center" style={{ fontSize: "0.65rem" }}>
-              {showInsightsOnProfile
-                ? "هذه البيانات ظاهرة حاليًا في ملفك الشخصي — يمكن للمنظمين رؤيتها"
-                : "هذه البيانات مخفية من ملفك الشخصي — لن يراها أحد غيرك"}
-            </p>
           </div>
         </div>
       </section>

@@ -5,7 +5,6 @@ import { AuthPage } from "./components/AuthPage";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { SponsorHome } from "./components/SponsorHome";
 import { SponsorSponsorships } from "./components/SponsorSponsorships";
-import { NegotiationFlow } from "./components/NegotiationFlow";
 import { MessagesPage } from "./components/MessagesPage";
 import { HackathonsExplore } from "./components/HackathonsExplore";
 import { HackathonDetails } from "./components/HackathonDetails";
@@ -99,11 +98,9 @@ export const router = createBrowserRouter([
           { path: "sponsorships", Component: SponsorSponsorships },
           { path: "opportunities", Component: HackathonsExplore },
           { path: "hackathon/:id", Component: HackathonDetails },
-          { path: "payments", Component: PaymentsPage },
           { path: "messages", Component: MessagesPage },
           { path: "notifications", Component: SponsorNotifications },
           { path: "profile", Component: SponsorProfile },
-          { path: "negotiation", Component: NegotiationFlow },
         ],
       },
       /* ── Participant (independent layout) ── */
