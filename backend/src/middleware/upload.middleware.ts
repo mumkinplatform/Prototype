@@ -48,6 +48,17 @@ interface MaxSizeRow extends RowDataPacket {
 
 const FALLBACK_MAX_MB = 50;
 
+// Blocklist of obviously dangerous extensions. The uploads dir is never
+// executed server-side and files are served as downloads, but blocking
+// these still protects participants who might download a submission and
+// run it locally (malware distribution via the platform).
+const BLOCKED_SUBMISSION_EXTENSIONS = new Set([
+  '.exe', '.bat', '.cmd', '.com', '.scr', '.msi', '.pif',
+  '.vbs', '.vbe', '.ws', '.wsf', '.ps1', '.psm1',
+  '.app', '.pkg', '.command',
+  '.dll', '.ocx', '.sys', '.reg',
+]);
+
 /**
  * Submission upload middleware with dynamic per-hackathon size limit.
  * Reads H_Max_File_Size_MB from DB based on :id in URL.
@@ -84,6 +95,16 @@ export async function submissionUploadDynamic(
   const upload = multer({
     storage,
     limits: { fileSize: maxMb * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (BLOCKED_SUBMISSION_EXTENSIONS.has(ext)) {
+        // Surface a specific error so the route handler can return 415,
+        // not the generic 500 used for unknown upload failures.
+        cb(new Error(`نوع الملف غير مسموح (${ext}). الملفات التنفيذية ممنوعة.`));
+        return;
+      }
+      cb(null, true);
+    },
   });
 
   upload.single('file')(req, res, (err: unknown) => {
@@ -96,6 +117,12 @@ export async function submissionUploadDynamic(
           return;
         }
         res.status(400).json({ error: `خطأ في الرفع: ${err.message}` });
+        return;
+      }
+      // Custom errors raised from fileFilter (e.g., blocked extension)
+      // arrive here as plain Error instances. 415 = Unsupported Media Type.
+      if (err instanceof Error) {
+        res.status(415).json({ error: err.message });
         return;
       }
       res.status(500).json({ error: 'فشل الرفع' });

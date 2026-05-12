@@ -1985,6 +1985,7 @@ interface SubmissionFileRow extends RowDataPacket {
 interface HackathonSubmissionMetaRow extends RowDataPacket {
   H_Submission_Fields: string | string[] | null;
   H_Project_Requirements: string | null;
+  H_Project_Description: string | null;
   H_Submission_StartDate: Date | null;
   H_Submission_Deadline: Date | null;
   H_Hackathon_StartDate: Date | null;
@@ -2151,7 +2152,7 @@ export const getMySubmission = async (req: Request, res: Response) => {
   // Hackathon meta — including submission window so the frontend can render
   // the right UI for "before start" / "open" / "closed".
   const [metaRows] = await pool.query<HackathonSubmissionMetaRow[]>(
-    `SELECT H_Submission_Fields, H_Project_Requirements,
+    `SELECT H_Submission_Fields, H_Project_Requirements, H_Project_Description,
             H_Submission_StartDate, H_Submission_Deadline, H_Hackathon_StartDate,
             H_Max_File_Size_MB
        FROM hackathon WHERE hackathon_ID = ?`,
@@ -2193,6 +2194,9 @@ export const getMySubmission = async (req: Request, res: Response) => {
     maxFileSizeMb: meta?.H_Max_File_Size_MB ?? 50,
     submissionFields,
     requirements,
+    // Organizer's description of what kinds of projects are expected
+    // (separate from the participant's own project description above).
+    expectedProjectsDescription: meta?.H_Project_Description ?? null,
     files: files.map((f) => ({
       id: f.id,
       name: f.name,
@@ -2353,6 +2357,23 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
  * POST /participants/hackathons/:id/submission/submit
  * Marks the submission as final (sets TS_SubmittedAt = NOW).
  */
+// Maps organizer submission-field keys to their canonical participant labels +
+// the TS column (for text/URL fields) used by the confirm-time validation.
+const SUBMISSION_FIELD_TO_COLUMN: Record<
+  string,
+  { column: keyof TeamSubmissionRow; label: string }
+> = {
+  title:  { column: 'TS_ProjectName',        label: 'عنوان المشروع' },
+  desc:   { column: 'TS_ProjectDescription', label: 'وصف المشروع' },
+  github: { column: 'TS_RepoUrl',            label: 'رابط GitHub' },
+  demo:   { column: 'TS_DemoUrl',            label: 'رابط النسخة التجريبية' },
+};
+const SUBMISSION_FILE_FIELD_LABELS: Record<string, string> = {
+  video:        'فيديو توضيحي',
+  presentation: 'عرض تقديمي',
+  images:       'صور المشروع',
+};
+
 export const confirmSubmission = async (req: Request, res: Response) => {
   if (!ensureParticipant(req, res)) return;
   const hackathonId = Number(req.params.id);
@@ -2371,6 +2392,66 @@ export const confirmSubmission = async (req: Request, res: Response) => {
   if (target === null) return;
 
   const sub = await getOrCreateSubmission(target, hackathonId);
+
+  // Pull the organizer's required-fields list so we can block confirmation
+  // when the participant hasn't filled the required text/URL fields or
+  // uploaded a file when a file-type field is required. Backend is the
+  // authority here — the UI checks too, but a direct API call must still
+  // be rejected with a clear list of missing items.
+  const [fieldsRow] = await pool.query<RowDataPacket[]>(
+    'SELECT H_Submission_Fields FROM hackathon WHERE hackathon_ID = ?',
+    [hackathonId],
+  );
+  let requiredFields: string[] = [];
+  if (fieldsRow.length > 0) {
+    const raw = (fieldsRow[0] as { H_Submission_Fields: string | string[] | null })
+      .H_Submission_Fields;
+    if (Array.isArray(raw)) {
+      requiredFields = raw.filter((x): x is string => typeof x === 'string');
+    } else if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          requiredFields = parsed.filter((x: unknown): x is string => typeof x === 'string');
+        }
+      } catch { /* malformed JSON → treat as no required fields */ }
+    }
+  }
+
+  const missing: string[] = [];
+  for (const fId of requiredFields) {
+    const mapping = SUBMISSION_FIELD_TO_COLUMN[fId];
+    if (mapping) {
+      const val = sub[mapping.column];
+      if (val == null || (typeof val === 'string' && val.trim() === '')) {
+        missing.push(mapping.label);
+      }
+    }
+  }
+
+  // For file-type fields we can't tell which uploaded file is "the video"
+  // vs "the presentation", so we require at least one file overall when
+  // any file-type field is requested.
+  const requiredFileFields = requiredFields.filter((f) => f in SUBMISSION_FILE_FIELD_LABELS);
+  if (requiredFileFields.length > 0) {
+    const [fileCountRow] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) AS cnt FROM submission_file WHERE TS_ID = ?',
+      [sub.TS_ID],
+    );
+    const cnt = (fileCountRow[0] as { cnt: number }).cnt;
+    if (cnt === 0) {
+      for (const f of requiredFileFields) {
+        missing.push(SUBMISSION_FILE_FIELD_LABELS[f]);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: 'بعض الحقول الإلزامية غير مكتملة',
+      missing,
+    });
+  }
 
   await pool.query(
     'UPDATE team_submission SET TS_SubmittedAt = CURRENT_TIMESTAMP WHERE TS_ID = ?',

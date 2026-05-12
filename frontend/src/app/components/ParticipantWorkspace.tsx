@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { apiGet, apiPut, apiDelete, apiPost, apiUpload, API_URL, ApiError } from "../../lib/api";
@@ -338,6 +338,21 @@ interface ApiEvaluation {
   maxScore: number;
 }
 
+interface ApiEvaluationsVisibility {
+  visible: boolean;
+  showEvaluations: boolean;
+  showNotes: boolean;
+  winnersDate: string | null;
+  reason: 'evaluations_hidden' | 'before_winners_date' | null;
+}
+
+interface ApiEvaluationsResponse {
+  items: ApiEvaluation[];
+  teamId: number | null;
+  isRegistered: boolean;
+  visibility: ApiEvaluationsVisibility;
+}
+
 // ─── Certificates ─────────────────────────────────────────
 interface ApiCertificate {
   id: number;
@@ -379,6 +394,7 @@ interface ApiSubmission {
   maxFileSizeMb: number;
   submissionFields: string[];
   requirements: string[];
+  expectedProjectsDescription: string | null;
   files: ApiSubmissionFile[];
 }
 
@@ -2359,13 +2375,203 @@ function TeamChat({
 // ═══════════════════════════════════════════════════════════
 // Tab: Submission
 // ═══════════════════════════════════════════════════════════
+
+// Maps organizer submissionFields keys to actual editable DB columns.
+// Only the four entries here are rendered as inputs; the remaining keys
+// (video / presentation / images) are file-typed and handled by the
+// existing file uploader, so we don't show duplicate inputs for them.
+const PROJECT_TEXT_FIELDS: Record<
+  string,
+  {
+    apiField: 'projectName' | 'projectDescription' | 'repoUrl' | 'demoUrl';
+    type: 'text' | 'textarea' | 'url';
+    label: string;
+    placeholder: string;
+  }
+> = {
+  title:  { apiField: 'projectName',        type: 'text',     label: 'عنوان المشروع',         placeholder: 'اكتب اسم المشروع' },
+  desc:   { apiField: 'projectDescription', type: 'textarea', label: 'وصف المشروع',           placeholder: 'اشرح فكرة المشروع باختصار' },
+  github: { apiField: 'repoUrl',            type: 'url',      label: 'رابط GitHub',          placeholder: 'https://github.com/...' },
+  demo:   { apiField: 'demoUrl',            type: 'url',      label: 'رابط النسخة التجريبية', placeholder: 'https://...' },
+};
+
+// Imperative handle exposed to SubmissionTab so the parent can flush
+// unsaved metadata before confirming the submission (otherwise the user
+// could fill the form, skip "Save", click "Confirm", and be told the
+// fields are empty — confusing).
+interface ProjectMetadataFormHandle {
+  saveIfDirty: () => Promise<boolean>;
+}
+
+const ProjectMetadataForm = forwardRef<
+  ProjectMetadataFormHandle,
+  {
+    submission: ApiSubmission;
+    canEdit: boolean;
+    hackathonId: number;
+    onSaved: () => Promise<void>;
+  }
+>(function ProjectMetadataForm({ submission, canEdit, hackathonId, onSaved }, ref) {
+  // Lazy init from server data; local edits are trusted until the next save.
+  const [form, setForm] = useState(() => ({
+    projectName: submission.projectName ?? '',
+    projectDescription: submission.projectDescription ?? '',
+    repoUrl: submission.repoUrl ?? '',
+    demoUrl: submission.demoUrl ?? '',
+  }));
+  const [saving, setSaving] = useState(false);
+
+  const fieldsToRender = submission.submissionFields
+    .filter((id) => id in PROJECT_TEXT_FIELDS)
+    .map((id) => ({ id, ...PROJECT_TEXT_FIELDS[id] }));
+
+  // Compute diff payload of form vs submission. Used both for the manual
+  // save button and for the parent's pre-confirm flush.
+  const computePayload = (): Record<string, string | null> => {
+    const payload: Record<string, string | null> = {};
+    for (const f of fieldsToRender) {
+      const current = form[f.apiField].trim();
+      const original = (submission[f.apiField] ?? '').trim();
+      if (current !== original) {
+        payload[f.apiField] = current || null;
+      }
+    }
+    return payload;
+  };
+
+  // Persists the diff silently. Returns true on success / no-op, false on
+  // failure. Used by parent before confirming.
+  useImperativeHandle(ref, () => ({
+    saveIfDirty: async () => {
+      const payload = computePayload();
+      if (Object.keys(payload).length === 0) return true;
+      try {
+        await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
+        await onSaved();
+        return true;
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع';
+        toast.error(msg);
+        return false;
+      }
+    },
+  }));
+
+  if (fieldsToRender.length === 0) return null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = computePayload();
+      if (Object.keys(payload).length === 0) {
+        toast.success('لا توجد تغييرات');
+        return;
+      }
+      await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
+      await onSaved();
+      toast.success('تم حفظ بيانات المشروع');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع';
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <FileText className="w-5 h-5" style={{ color: '#6366f1' }} />
+        <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+          بيانات المشروع
+        </h2>
+      </div>
+
+      <div className="space-y-4">
+        {fieldsToRender.map((f) => (
+          <div key={f.id}>
+            <label className="block text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
+              {f.label} <span className="text-red-500">*</span>
+            </label>
+            {f.type === 'textarea' ? (
+              <textarea
+                value={form[f.apiField]}
+                onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
+                disabled={!canEdit || saving}
+                rows={4}
+                placeholder={f.placeholder}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 focus:bg-white transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            ) : (
+              <input
+                type={f.type}
+                dir={f.type === 'url' ? 'ltr' : 'rtl'}
+                value={form[f.apiField]}
+                onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
+                disabled={!canEdit || saving}
+                placeholder={f.placeholder}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 focus:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={!canEdit || saving}
+        className="mt-5 w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{ background: '#6366f1', fontWeight: 600 }}
+      >
+        {saving ? 'جاري الحفظ...' : 'حفظ بيانات المشروع'}
+      </button>
+    </div>
+  );
+});
+
+// Computes the list of organizer-required items that the participant hasn't
+// filled yet. Mirrors the authoritative backend check in confirmSubmission.
+function computeMissingSubmissionItems(data: ApiSubmission): string[] {
+  const missing: string[] = [];
+  const TEXT_MAP: Record<
+    string,
+    { key: 'projectName' | 'projectDescription' | 'repoUrl' | 'demoUrl'; label: string }
+  > = {
+    title:  { key: 'projectName',        label: 'عنوان المشروع' },
+    desc:   { key: 'projectDescription', label: 'وصف المشروع' },
+    github: { key: 'repoUrl',            label: 'رابط GitHub' },
+    demo:   { key: 'demoUrl',            label: 'رابط النسخة التجريبية' },
+  };
+  for (const fId of data.submissionFields) {
+    const m = TEXT_MAP[fId];
+    if (m) {
+      const val = data[m.key];
+      if (val == null || (typeof val === 'string' && val.trim() === '')) {
+        missing.push(m.label);
+      }
+    }
+  }
+  const FILE_LABELS: Record<string, string> = {
+    video:        'فيديو توضيحي',
+    presentation: 'عرض تقديمي',
+    images:       'صور المشروع',
+  };
+  const requiredFileFields = data.submissionFields.filter((f) => f in FILE_LABELS);
+  if (requiredFileFields.length > 0 && data.files.length === 0) {
+    for (const f of requiredFileFields) missing.push(FILE_LABELS[f]);
+  }
+  return missing;
+}
+
 function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   const [data, setData] = useState<ApiSubmission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const metadataFormRef = useRef<ProjectMetadataFormHandle>(null);
 
   const refetch = async () => {
     try {
@@ -2421,6 +2627,32 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
       const msg = e instanceof ApiError ? e.message : "فشل حذف الملف";
       setUploadError(msg);
       toast.error(msg);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!data) return;
+    setConfirming(true);
+    try {
+      // Flush any unsaved metadata changes from the form first so the
+      // backend's required-field check sees the latest values. Without
+      // this, a participant who fills the form but doesn't click "save"
+      // would see "field missing" errors despite having typed the value.
+      if (metadataFormRef.current) {
+        const flushed = await metadataFormRef.current.saveIfDirty();
+        if (!flushed) {
+          setConfirming(false);
+          return;
+        }
+      }
+      await apiPost(`/participants/hackathons/${hackathonId}/submission/submit`, {});
+      await refetch();
+      toast.success(data.submittedAt ? "تم إعادة تأكيد التسليم" : "تم تأكيد التسليم");
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "فشل تأكيد التسليم";
+      toast.error(msg);
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -2482,6 +2714,17 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>متطلبات التسليم</h2>
         </div>
 
+        {data.expectedProjectsDescription && (
+          <div className="p-4 rounded-xl mb-5 bg-gradient-to-br from-[#fef2f4] to-white border border-[#fecaca]">
+            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 700 }}>
+              وصف المشاريع المطلوبة
+            </p>
+            <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+              {data.expectedProjectsDescription}
+            </p>
+          </div>
+        )}
+
         {data.submissionDeadline && (
           <div className="flex items-start gap-3 p-3 rounded-xl mb-5"
             style={{ background: "#fef2f4", border: "1px solid #fecaca" }}>
@@ -2539,7 +2782,7 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           </div>
         )}
 
-        {data.submissionFields.length === 0 && data.requirements.length === 0 && !data.submissionDeadline && (
+        {data.submissionFields.length === 0 && data.requirements.length === 0 && !data.submissionDeadline && !data.expectedProjectsDescription && (
           <p className="text-gray-400 text-sm text-center py-6">لم يحدّد المنظّم متطلبات بعد</p>
         )}
 
@@ -2547,6 +2790,16 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           الحد الأقصى لحجم الملف الواحد: <span style={{ fontWeight: 600, color: "#374151" }}>{data.maxFileSizeMb} MB</span>
         </p>
       </div>
+
+      {/* Project metadata form — rendered only if the organizer asks for
+          any of the supported text/URL fields. */}
+      <ProjectMetadataForm
+        ref={metadataFormRef}
+        submission={data}
+        canEdit={canEdit}
+        hackathonId={hackathonId}
+        onSaved={refetch}
+      />
 
       {/* Upload Section */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -2694,6 +2947,85 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           </div>
         )}
       </div>
+
+      {/* Confirm Submission — gates the judging pipeline. The judge endpoint
+          refuses to evaluate a project whose TS_SubmittedAt is null, so this
+          is the participant's explicit "I'm done" moment. They can still edit
+          metadata/files until the window closes; clicking again just bumps
+          the timestamp. */}
+      {(() => {
+        const missing = computeMissingSubmissionItems(data);
+        const isSubmitted = data.submittedAt !== null;
+        // Detect files uploaded after the last confirmation so we can prompt
+        // a re-confirm. We can only see file timestamps (metadata edits have
+        // no recorded timestamp), so this covers the most common drift.
+        const submittedAtMs = data.submittedAt ? new Date(data.submittedAt).getTime() : 0;
+        const hasFilesAfterConfirm = isSubmitted
+          && data.files.some((f) => new Date(f.uploadedAt).getTime() > submittedAtMs);
+        return (
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <div className="flex items-center gap-2 mb-5">
+              <CheckCircle2 className="w-5 h-5" style={{ color: "#10b981" }} />
+              <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+                تأكيد التسليم النهائي
+              </h2>
+            </div>
+
+            {isSubmitted ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-5 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-green-900 text-sm" style={{ fontWeight: 700 }}>
+                    تم تأكيد التسليم في {formatDateAr(data.submittedAt)}
+                  </p>
+                  <p className="text-green-700 text-xs mt-1">
+                    يمكنك تعديل البيانات والملفات حتى موعد الإغلاق. إذا عدّلت شيئاً، أعد الضغط لإعادة تأكيد التسليم.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-600 text-sm mb-5 leading-relaxed">
+                اضغط لتأكيد تسليمك. سيُتاح مشروعك للحكّام للتقييم بعد ذلك.
+              </p>
+            )}
+
+            {hasFilesAfterConfirm && canEdit && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 flex items-start gap-3">
+                <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-amber-900 text-sm leading-relaxed">
+                  لديك ملفات أُضيفت بعد آخر تأكيد. اضغط <span style={{ fontWeight: 700 }}>"إعادة تأكيد التسليم"</span> لتسجيل النسخة الأحدث.
+                </p>
+              </div>
+            )}
+
+            {missing.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+                <p className="text-amber-900 text-sm mb-2" style={{ fontWeight: 700 }}>
+                  مطلوب قبل التأكيد
+                </p>
+                <ul className="space-y-1 text-amber-800 text-xs leading-relaxed">
+                  {missing.map((item, i) => (
+                    <li key={i}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              onClick={handleConfirm}
+              disabled={!canEdit || confirming || missing.length > 0}
+              className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: "#10b981", fontWeight: 600 }}
+            >
+              {confirming
+                ? "جاري التأكيد..."
+                : isSubmitted
+                ? "إعادة تأكيد التسليم"
+                : "تأكيد التسليم النهائي"}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2703,17 +3035,19 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
 // ═══════════════════════════════════════════════════════════
 function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
   const [evaluations, setEvaluations] = useState<ApiEvaluation[]>([]);
+  const [visibility, setVisibility] = useState<ApiEvaluationsVisibility | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    apiGet<{ items: ApiEvaluation[] }>(
+    apiGet<ApiEvaluationsResponse>(
       `/participants/hackathons/${hackathonId}/evaluations`
     )
       .then((data) => {
         if (cancelled) return;
         setEvaluations(data.items);
+        setVisibility(data.visibility);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -2742,10 +3076,34 @@ function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
         ) : evaluations.length === 0 ? (
           <div className="text-center py-10">
             <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
-              لم يتم نشر التقييمات بعد
-            </p>
-            <p className="text-gray-400 text-xs mt-1">ستظهر هنا تقييمات الحكّام بعد التحكيم</p>
+            {visibility?.reason === 'before_winners_date' && visibility.winnersDate ? (
+              <>
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  ستظهر النتائج بتاريخ {formatDateAr(visibility.winnersDate)}
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  لم يحن موعد إعلان النتائج بعد
+                </p>
+              </>
+            ) : visibility?.reason === 'evaluations_hidden' ? (
+              <>
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  لم يُتح المنظم ظهور التقييمات بعد
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  ستظهر هنا تقييمات الحكّام بعد إتاحتها من جهة التنظيم
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  لم يتم نشر التقييمات بعد
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  ستظهر هنا تقييمات الحكّام بعد التحكيم
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-5">
