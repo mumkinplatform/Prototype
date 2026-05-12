@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { 
-  Bell, 
+import {
+  Bell,
   CheckCheck,
   Trash2,
   CheckCircle,
@@ -11,141 +11,128 @@ import {
   Calendar,
   Award,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { apiGet, apiPut, apiDelete, ApiError } from '../../lib/api';
 
-interface Notification {
+type ApiNotificationType = 'acceptance' | 'team' | 'deadline' | 'evaluation' | 'achievement' | 'system';
+
+interface ApiNotification {
   id: number;
-  type: 'success' | 'info' | 'warning' | 'alert';
+  type: ApiNotificationType;
   title: string;
   message: string;
-  time: string;
   read: boolean;
-  icon: any;
-  color: string;
-  bg: string;
+  actionLabel: string | null;
+  actionRoute: string | null;
+  createdAt: string;
 }
 
-const initialNotifications: Notification[] = [
-  {
-    id: 1,
-    type: 'success',
-    title: 'تم قبول مشروع جديد',
-    message: 'تم قبول مشروع "تطبيق الذكاء الاصطناعي" في هاكاثون الابتكار',
-    time: 'منذ 5 دقائق',
-    read: false,
-    icon: CheckCircle,
-    color: '#10b981',
-    bg: '#f0fdf4'
-  },
-  {
-    id: 2,
-    type: 'info',
-    title: 'تسجيل مشارك جديد',
-    message: 'تم تسجيل 15 مشارك جديد في هاكاثون التقنية المالية',
-    time: 'منذ 30 دقيقة',
-    read: false,
-    icon: Users,
-    color: '#6366f1',
-    bg: '#eef2ff'
-  },
-  {
-    id: 3,
-    type: 'warning',
-    title: 'موعد قريب',
-    message: 'موعد إغلاق التسجيل لهاكاثون الأمن السيبراني بعد يومين',
-    time: 'منذ ساعة',
-    read: false,
-    icon: Calendar,
-    color: '#f59e0b',
-    bg: '#fffbeb'
-  },
-  {
-    id: 4,
-    type: 'alert',
-    title: 'طلب رعاية جديد',
-    message: 'شركة التقنية المتقدمة تقدمت بطلب رعاية لهاكاثون الابتكار',
-    time: 'منذ ساعتين',
-    read: true,
-    icon: Gift,
-    color: '#e35654',
-    bg: '#fef2f2'
-  },
-  {
-    id: 5,
-    type: 'success',
-    title: 'إكتمال التقييم',
-    message: 'تم الانتهاء من تقييم جميع المشاريع في المسار الأول',
-    time: 'منذ 3 ساعات',
-    read: true,
-    icon: Award,
-    color: '#10b981',
-    bg: '#f0fdf4'
-  },
-  {
-    id: 6,
-    type: 'info',
-    title: 'تحديث النظام',
-    message: 'تم إضافة ميزات جديدة لتحسين تجربة إدارة الهاكاثونات',
-    time: 'منذ يوم',
-    read: true,
-    icon: Info,
-    color: '#06b6d4',
-    bg: '#ecfeff'
-  },
-  {
-    id: 7,
-    type: 'success',
-    title: 'نجاح الفعالية',
-    message: 'هاكاثون الاستدامة والبيئة اكتمل بنجاح مع 420 مشارك',
-    time: 'منذ يومين',
-    read: true,
-    icon: CheckCircle,
-    color: '#10b981',
-    bg: '#f0fdf4'
-  },
-  {
-    id: 8,
-    type: 'info',
-    title: 'رسالة من الدعم',
-    message: 'تم الرد على استفسارك حول نظام التقييم الجديد',
-    time: 'منذ 3 أيام',
-    read: true,
-    icon: Info,
-    color: '#06b6d4',
-    bg: '#ecfeff'
-  }
-];
+// Map DB types to the icon/colour the existing card UI was built around.
+const TYPE_PRESENTATION: Record<ApiNotificationType, { icon: typeof Bell; color: string; bg: string; filter: 'success' | 'info' | 'warning' | 'alert' }> = {
+  acceptance:  { icon: CheckCircle, color: '#10b981', bg: '#f0fdf4', filter: 'success' },
+  achievement: { icon: Award,       color: '#10b981', bg: '#f0fdf4', filter: 'success' },
+  team:        { icon: Users,       color: '#6366f1', bg: '#eef2ff', filter: 'info' },
+  evaluation:  { icon: Gift,        color: '#e35654', bg: '#fef2f2', filter: 'alert' },
+  deadline:    { icon: Calendar,    color: '#f59e0b', bg: '#fffbeb', filter: 'warning' },
+  system:      { icon: Info,        color: '#06b6d4', bg: '#ecfeff', filter: 'info' },
+};
 
-const filterTabs = ['الكل', 'غير مقروء', 'نجاح', 'تنبيهات', 'معلومات'];
+const filterTabs = ['الكل', 'غير مقروء', 'نجاح', 'تنبيهات', 'معلومات'] as const;
+type FilterTab = typeof filterTabs[number];
+
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const diff = Date.now() - t;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'الآن';
+  if (min < 60) return `منذ ${min} دقيقة`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `منذ ${hours} ساعة`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `منذ ${days} يوم`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 4) return `منذ ${weeks} أسبوع`;
+  const months = Math.floor(days / 30);
+  return `منذ ${months} شهر`;
+}
 
 export function Notifications() {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState(initialNotifications);
-  const [activeFilter, setActiveFilter] = useState('الكل');
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [activeFilter, setActiveFilter] = useState<FilterTab>('الكل');
+  const [loading, setLoading] = useState(true);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiGet<{ items: ApiNotification[] }>('/organizers/notifications')
+      .then((data) => {
+        if (!cancelled) setNotifications(data.items);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 403) {
+          toast.error('هذه الصفحة مخصصة للمنظمين');
+        } else {
+          toast.error('تعذّر تحميل الإشعارات');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const markAllAsRead = async () => {
+    const prev = notifications;
+    setNotifications((cur) => cur.map((n) => ({ ...n, read: true })));
+    try {
+      await apiPut('/organizers/notifications/read-all');
+    } catch {
+      setNotifications(prev);
+      toast.error('تعذّر تحديث الإشعارات');
+    }
   };
 
-  const markAsRead = (id: number) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
+  const markAsRead = async (id: number) => {
+    const prev = notifications;
+    setNotifications((cur) => cur.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    try {
+      await apiPut(`/organizers/notifications/${id}/read`);
+    } catch {
+      setNotifications(prev);
+      toast.error('تعذّر تحديث الإشعار');
+    }
   };
 
-  const deleteNotification = (id: number) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const removeNotification = async (id: number) => {
+    const prev = notifications;
+    setNotifications((cur) => cur.filter((n) => n.id !== id));
+    try {
+      await apiDelete(`/organizers/notifications/${id}`);
+    } catch {
+      setNotifications(prev);
+      toast.error('تعذّر حذف الإشعار');
+    }
   };
 
-  const filtered = notifications.filter(n => {
+  const handleOpen = (n: ApiNotification) => {
+    if (!n.read) void markAsRead(n.id);
+    if (n.actionRoute) navigate(n.actionRoute);
+  };
+
+  const filtered = notifications.filter((n) => {
+    const view = TYPE_PRESENTATION[n.type].filter;
     if (activeFilter === 'الكل') return true;
     if (activeFilter === 'غير مقروء') return !n.read;
-    if (activeFilter === 'نجاح') return n.type === 'success';
-    if (activeFilter === 'تنبيهات') return n.type === 'warning' || n.type === 'alert';
-    if (activeFilter === 'معلومات') return n.type === 'info';
+    if (activeFilter === 'نجاح') return view === 'success';
+    if (activeFilter === 'تنبيهات') return view === 'warning' || view === 'alert';
+    if (activeFilter === 'معلومات') return view === 'info';
     return true;
   });
 
@@ -167,9 +154,11 @@ export function Notifications() {
                   الإشعارات
                 </h1>
                 <p className="text-sm text-gray-500">
-                  {unreadCount > 0
-                    ? `لديك ${unreadCount} إشعارات غير مقروءة`
-                    : 'جميع الإشعارات مقروءة'}
+                  {loading
+                    ? 'جاري التحميل…'
+                    : unreadCount > 0
+                      ? `لديك ${unreadCount} إشعارات غير مقروءة`
+                      : 'جميع الإشعارات مقروءة'}
                 </p>
               </div>
               {unreadCount > 0 && (
@@ -216,7 +205,11 @@ export function Notifications() {
           </div>
 
           {/* Notifications List */}
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-500 text-sm">
+              جاري تحميل الإشعارات…
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-gray-300" />
@@ -229,16 +222,18 @@ export function Notifications() {
           ) : (
             <div className="space-y-2">
               {filtered.map((notif) => {
-                const Icon = notif.icon;
+                const pres = TYPE_PRESENTATION[notif.type] ?? TYPE_PRESENTATION.system;
+                const Icon = pres.icon;
+                const clickable = !!notif.actionRoute;
                 return (
                   <div
                     key={notif.id}
+                    onClick={clickable ? () => handleOpen(notif) : undefined}
                     className={`bg-white rounded-2xl border overflow-hidden transition-all hover:shadow-sm group ${
                       !notif.read ? 'border-[#e35654]/20 bg-[#fffbfb]' : 'border-gray-100'
-                    }`}
+                    } ${clickable ? 'cursor-pointer' : ''}`}
                   >
                     <div className="flex items-start gap-3.5 p-4 sm:p-5">
-                      {/* Unread dot */}
                       <div className="flex-shrink-0 mt-2">
                         {!notif.read ? (
                           <span className="block w-2.5 h-2.5 rounded-full bg-[#e35654]" />
@@ -247,15 +242,13 @@ export function Notifications() {
                         )}
                       </div>
 
-                      {/* Icon */}
                       <div
                         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ background: notif.bg }}
+                        style={{ background: pres.bg }}
                       >
-                        <Icon className="w-5 h-5" style={{ color: notif.color }} />
+                        <Icon className="w-5 h-5" style={{ color: pres.color }} />
                       </div>
 
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <h3
@@ -264,27 +257,36 @@ export function Notifications() {
                           >
                             {notif.title}
                           </h3>
-                          <span className="text-gray-300 text-xs flex-shrink-0 mt-0.5">{notif.time}</span>
+                          <span className="text-gray-300 text-xs flex-shrink-0 mt-0.5">
+                            {formatRelative(notif.createdAt)}
+                          </span>
                         </div>
                         <p className="text-gray-500 text-xs mt-1 leading-relaxed">{notif.message}</p>
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-2 mt-3">
+                        <div className="flex items-center gap-3 mt-3">
                           {!notif.read && (
                             <button
-                              onClick={() => markAsRead(notif.id)}
+                              onClick={(e) => { e.stopPropagation(); void markAsRead(notif.id); }}
                               className="text-xs text-gray-400 hover:text-[#e35654] transition-colors"
                               style={{ fontWeight: 500 }}
                             >
                               تحديد كمقروء
                             </button>
                           )}
+                          {notif.actionLabel && notif.actionRoute && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpen(notif); }}
+                              className="text-xs text-[#e35654] hover:underline"
+                              style={{ fontWeight: 600 }}
+                            >
+                              {notif.actionLabel}
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      {/* Delete Button */}
                       <button
-                        onClick={() => deleteNotification(notif.id)}
+                        onClick={(e) => { e.stopPropagation(); void removeNotification(notif.id); }}
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-300 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 mt-1"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -300,3 +302,6 @@ export function Notifications() {
     </>
   );
 }
+
+// Suppress unused-icon hint — kept for future deadline-style notifications.
+void AlertCircle;
