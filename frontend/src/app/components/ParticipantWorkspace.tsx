@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { toast } from "sonner";
 import { apiGet, apiPut, apiDelete, apiPost, apiUpload, API_URL, ApiError } from "../../lib/api";
 import { HackathonCover, BrandingPayload } from "./HackathonCover";
 import { LogoPattern } from "./LogoPatterns";
@@ -36,6 +37,11 @@ import {
   Flag,
   CheckCircle,
   ListChecks,
+  Mail,
+  Trash2,
+  RefreshCw,
+  LogOut,
+  UserCog,
 } from "lucide-react";
 
 const IMG_HERO = "https://images.unsplash.com/photo-1660165458059-57cfb6cc87e5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxBSSUyMGFydGlmaWNpYWwlMjBpbnRlbGxpZ2VuY2UlMjBkaWdpتالJTIwYWJzdHJhY3R8ZW58MXx8fHwxNzcyOTg4ODQ4fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral";
@@ -65,6 +71,7 @@ interface ApiMyHackathon {
   teamMax: number;
   myTeamId: number | null;
   participationType: "solo" | "team";
+  teamMethod: "ai" | "manual" | null;
   applicationStatus: "pending" | "accepted" | "rejected";
   myIdeaTitle: string | null;
   myIdeaDescription: string | null;
@@ -100,8 +107,13 @@ interface UiMyHackathon {
   hoursLeft: number;
   minutesLeft: number;
   submissionDeadlineRaw: string | null;
+  hackathonStartDateRaw: string | null;
+  hackathonEndDateRaw: string | null;
+  winnersDateRaw: string | null;
   hasTeam: boolean;
   participationType: "solo" | "team";
+  teamMethod: "ai" | "manual" | null;
+  registrationDeadlineRaw: string | null;
   applicationStatus: "pending" | "accepted" | "rejected";
   myIdeaTitle: string | null;
   myIdeaDescription: string | null;
@@ -238,8 +250,13 @@ function toUiMyHackathon(h: ApiMyHackathon, _index: number): UiMyHackathon {
     hoursLeft: cd.hours,
     minutesLeft: cd.minutes,
     submissionDeadlineRaw: h.submissionDeadline,
+    hackathonStartDateRaw: h.hackathonStartDate,
+    hackathonEndDateRaw: h.hackathonEndDate,
+    winnersDateRaw: h.winnersDate,
     hasTeam: h.myTeamId !== null,
     participationType: h.participationType,
+    teamMethod: h.teamMethod,
+    registrationDeadlineRaw: h.registrationDeadline,
     applicationStatus: h.applicationStatus,
     myIdeaTitle: h.myIdeaTitle,
     myIdeaDescription: h.myIdeaDescription,
@@ -259,6 +276,39 @@ function hackathonStatusLabel(status: string): { value: string; color: string } 
     case "completed": return { value: "منتهي",          color: "#6b7280" };
     default:          return { value: status || "—",     color: "#6b7280" };
   }
+}
+
+/**
+ * Phase the accepted participant is currently in, derived from the hackathon's
+ * date milestones. This is meaningful inside the workspace where the
+ * participant has already passed acceptance — we want to surface "what's next?"
+ * rather than the organizer-facing H_status label.
+ */
+function computeCurrentPhase(h: UiMyHackathon): { value: string; color: string } {
+  const now = Date.now();
+  const ms = (iso: string | null): number | null => {
+    if (!iso) return null;
+    const t = new Date(iso).getTime();
+    return Number.isFinite(t) ? t : null;
+  };
+  const hackStart = ms(h.hackathonStartDateRaw);
+  const hackEnd = ms(h.hackathonEndDateRaw);
+  const submissionEnd = ms(h.submissionDeadlineRaw);
+  const winnersAt = ms(h.winnersDateRaw);
+
+  if (hackStart !== null && now < hackStart) {
+    return { value: "بانتظار بدء الهاكاثون", color: "#3b82f6" };
+  }
+  if (hackEnd !== null && now < hackEnd) {
+    return { value: "الهاكاثون جارٍ", color: "#10b981" };
+  }
+  if (submissionEnd !== null && now < submissionEnd) {
+    return { value: "فترة التسليم", color: "#e35654" };
+  }
+  if (winnersAt !== null && now < winnersAt) {
+    return { value: "تحت التحكيم", color: "#f59e0b" };
+  }
+  return { value: "انتهى الهاكاثون", color: "#6b7280" };
 }
 
 // ── Hackathons Data (legacy mock — kept for reference, unused) ───
@@ -286,6 +336,21 @@ interface ApiEvaluation {
   criteria: { name: string; score: number }[];
   totalScore: number;
   maxScore: number;
+}
+
+interface ApiEvaluationsVisibility {
+  visible: boolean;
+  showEvaluations: boolean;
+  showNotes: boolean;
+  winnersDate: string | null;
+  reason: 'evaluations_hidden' | 'before_winners_date' | null;
+}
+
+interface ApiEvaluationsResponse {
+  items: ApiEvaluation[];
+  teamId: number | null;
+  isRegistered: boolean;
+  visibility: ApiEvaluationsVisibility;
 }
 
 // ─── Certificates ─────────────────────────────────────────
@@ -324,12 +389,24 @@ interface ApiSubmission {
   repoUrl: string | null;
   demoUrl: string | null;
   submittedAt: string | null;
+  submissionStartDate: string | null;
   submissionDeadline: string | null;
-  allowLateSubmission: boolean;
   maxFileSizeMb: number;
   submissionFields: string[];
   requirements: string[];
+  expectedProjectsDescription: string | null;
   files: ApiSubmissionFile[];
+}
+
+type SubmissionWindowState = "before_start" | "open" | "closed";
+
+function computeSubmissionWindow(s: ApiSubmission): SubmissionWindowState {
+  const now = Date.now();
+  const start = s.submissionStartDate ? new Date(s.submissionStartDate).getTime() : null;
+  const deadline = s.submissionDeadline ? new Date(s.submissionDeadline).getTime() : null;
+  if (start !== null && now < start) return "before_start";
+  if (deadline !== null && now > deadline) return "closed";
+  return "open";
 }
 
 function formatFileSize(bytes: number): string {
@@ -374,23 +451,25 @@ export function ParticipantWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchHackathons = async () => {
+    try {
+      const data = await apiGet<{ items: ApiMyHackathon[] }>("/participants/my-hackathons");
+      setHackathons(data.items.map(toUiMyHackathon));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل تحميل مساحات العمل");
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-    apiGet<{ items: ApiMyHackathon[] }>("/participants/my-hackathons")
-      .then((data) => {
-        if (cancelled) return;
-        setHackathons(data.items.map(toUiMyHackathon));
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : "فشل تحميل مساحات العمل");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    fetchHackathons().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -403,7 +482,7 @@ export function ParticipantWorkspace() {
   const selectedHackathon = hackathonId ? hackathons.find((h) => h.id === Number(hackathonId)) : null;
 
   if (!hackathonId || !selectedHackathon) {
-    return <WorkspacesList hackathons={hackathons} />;
+    return <WorkspacesList hackathons={hackathons} onRefresh={fetchHackathons} />;
   }
 
   return <WorkspaceDetails hackathon={selectedHackathon} />;
@@ -412,9 +491,16 @@ export function ParticipantWorkspace() {
 // ═══════════════════════════════════════════════════════════
 // Workspaces List
 // ═══════════════════════════════════════════════════════════
-function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
+function WorkspacesList({
+  hackathons,
+  onRefresh,
+}: {
+  hackathons: UiMyHackathon[];
+  onRefresh: () => Promise<void>;
+}) {
   const navigate = useNavigate();
   const [viewingRegistration, setViewingRegistration] = useState<UiMyHackathon | null>(null);
+  const [managingTeam, setManagingTeam] = useState<UiMyHackathon | null>(null);
 
   const handleEnterWorkspace = (hackathonId: number) => {
     navigate(`/participant/workspace?id=${hackathonId}`);
@@ -490,18 +576,17 @@ function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
               <div className="p-5 flex flex-col flex-1">
                 <h2 className="text-gray-900 text-base mb-2" style={{ fontWeight: 700 }}>{h.name}</h2>
                 
-                {/* Info */}
-                <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
-                  <div className="flex items-center gap-1">
-                    <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-[10px]" style={{ fontWeight: 700 }}>
+                {/* Info — wraps so a long address doesn't get clipped */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mb-3">
+                  <div className="inline-flex items-center gap-1">
+                    <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-[10px] flex-shrink-0" style={{ fontWeight: 700 }}>
                       {h.organizer.substring(0, 2)}
                     </div>
                     <span>{h.organizer}</span>
                   </div>
-                  <span>•</span>
-                  <div className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    <span className="truncate">{h.location}</span>
+                  <div className="inline-flex items-start gap-1 min-w-0">
+                    <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                    <span>{h.location}</span>
                   </div>
                 </div>
 
@@ -536,6 +621,23 @@ function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
                       تم رفض طلبك
                     </button>
                   )}
+                  {/* Manage team button — appears for manual team registrations
+                      while the registration window is still open. This is the
+                      single entry point for all team editing actions. */}
+                  {h.participationType === "team" &&
+                    h.teamMethod === "manual" &&
+                    h.applicationStatus !== "rejected" &&
+                    h.registrationDeadlineRaw !== null &&
+                    new Date(h.registrationDeadlineRaw).getTime() > Date.now() && (
+                      <button
+                        onClick={() => setManagingTeam(h)}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-[#eef2ff] text-[#6366f1] text-xs hover:bg-[#e0e7ff] transition-colors border border-[#c7d2fe]"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <UserCog className="w-3.5 h-3.5" />
+                        إدارة الفريق
+                      </button>
+                    )}
                   <button
                     onClick={() => setViewingRegistration(h)}
                     className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-gray-200 text-gray-600 text-xs hover:bg-gray-50 transition-colors"
@@ -641,6 +743,15 @@ function WorkspacesList({ hackathons }: { hackathons: UiMyHackathon[] }) {
           </div>
         </div>
       )}
+
+      {/* Team management dialog — single home for invite/leave/transfer actions. */}
+      {managingTeam && (
+        <ManageTeamDialog
+          hackathonId={managingTeam.id}
+          onClose={() => setManagingTeam(null)}
+          onChanged={onRefresh}
+        />
+      )}
     </div>
   );
 }
@@ -669,9 +780,28 @@ function saveSeenCounts(hackathonId: number, seen: Partial<Record<WorkspaceTab, 
   }
 }
 
+// Tabs that may be deep-linked from a notification. The Team tab is the most
+// likely candidate (chat notifications), but other tabs are honoured too if a
+// future notification type targets them.
+const WORKSPACE_TAB_VALUES: WorkspaceTab[] = ["home", "team", "submission", "evaluations", "certificates"];
+
+function parseTabParam(raw: string | null, fallback: WorkspaceTab): WorkspaceTab {
+  if (raw && (WORKSPACE_TAB_VALUES as string[]).includes(raw)) {
+    return raw as WorkspaceTab;
+  }
+  return fallback;
+}
+
 function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("home");
+  const [searchParams] = useSearchParams();
+  // If a notification (or any deep link) passes ?tab=, honour it on first
+  // render so the participant lands on the right place. Hide the Team tab for
+  // solo participants — they shouldn't accidentally deep-link there.
+  const desiredTab = parseTabParam(searchParams.get("tab"), "home");
+  const initialTab: WorkspaceTab =
+    desiredTab === "team" && hackathon.participationType === "solo" ? "home" : desiredTab;
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
 
   // Gate the workspace by application status. Backend already 403s every
   // workspace endpoint for non-accepted participants, but we render a clean
@@ -910,7 +1040,11 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
         <div className="grid lg:grid-cols-4 gap-6">
           {/* ── Sidebar Cards ── */}
           <div className="lg:col-span-1 space-y-3 order-2 lg:order-1">
-            {sidebarCards.map((card) => {
+            {/* Hide the Team tab entirely for solo participants — no team
+                exists, so the section has nothing to show. */}
+            {sidebarCards
+              .filter((card) => !(card.tab === "team" && hackathon.participationType === "solo"))
+              .map((card) => {
               const Icon = card.icon;
               const isActive = activeTab === card.tab;
               const realCount = counts[card.tab];
@@ -979,47 +1113,69 @@ function WorkspaceDetails({ hackathon }: { hackathon: UiMyHackathon }) {
 // ═══════════════════════════════════════════════════════════
 // Tab: Home
 // ═══════════════════════════════════════════════════════════
+
+/**
+ * Picks the earliest hackathon date that's still in the future. The countdown
+ * in the home tab targets this so the participant always sees "time until the
+ * next thing happens" instead of being stuck on the submission deadline.
+ * Returns null when every milestone has passed (the hackathon is over).
+ *
+ * The labels include their own preposition ("لانتهاء", "لبدء", …) so they slot
+ * straight into "الوقت المتبقي {label}" — Arabic adds the prefix differently
+ * depending on the noun, so this keeps it readable instead of doing string
+ * concatenation gymnastics at the call site.
+ */
+function getNextHackathonMilestone(
+  h: UiMyHackathon,
+): { label: string; date: number } | null {
+  const now = Date.now();
+  const ms = (iso: string | null): number | null => {
+    if (!iso) return null;
+    const t = new Date(iso).getTime();
+    return Number.isFinite(t) ? t : null;
+  };
+  const candidates = [
+    { label: "لانتهاء التسجيل", date: ms(h.registrationDeadlineRaw) },
+    { label: "لبدء الهاكاثون", date: ms(h.hackathonStartDateRaw) },
+    { label: "لنهاية الهاكاثون", date: ms(h.hackathonEndDateRaw) },
+    { label: "للتسليم النهائي", date: ms(h.submissionDeadlineRaw) },
+    { label: "لإعلان النتائج", date: ms(h.winnersDateRaw) },
+  ];
+  const upcoming = candidates
+    .filter((m): m is { label: string; date: number } => m.date !== null && m.date > now)
+    .sort((a, b) => a.date - b.date);
+  return upcoming.length > 0 ? upcoming[0] : null;
+}
+
+function diffParts(targetMs: number, nowMs: number) {
+  const diff = Math.max(0, targetMs - nowMs);
+  return {
+    days: Math.floor(diff / 86_400_000),
+    hours: Math.floor((diff % 86_400_000) / 3_600_000),
+    minutes: Math.floor((diff % 3_600_000) / 60_000),
+    seconds: Math.floor((diff % 60_000) / 1_000),
+  };
+}
+
 function HomeTab({ hackathon }: { hackathon: UiMyHackathon }) {
-  const [timeLeft, setTimeLeft] = useState({
-    days: hackathon.daysLeft,
-    hours: hackathon.hoursLeft,
-    minutes: hackathon.minutesLeft,
-    seconds: 0,
-  });
+  const initial = getNextHackathonMilestone(hackathon);
+  const [milestone, setMilestone] = useState(initial);
+  const [timeLeft, setTimeLeft] = useState(() =>
+    initial ? diffParts(initial.date, Date.now()) : { days: 0, hours: 0, minutes: 0, seconds: 0 },
+  );
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        let { days, hours, minutes, seconds } = prev;
-
-        // Decrement one second
-        seconds--;
-
-        // Update countdown
-        if (seconds < 0) {
-          seconds = 59;
-          minutes--;
-        }
-        if (minutes < 0) {
-          minutes = 59;
-          hours--;
-        }
-        if (hours < 0) {
-          hours = 23;
-          days--;
-        }
-        if (days < 0) {
-          // Time's up
-          clearInterval(interval);
-          return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-        }
-
-        return { days, hours, minutes, seconds };
-      });
-    }, 1000);
-
+    // Recompute from "now" each tick so the display can't drift over time, and
+    // re-pick the next milestone when one expires (countdown rolls forward).
+    const tick = () => {
+      const next = getNextHackathonMilestone(hackathon);
+      setMilestone(next);
+      setTimeLeft(next ? diffParts(next.date, Date.now()) : { days: 0, hours: 0, minutes: 0, seconds: 0 });
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hackathon]);
 
   return (
     <div className="space-y-6">
@@ -1037,10 +1193,10 @@ function HomeTab({ hackathon }: { hackathon: UiMyHackathon }) {
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {(() => {
-            const statusInfo = hackathonStatusLabel(hackathon.hackathonStatus);
+            const phase = computeCurrentPhase(hackathon);
             return [
               { label: "المسار", value: hackathon.track, color: "#6366f1" },
-              { label: "الحالة", value: statusInfo.value, color: statusInfo.color },
+              { label: "الحالة", value: phase.value, color: phase.color },
               {
                 label: "نوع المشاركة",
                 value: hackathon.participationType === "solo"
@@ -1060,12 +1216,12 @@ function HomeTab({ hackathon }: { hackathon: UiMyHackathon }) {
         </div>
       </div>
 
-      {/* Countdown Timer */}
+      {/* Countdown Timer — target follows the next milestone on the timeline */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-4">
           <Clock className="w-5 h-5" style={{ color: "#e35654" }} />
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-            الوقت المتبقي للتسليم
+            {milestone ? `الوقت المتبقي ${milestone.label}` : "انتهى الهاكاثون"}
           </h2>
         </div>
         <div className="grid grid-cols-4 gap-3">
@@ -1154,7 +1310,9 @@ interface ApiTeamDetail {
     id: number;
     name: string;
     leaderId: number;
+    minMembers: number;
     maxMembers: number;
+    registrationEndDate: string | null;
     members: Array<{
       id: number;
       fullName: string;
@@ -1164,10 +1322,61 @@ interface ApiTeamDetail {
     }>;
   } | null;
   participationType: "solo" | "team";
+  teamMethod: "ai" | "manual" | null;
+}
+
+interface ApiTeamInvite {
+  id: number;
+  email: string;
+  status: "pending" | "accepted" | "declined" | "expired";
+  invitedAt: string;
+  expiresAt: string | null;
+  respondedAt: string | null;
+}
+
+interface ApiTeamInvitesResponse {
+  items: ApiTeamInvite[];
+  isLeader: boolean;
+  teamId: number;
 }
 
 const TEAM_MEMBER_COLORS = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#ec4899"];
 
+const INVITE_STATUS_STYLES: Record<ApiTeamInvite["status"], { label: string; bg: string; color: string }> = {
+  pending: { label: "قيد الانتظار", bg: "#fef3c7", color: "#92400e" },
+  accepted: { label: "مقبولة", bg: "#dcfce7", color: "#166534" },
+  declined: { label: "مرفوضة", bg: "#fee2e2", color: "#991b1b" },
+  expired: { label: "منتهية", bg: "#e5e7eb", color: "#374151" },
+};
+
+function InviteStatusBadge({ status }: { status: ApiTeamInvite["status"] }) {
+  const s = INVITE_STATUS_STYLES[status];
+  return (
+    <span
+      className="text-xs px-2 py-0.5 rounded-full"
+      style={{ background: s.bg, color: s.color, fontWeight: 600 }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
+function formatTeamDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+}
+
+// Read-only view of the team inside the post-acceptance workspace. All team
+// management (add/cancel/resend invites, leave, transfer leadership) lives in
+// ManageTeamDialog, opened from the WorkspacesList card while registration is
+// still open. Once registration closes, the team is final and only the chat
+// remains active.
 function TeamTab({ hackathonId, hackathonHasTeam }: { hackathonId: number; hackathonHasTeam: boolean }) {
   const navigate = useNavigate();
   const [data, setData] = useState<ApiTeamDetail | null>(null);
@@ -1179,12 +1388,10 @@ function TeamTab({ hackathonId, hackathonHasTeam }: { hackathonId: number; hacka
     setLoading(true);
     apiGet<ApiTeamDetail>(`/participants/hackathons/${hackathonId}/my-team`)
       .then((d) => {
-        if (cancelled) return;
-        setData(d);
+        if (!cancelled) setData(d);
       })
       .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات الفريق");
+        if (!cancelled) setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات الفريق");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1238,19 +1445,20 @@ function TeamTab({ hackathonId, hackathonHasTeam }: { hackathonId: number; hacka
     );
   }
 
-  const members = data.team.members;
+  const team = data.team;
+  const members = team.members;
 
   return (
     <div className="space-y-6">
-      {/* Team Members */}
+      {/* Team Members (read-only post-acceptance view) */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Users className="w-5 h-5" style={{ color: "#10b981" }} />
-            <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>{data.team.name}</h2>
+            <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>{team.name}</h2>
           </div>
           <span className="text-gray-400 text-xs">
-            {members.length} / {data.team.maxMembers} أعضاء
+            {members.length} / {team.maxMembers} أعضاء
           </span>
         </div>
 
@@ -1300,6 +1508,714 @@ function TeamTab({ hackathonId, hackathonHasTeam }: { hackathonId: number; hacka
 
       {/* Team Chat */}
       <TeamChat hackathonId={hackathonId} memberColors={members.map((m, i) => ({ id: m.id, color: TEAM_MEMBER_COLORS[i % TEAM_MEMBER_COLORS.length] }))} />
+    </div>
+  );
+}
+
+// ─── Add Invites Dialog ──────────────────────────────────
+function AddInvitesDialog({
+  hackathonId,
+  maxNewInvites,
+  onClose,
+  onSuccess,
+}: {
+  hackathonId: number;
+  maxNewInvites: number;
+  onClose: () => void;
+  onSuccess: (count: number) => void;
+}) {
+  const [emails, setEmails] = useState<string[]>([]);
+  const [input, setInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const addEmail = () => {
+    const e = input.trim().toLowerCase();
+    if (!e) return;
+    if (emails.includes(e)) {
+      setInput("");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
+      setError("صيغة الإيميل غير صحيحة");
+      return;
+    }
+    if (emails.length >= maxNewInvites) {
+      setError(`الحد الأقصى ${maxNewInvites} دعوة في هذا الوقت`);
+      return;
+    }
+    setEmails([...emails, e]);
+    setInput("");
+    setError(null);
+  };
+
+  const handleSubmit = async () => {
+    if (emails.length === 0) {
+      setError("أضف إيميل واحد على الأقل");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiPost(`/participants/hackathons/${hackathonId}/team-invites`, { inviteEmails: emails });
+      onSuccess(emails.length);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل إرسال الدعوات");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <p className="text-gray-900" style={{ fontWeight: 700 }}>إضافة دعوات جديدة</p>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-400"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-xs text-gray-500">
+            أضف الإيميلات الي تبغى ترسل لها دعوات. لديك {maxNewInvites} مقعد متاح.
+          </p>
+
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addEmail())}
+              placeholder="example@email.com"
+              dir="ltr"
+              className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#6366f1]"
+            />
+            <button
+              onClick={addEmail}
+              className="px-3 py-2 rounded-lg bg-[#6366f1] text-white text-sm"
+              style={{ fontWeight: 600 }}
+            >
+              إضافة
+            </button>
+          </div>
+
+          {emails.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {emails.map((em) => (
+                <span
+                  key={em}
+                  className="flex items-center gap-1 bg-[#eef2ff] text-[#6366f1] px-2 py-0.5 rounded-full text-xs"
+                  dir="ltr"
+                >
+                  {em}
+                  <button
+                    onClick={() => setEmails(emails.filter((e) => e !== em))}
+                    className="ml-0.5 hover:text-[#4f51d4]"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {error && (
+            <p className="text-red-600 text-xs">{error}</p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="px-4 py-2 rounded-xl text-gray-600 text-sm hover:bg-gray-50 disabled:opacity-50"
+            style={{ fontWeight: 600 }}
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || emails.length === 0}
+            className="px-5 py-2 rounded-xl bg-[#6366f1] text-white text-sm hover:bg-[#4f51d4] disabled:opacity-50 flex items-center gap-2"
+            style={{ fontWeight: 600 }}
+          >
+            {submitting ? "جاري الإرسال..." : `إرسال ${emails.length || ""}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Transfer Leadership Dialog ──────────────────────────
+function TransferLeadershipDialog({
+  hackathonId,
+  members,
+  onClose,
+  onSuccess,
+}: {
+  hackathonId: number;
+  members: Array<{ id: number; fullName: string; email: string }>;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!selectedId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiPost(`/participants/hackathons/${hackathonId}/transfer-leadership`, {
+        newLeaderId: selectedId,
+      });
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل نقل القيادة");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <p className="text-gray-900" style={{ fontWeight: 700 }}>نقل قيادة الفريق</p>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-400"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
+          <p className="text-xs text-gray-500 mb-2">
+            اختر العضو الذي سيصبح القائد الجديد. سيكون له صلاحية إدارة الفريق بعد النقل.
+          </p>
+
+          {members.length === 0 ? (
+            <p className="text-gray-400 text-xs text-center py-6">لا يوجد أعضاء آخرون</p>
+          ) : (
+            members.map((m) => (
+              <label
+                key={m.id}
+                className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                  selectedId === m.id ? "border-[#e35654] bg-[#fef2f2]" : "border-gray-100 hover:border-gray-200"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="newLeader"
+                  checked={selectedId === m.id}
+                  onChange={() => setSelectedId(m.id)}
+                  className="accent-[#e35654]"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-gray-900 text-sm" style={{ fontWeight: 600 }}>{m.fullName}</p>
+                  <p className="text-gray-400 text-xs" dir="ltr">{m.email}</p>
+                </div>
+              </label>
+            ))
+          )}
+
+          {error && <p className="text-red-600 text-xs">{error}</p>}
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="px-4 py-2 rounded-xl text-gray-600 text-sm hover:bg-gray-50 disabled:opacity-50"
+            style={{ fontWeight: 600 }}
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !selectedId}
+            className="px-5 py-2 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] disabled:opacity-50"
+            style={{ fontWeight: 600 }}
+          >
+            {submitting ? "جاري النقل..." : "نقل القيادة"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Confirm Dialog (destructive actions) ────────────────
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  danger = false,
+  loading = false,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  loading?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="px-6 py-5">
+          <p className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>{title}</p>
+          <p className="text-gray-600 text-sm leading-relaxed">{message}</p>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2 rounded-xl text-gray-600 text-sm hover:bg-gray-50 disabled:opacity-50"
+            style={{ fontWeight: 600 }}
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={`px-5 py-2 rounded-xl text-white text-sm disabled:opacity-50 ${
+              danger ? "bg-red-600 hover:bg-red-700" : "bg-[#e35654] hover:bg-[#cc4a48]"
+            }`}
+            style={{ fontWeight: 600 }}
+          >
+            {loading ? "..." : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Manage Team Dialog (the single place for team management) ──────────────
+// Opened from the WorkspacesList card during the registration window. Holds
+// everything that used to live in TeamTab: members, invites, leave/withdraw/
+// transfer-leadership actions. The workspace's TeamTab is read-only after
+// registration closes, so no UI is duplicated.
+function ManageTeamDialog({
+  hackathonId,
+  onClose,
+  onChanged,
+}: {
+  hackathonId: number;
+  onClose: () => void;
+  onChanged?: () => void;
+}) {
+  const navigate = useNavigate();
+  const [data, setData] = useState<ApiTeamDetail | null>(null);
+  const [invites, setInvites] = useState<ApiTeamInvitesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showAddInvites, setShowAddInvites] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    | { kind: "leave" }
+    | { kind: "withdraw_lone_leader" }
+    | { kind: "cancel_invite"; inviteId: number; email: string }
+    | null
+  >(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchAll = async () => {
+    try {
+      const d = await apiGet<ApiTeamDetail>(`/participants/hackathons/${hackathonId}/my-team`);
+      setData(d);
+      if (d.teamMethod === "manual" && d.team) {
+        const inv = await apiGet<ApiTeamInvitesResponse>(
+          `/participants/hackathons/${hackathonId}/team-invites`,
+        );
+        setInvites(inv);
+      } else {
+        setInvites(null);
+      }
+      setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات الفريق");
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchAll().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hackathonId]);
+
+  const refresh = async () => {
+    await fetchAll();
+    onChanged?.();
+  };
+
+  const handleCancelInvite = async (inviteId: number) => {
+    setActionLoading(true);
+    try {
+      await apiDelete(`/participants/team-invites/${inviteId}`);
+      toast.success("تم إلغاء الدعوة");
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "فشل إلغاء الدعوة");
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const handleResendInvite = async (inviteId: number) => {
+    setActionLoading(true);
+    try {
+      await apiPost(`/participants/team-invites/${inviteId}/resend`, {});
+      toast.success("تم إعادة إرسال الدعوة");
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "فشل إعادة إرسال الدعوة");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleLeave = async () => {
+    setActionLoading(true);
+    try {
+      await apiDelete(`/participants/hackathons/${hackathonId}/my-registration`);
+      toast.success("غادرت الفريق");
+      onChanged?.();
+      onClose();
+      navigate("/participant/hackathons");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "فشل الانسحاب");
+      setActionLoading(false);
+      setConfirmAction(null);
+    }
+  };
+
+  const renderBody = () => {
+    if (loading) {
+      return <p className="text-center text-gray-500 text-sm py-12">جاري تحميل بيانات الفريق...</p>;
+    }
+    if (error) {
+      return <p className="text-center text-red-500 text-sm py-12">{error}</p>;
+    }
+    if (data?.participationType === "solo") {
+      return (
+        <div className="text-center py-12">
+          <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-700 text-sm" style={{ fontWeight: 600 }}>
+            أنت مسجّل كمشارك فردي
+          </p>
+          <p className="text-gray-400 text-xs mt-1">لا يوجد فريق لهذه المشاركة.</p>
+        </div>
+      );
+    }
+    if (!data?.team) {
+      return (
+        <div className="text-center py-12">
+          <Users className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+          <p className="text-gray-800 text-sm" style={{ fontWeight: 600 }}>ما عندك فريق بعد</p>
+          <p className="text-gray-500 text-xs mt-1">ابحث عن فريق أو اطلب من قائد فريق إضافتك.</p>
+        </div>
+      );
+    }
+
+    const team = data.team;
+    const members = team.members;
+    const isLeader = members.find((m) => m.isMe)?.isLeader ?? false;
+    const isManual = data.teamMethod === "manual";
+    const regStillOpen = team.registrationEndDate
+      ? new Date(team.registrationEndDate).getTime() > Date.now()
+      : false;
+    const acceptedCount = members.length;
+    const pendingCount = invites?.items.filter((i) => i.status === "pending").length ?? 0;
+    const slotsLeft = team.maxMembers - (acceptedCount + pendingCount);
+    const belowMin = acceptedCount < team.minMembers;
+
+    return (
+      <div className="space-y-6">
+        {/* Members section */}
+        <section>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5" style={{ color: "#10b981" }} />
+              <h3 className="text-gray-900" style={{ fontWeight: 700 }}>{team.name}</h3>
+            </div>
+            <span className="text-gray-400 text-xs">
+              {acceptedCount} / {team.maxMembers} أعضاء
+            </span>
+          </div>
+
+          {belowMin && regStillOpen && isManual && (
+            <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2">
+              <Clock className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <p>
+                عدد أعضاء فريقك {acceptedCount}، والحد الأدنى للمشاركة {team.minMembers} أعضاء. أكمل عدد الأعضاء قبل {formatTeamDate(team.registrationEndDate)}، وإلا سيُستبعد فريقك من الهاكاثون تلقائياً.
+              </p>
+            </div>
+          )}
+
+          <div className="grid gap-3">
+            {members.map((member, i) => {
+              const color = TEAM_MEMBER_COLORS[i % TEAM_MEMBER_COLORS.length];
+              const initial = member.fullName.charAt(0) || "؟";
+              return (
+                <div
+                  key={member.id}
+                  className="flex items-center gap-3 p-3 rounded-xl border border-gray-100"
+                >
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0"
+                    style={{ background: color, fontWeight: 700 }}
+                  >
+                    {initial}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                      {member.fullName}
+                      {member.isMe && (
+                        <span className="text-xs text-gray-400 mr-2" style={{ fontWeight: 400 }}>
+                          (أنت)
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-gray-400 text-xs" dir="ltr">{member.email}</p>
+                  </div>
+                  {member.isLeader && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full flex-shrink-0"
+                      style={{ background: "#fef2f2", color: "#e35654", fontWeight: 600 }}
+                    >
+                      قائد
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {regStillOpen && (
+            <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-2 justify-end">
+              {isLeader && acceptedCount > 1 && (
+                <button
+                  onClick={() => setShowTransfer(true)}
+                  disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-gray-200 text-gray-700 text-xs hover:bg-gray-50 disabled:opacity-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  <UserCog className="w-3.5 h-3.5" />
+                  نقل القيادة
+                </button>
+              )}
+              {isLeader && acceptedCount === 1 ? (
+                <button
+                  onClick={() => setConfirmAction({ kind: "withdraw_lone_leader" })}
+                  disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-red-200 text-red-600 text-xs hover:bg-red-50 disabled:opacity-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  حذف الفريق والانسحاب
+                </button>
+              ) : !isLeader ? (
+                <button
+                  onClick={() => setConfirmAction({ kind: "leave" })}
+                  disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-red-200 text-red-600 text-xs hover:bg-red-50 disabled:opacity-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  غادر الفريق
+                </button>
+              ) : null}
+            </div>
+          )}
+        </section>
+
+        {/* Invites section (manual only) */}
+        {isManual && invites && (
+          <section className="pt-6 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5" style={{ color: "#6366f1" }} />
+                <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
+                  الدعوات <span className="text-gray-400 text-xs">({invites.items.length})</span>
+                </h3>
+              </div>
+              {isLeader && regStillOpen && slotsLeft > 0 && (
+                <button
+                  onClick={() => setShowAddInvites(true)}
+                  disabled={actionLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#6366f1] text-white text-xs hover:bg-[#4f51d4] disabled:opacity-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  دعوة جديدة
+                </button>
+              )}
+            </div>
+
+            {invites.items.length === 0 ? (
+              <p className="text-gray-400 text-xs text-center py-6">لا توجد دعوات</p>
+            ) : (
+              <div className="space-y-2">
+                {invites.items.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 flex-wrap"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-gray-700 text-sm truncate" dir="ltr" style={{ fontWeight: 500 }}>
+                        {inv.email}
+                      </span>
+                      <InviteStatusBadge status={inv.status} />
+                    </div>
+                    {isLeader && regStillOpen && (
+                      <div className="flex items-center gap-1.5">
+                        {inv.status === "pending" && (
+                          <button
+                            onClick={() => setConfirmAction({ kind: "cancel_invite", inviteId: inv.id, email: inv.email })}
+                            disabled={actionLoading}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg border border-gray-200 text-gray-600 text-xs hover:bg-gray-50 disabled:opacity-50"
+                            style={{ fontWeight: 600 }}
+                          >
+                            <X className="w-3 h-3" />
+                            إلغاء
+                          </button>
+                        )}
+                        {inv.status === "expired" && (
+                          <button
+                            onClick={() => handleResendInvite(inv.id)}
+                            disabled={actionLoading}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg border border-[#6366f1] text-[#6366f1] text-xs hover:bg-[#eef2ff] disabled:opacity-50"
+                            style={{ fontWeight: 600 }}
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            إعادة
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* When registration is closed, show a hint that the team is locked. */}
+        {!regStillOpen && (
+          <div className="p-3 rounded-xl bg-gray-50 border border-gray-100 text-gray-500 text-xs">
+            انتهى وقت التسجيل — الفريق مغلق ولا يمكن تعديل الأعضاء أو الدعوات.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Pull the manual-only members list once so the transfer modal has it.
+  const transferCandidates = data?.team?.members.filter((m) => !m.isMe).map((m) => ({
+    id: m.id,
+    fullName: m.fullName,
+    email: m.email,
+  })) ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <p className="text-gray-900" style={{ fontWeight: 700, fontSize: "1rem" }}>
+            إدارة الفريق
+          </p>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 text-gray-400"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 overflow-y-auto flex-1">{renderBody()}</div>
+      </div>
+
+      {/* Nested action modals — rendered on top of the management modal. */}
+      {showAddInvites && data?.team && (
+        <AddInvitesDialog
+          hackathonId={hackathonId}
+          maxNewInvites={data.team.maxMembers - (data.team.members.length + (invites?.items.filter((i) => i.status === "pending").length ?? 0))}
+          onClose={() => setShowAddInvites(false)}
+          onSuccess={async (count) => {
+            setShowAddInvites(false);
+            toast.success(`تم إرسال ${count} دعوة`);
+            await refresh();
+          }}
+        />
+      )}
+
+      {showTransfer && (
+        <TransferLeadershipDialog
+          hackathonId={hackathonId}
+          members={transferCandidates}
+          onClose={() => setShowTransfer(false)}
+          onSuccess={async () => {
+            setShowTransfer(false);
+            toast.success("تم نقل القيادة");
+            await refresh();
+          }}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          title={
+            confirmAction.kind === "leave"
+              ? "مغادرة الفريق"
+              : confirmAction.kind === "withdraw_lone_leader"
+              ? "حذف الفريق والانسحاب"
+              : "إلغاء الدعوة"
+          }
+          message={
+            confirmAction.kind === "leave"
+              ? "هل أنت متأكد من مغادرة الفريق؟ سيتم حذف تسجيلك في هذا الهاكاثون."
+              : confirmAction.kind === "withdraw_lone_leader"
+              ? "أنت القائد الوحيد. سيُحذف الفريق وكل دعواته المعلّقة، ويُلغى تسجيلك في الهاكاثون."
+              : `إلغاء الدعوة المرسلة إلى ${confirmAction.email}؟`
+          }
+          confirmLabel={
+            confirmAction.kind === "leave"
+              ? "مغادرة"
+              : confirmAction.kind === "withdraw_lone_leader"
+              ? "حذف وانسحاب"
+              : "إلغاء الدعوة"
+          }
+          danger
+          loading={actionLoading}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            if (confirmAction.kind === "leave" || confirmAction.kind === "withdraw_lone_leader") {
+              handleLeave();
+            } else {
+              handleCancelInvite(confirmAction.inviteId);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1459,13 +2375,203 @@ function TeamChat({
 // ═══════════════════════════════════════════════════════════
 // Tab: Submission
 // ═══════════════════════════════════════════════════════════
+
+// Maps organizer submissionFields keys to actual editable DB columns.
+// Only the four entries here are rendered as inputs; the remaining keys
+// (video / presentation / images) are file-typed and handled by the
+// existing file uploader, so we don't show duplicate inputs for them.
+const PROJECT_TEXT_FIELDS: Record<
+  string,
+  {
+    apiField: 'projectName' | 'projectDescription' | 'repoUrl' | 'demoUrl';
+    type: 'text' | 'textarea' | 'url';
+    label: string;
+    placeholder: string;
+  }
+> = {
+  title:  { apiField: 'projectName',        type: 'text',     label: 'عنوان المشروع',         placeholder: 'اكتب اسم المشروع' },
+  desc:   { apiField: 'projectDescription', type: 'textarea', label: 'وصف المشروع',           placeholder: 'اشرح فكرة المشروع باختصار' },
+  github: { apiField: 'repoUrl',            type: 'url',      label: 'رابط GitHub',          placeholder: 'https://github.com/...' },
+  demo:   { apiField: 'demoUrl',            type: 'url',      label: 'رابط النسخة التجريبية', placeholder: 'https://...' },
+};
+
+// Imperative handle exposed to SubmissionTab so the parent can flush
+// unsaved metadata before confirming the submission (otherwise the user
+// could fill the form, skip "Save", click "Confirm", and be told the
+// fields are empty — confusing).
+interface ProjectMetadataFormHandle {
+  saveIfDirty: () => Promise<boolean>;
+}
+
+const ProjectMetadataForm = forwardRef<
+  ProjectMetadataFormHandle,
+  {
+    submission: ApiSubmission;
+    canEdit: boolean;
+    hackathonId: number;
+    onSaved: () => Promise<void>;
+  }
+>(function ProjectMetadataForm({ submission, canEdit, hackathonId, onSaved }, ref) {
+  // Lazy init from server data; local edits are trusted until the next save.
+  const [form, setForm] = useState(() => ({
+    projectName: submission.projectName ?? '',
+    projectDescription: submission.projectDescription ?? '',
+    repoUrl: submission.repoUrl ?? '',
+    demoUrl: submission.demoUrl ?? '',
+  }));
+  const [saving, setSaving] = useState(false);
+
+  const fieldsToRender = submission.submissionFields
+    .filter((id) => id in PROJECT_TEXT_FIELDS)
+    .map((id) => ({ id, ...PROJECT_TEXT_FIELDS[id] }));
+
+  // Compute diff payload of form vs submission. Used both for the manual
+  // save button and for the parent's pre-confirm flush.
+  const computePayload = (): Record<string, string | null> => {
+    const payload: Record<string, string | null> = {};
+    for (const f of fieldsToRender) {
+      const current = form[f.apiField].trim();
+      const original = (submission[f.apiField] ?? '').trim();
+      if (current !== original) {
+        payload[f.apiField] = current || null;
+      }
+    }
+    return payload;
+  };
+
+  // Persists the diff silently. Returns true on success / no-op, false on
+  // failure. Used by parent before confirming.
+  useImperativeHandle(ref, () => ({
+    saveIfDirty: async () => {
+      const payload = computePayload();
+      if (Object.keys(payload).length === 0) return true;
+      try {
+        await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
+        await onSaved();
+        return true;
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع';
+        toast.error(msg);
+        return false;
+      }
+    },
+  }));
+
+  if (fieldsToRender.length === 0) return null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = computePayload();
+      if (Object.keys(payload).length === 0) {
+        toast.success('لا توجد تغييرات');
+        return;
+      }
+      await apiPut(`/participants/hackathons/${hackathonId}/submission`, payload);
+      await onSaved();
+      toast.success('تم حفظ بيانات المشروع');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع';
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <FileText className="w-5 h-5" style={{ color: '#6366f1' }} />
+        <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+          بيانات المشروع
+        </h2>
+      </div>
+
+      <div className="space-y-4">
+        {fieldsToRender.map((f) => (
+          <div key={f.id}>
+            <label className="block text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
+              {f.label} <span className="text-red-500">*</span>
+            </label>
+            {f.type === 'textarea' ? (
+              <textarea
+                value={form[f.apiField]}
+                onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
+                disabled={!canEdit || saving}
+                rows={4}
+                placeholder={f.placeholder}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 focus:bg-white transition-all resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            ) : (
+              <input
+                type={f.type}
+                dir={f.type === 'url' ? 'ltr' : 'rtl'}
+                value={form[f.apiField]}
+                onChange={(e) => setForm({ ...form, [f.apiField]: e.target.value })}
+                disabled={!canEdit || saving}
+                placeholder={f.placeholder}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/10 focus:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={!canEdit || saving}
+        className="mt-5 w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{ background: '#6366f1', fontWeight: 600 }}
+      >
+        {saving ? 'جاري الحفظ...' : 'حفظ بيانات المشروع'}
+      </button>
+    </div>
+  );
+});
+
+// Computes the list of organizer-required items that the participant hasn't
+// filled yet. Mirrors the authoritative backend check in confirmSubmission.
+function computeMissingSubmissionItems(data: ApiSubmission): string[] {
+  const missing: string[] = [];
+  const TEXT_MAP: Record<
+    string,
+    { key: 'projectName' | 'projectDescription' | 'repoUrl' | 'demoUrl'; label: string }
+  > = {
+    title:  { key: 'projectName',        label: 'عنوان المشروع' },
+    desc:   { key: 'projectDescription', label: 'وصف المشروع' },
+    github: { key: 'repoUrl',            label: 'رابط GitHub' },
+    demo:   { key: 'demoUrl',            label: 'رابط النسخة التجريبية' },
+  };
+  for (const fId of data.submissionFields) {
+    const m = TEXT_MAP[fId];
+    if (m) {
+      const val = data[m.key];
+      if (val == null || (typeof val === 'string' && val.trim() === '')) {
+        missing.push(m.label);
+      }
+    }
+  }
+  const FILE_LABELS: Record<string, string> = {
+    video:        'فيديو توضيحي',
+    presentation: 'عرض تقديمي',
+    images:       'صور المشروع',
+  };
+  const requiredFileFields = data.submissionFields.filter((f) => f in FILE_LABELS);
+  if (requiredFileFields.length > 0 && data.files.length === 0) {
+    for (const f of requiredFileFields) missing.push(FILE_LABELS[f]);
+  }
+  return missing;
+}
+
 function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   const [data, setData] = useState<ApiSubmission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const metadataFormRef = useRef<ProjectMetadataFormHandle>(null);
 
   const refetch = async () => {
     try {
@@ -1492,13 +2598,18 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
     if (!files || files.length === 0) return;
     setUploadError(null);
     setUploading(true);
+    let uploaded = 0;
     try {
       for (const file of Array.from(files)) {
         await apiUpload(`/participants/hackathons/${hackathonId}/submission/files`, file);
+        uploaded++;
       }
       await refetch();
+      toast.success(uploaded === 1 ? "تم رفع الملف بنجاح" : `تم رفع ${uploaded} ملفات بنجاح`);
     } catch (e) {
-      setUploadError(e instanceof ApiError ? e.message : "فشل رفع الملف");
+      const msg = e instanceof ApiError ? e.message : "فشل رفع الملف";
+      setUploadError(msg);
+      toast.error(msg);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1509,8 +2620,39 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
     try {
       await apiDelete(`/participants/hackathons/${hackathonId}/submission/files/${fileId}`);
       await refetch();
+      // Red toast for a successful destructive action — the deletion happened,
+      // but the colour signals "something was removed" rather than affirming it.
+      toast.error("تم حذف الملف");
     } catch (e) {
-      setUploadError(e instanceof ApiError ? e.message : "فشل حذف الملف");
+      const msg = e instanceof ApiError ? e.message : "فشل حذف الملف";
+      setUploadError(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!data) return;
+    setConfirming(true);
+    try {
+      // Flush any unsaved metadata changes from the form first so the
+      // backend's required-field check sees the latest values. Without
+      // this, a participant who fills the form but doesn't click "save"
+      // would see "field missing" errors despite having typed the value.
+      if (metadataFormRef.current) {
+        const flushed = await metadataFormRef.current.saveIfDirty();
+        if (!flushed) {
+          setConfirming(false);
+          return;
+        }
+      }
+      await apiPost(`/participants/hackathons/${hackathonId}/submission/submit`, {});
+      await refetch();
+      toast.success(data.submittedAt ? "تم إعادة تأكيد التسليم" : "تم تأكيد التسليم");
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "فشل تأكيد التسليم";
+      toast.error(msg);
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -1526,14 +2668,62 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   }
 
   const maxBytes = data.maxFileSizeMb * 1024 * 1024;
+  const windowState = computeSubmissionWindow(data);
+  const canEdit = windowState === "open";
 
   return (
     <div className="space-y-6">
+      {/* Submission window banner — visible state changes the entire tab. */}
+      {windowState === "before_start" && data.submissionStartDate && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
+          <Clock className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-blue-900 text-sm" style={{ fontWeight: 700 }}>التسليم لم يبدأ بعد</p>
+            <p className="text-blue-700 text-xs mt-1">
+              يبدأ استقبال التسليمات في {formatDateAr(data.submissionStartDate)}.
+            </p>
+          </div>
+        </div>
+      )}
+      {windowState === "open" && data.submissionDeadline && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-green-900 text-sm" style={{ fontWeight: 700 }}>التسليم متاح حالياً</p>
+            <p className="text-green-700 text-xs mt-1">
+              ارفع ملفاتك قبل إقفال التسليم في {formatDateAr(data.submissionDeadline)}.
+            </p>
+          </div>
+        </div>
+      )}
+      {windowState === "closed" && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
+          <X className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-red-900 text-sm" style={{ fontWeight: 700 }}>انتهى موعد التسليم</p>
+            <p className="text-red-700 text-xs mt-1">
+              لا يمكن رفع ملفات أو تعديل البيانات بعد {formatDateAr(data.submissionDeadline)}.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-5">
           <ListChecks className="w-5 h-5" style={{ color: "#f59e0b" }} />
           <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>متطلبات التسليم</h2>
         </div>
+
+        {data.expectedProjectsDescription && (
+          <div className="p-4 rounded-xl mb-5 bg-gradient-to-br from-[#fef2f4] to-white border border-[#fecaca]">
+            <p className="text-gray-700 text-xs mb-2" style={{ fontWeight: 700 }}>
+              وصف المشاريع المطلوبة
+            </p>
+            <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+              {data.expectedProjectsDescription}
+            </p>
+          </div>
+        )}
 
         {data.submissionDeadline && (
           <div className="flex items-start gap-3 p-3 rounded-xl mb-5"
@@ -1547,9 +2737,6 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
                 موعد إغلاق التسليم
               </p>
               <p className="text-gray-600 text-sm mt-0.5">{formatDateAr(data.submissionDeadline)}</p>
-              {data.allowLateSubmission && (
-                <p className="text-amber-600 text-xs mt-1">يسمح المنظّم بالتسليم المتأخر</p>
-              )}
             </div>
           </div>
         )}
@@ -1595,7 +2782,7 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           </div>
         )}
 
-        {data.submissionFields.length === 0 && data.requirements.length === 0 && !data.submissionDeadline && (
+        {data.submissionFields.length === 0 && data.requirements.length === 0 && !data.submissionDeadline && !data.expectedProjectsDescription && (
           <p className="text-gray-400 text-sm text-center py-6">لم يحدّد المنظّم متطلبات بعد</p>
         )}
 
@@ -1603,6 +2790,16 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           الحد الأقصى لحجم الملف الواحد: <span style={{ fontWeight: 600, color: "#374151" }}>{data.maxFileSizeMb} MB</span>
         </p>
       </div>
+
+      {/* Project metadata form — rendered only if the organizer asks for
+          any of the supported text/URL fields. */}
+      <ProjectMetadataForm
+        ref={metadataFormRef}
+        submission={data}
+        canEdit={canEdit}
+        hackathonId={hackathonId}
+        onSaved={refetch}
+      />
 
       {/* Upload Section */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
@@ -1619,13 +2816,20 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           onChange={(e) => handleFiles(e.target.files)}
         />
 
-        {/* Upload Area */}
+        {/* Upload Area — locked outside the submission window. */}
         <div
-          onClick={() => !uploading && fileInputRef.current?.click()}
+          onClick={() => canEdit && !uploading && fileInputRef.current?.click()}
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (canEdit) handleFiles(e.dataTransfer.files);
+          }}
           className={`border-2 border-dashed rounded-2xl p-8 text-center mb-5 transition-all ${
-            uploading ? "opacity-50 cursor-wait" : "cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30"
+            !canEdit
+              ? "opacity-50 cursor-not-allowed"
+              : uploading
+              ? "opacity-50 cursor-wait"
+              : "cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30"
           }`}
           style={{ borderColor: "#e5e7eb" }}
         >
@@ -1634,7 +2838,11 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
             <Upload className="w-8 h-8" style={{ color: "#e35654" }} />
           </div>
           <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-            {uploading ? "جاري الرفع..." : "اسحب الملفات هنا أو انقر للتحميل"}
+            {!canEdit
+              ? "الرفع غير متاح حالياً"
+              : uploading
+              ? "جاري الرفع..."
+              : "اسحب الملفات هنا أو انقر للتحميل"}
           </h3>
           <p className="text-gray-400 text-sm">
             الحد الأقصى لكل ملف: {data.maxFileSizeMb} MB
@@ -1646,9 +2854,9 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
         )}
 
         <button
-          disabled={uploading}
+          disabled={uploading || !canEdit}
           onClick={() => fileInputRef.current?.click()}
-          className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50"
+          className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ background: "#e35654", fontWeight: 600 }}
         >
           <Plus className="w-4 h-4 inline-block ml-2" />
@@ -1726,10 +2934,11 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
                     </a>
                     <button
                       onClick={() => handleDelete(file.id)}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors"
-                      title="حذف"
+                      disabled={!canEdit}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      title={canEdit ? "حذف" : "الحذف غير متاح حالياً"}
                     >
-                      <X className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1738,6 +2947,85 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
           </div>
         )}
       </div>
+
+      {/* Confirm Submission — gates the judging pipeline. The judge endpoint
+          refuses to evaluate a project whose TS_SubmittedAt is null, so this
+          is the participant's explicit "I'm done" moment. They can still edit
+          metadata/files until the window closes; clicking again just bumps
+          the timestamp. */}
+      {(() => {
+        const missing = computeMissingSubmissionItems(data);
+        const isSubmitted = data.submittedAt !== null;
+        // Detect files uploaded after the last confirmation so we can prompt
+        // a re-confirm. We can only see file timestamps (metadata edits have
+        // no recorded timestamp), so this covers the most common drift.
+        const submittedAtMs = data.submittedAt ? new Date(data.submittedAt).getTime() : 0;
+        const hasFilesAfterConfirm = isSubmitted
+          && data.files.some((f) => new Date(f.uploadedAt).getTime() > submittedAtMs);
+        return (
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <div className="flex items-center gap-2 mb-5">
+              <CheckCircle2 className="w-5 h-5" style={{ color: "#10b981" }} />
+              <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
+                تأكيد التسليم النهائي
+              </h2>
+            </div>
+
+            {isSubmitted ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-5 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-green-900 text-sm" style={{ fontWeight: 700 }}>
+                    تم تأكيد التسليم في {formatDateAr(data.submittedAt)}
+                  </p>
+                  <p className="text-green-700 text-xs mt-1">
+                    يمكنك تعديل البيانات والملفات حتى موعد الإغلاق. إذا عدّلت شيئاً، أعد الضغط لإعادة تأكيد التسليم.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-600 text-sm mb-5 leading-relaxed">
+                اضغط لتأكيد تسليمك. سيُتاح مشروعك للحكّام للتقييم بعد ذلك.
+              </p>
+            )}
+
+            {hasFilesAfterConfirm && canEdit && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 flex items-start gap-3">
+                <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-amber-900 text-sm leading-relaxed">
+                  لديك ملفات أُضيفت بعد آخر تأكيد. اضغط <span style={{ fontWeight: 700 }}>"إعادة تأكيد التسليم"</span> لتسجيل النسخة الأحدث.
+                </p>
+              </div>
+            )}
+
+            {missing.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+                <p className="text-amber-900 text-sm mb-2" style={{ fontWeight: 700 }}>
+                  مطلوب قبل التأكيد
+                </p>
+                <ul className="space-y-1 text-amber-800 text-xs leading-relaxed">
+                  {missing.map((item, i) => (
+                    <li key={i}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              onClick={handleConfirm}
+              disabled={!canEdit || confirming || missing.length > 0}
+              className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: "#10b981", fontWeight: 600 }}
+            >
+              {confirming
+                ? "جاري التأكيد..."
+                : isSubmitted
+                ? "إعادة تأكيد التسليم"
+                : "تأكيد التسليم النهائي"}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1747,17 +3035,19 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
 // ═══════════════════════════════════════════════════════════
 function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
   const [evaluations, setEvaluations] = useState<ApiEvaluation[]>([]);
+  const [visibility, setVisibility] = useState<ApiEvaluationsVisibility | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    apiGet<{ items: ApiEvaluation[] }>(
+    apiGet<ApiEvaluationsResponse>(
       `/participants/hackathons/${hackathonId}/evaluations`
     )
       .then((data) => {
         if (cancelled) return;
         setEvaluations(data.items);
+        setVisibility(data.visibility);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -1786,10 +3076,34 @@ function EvaluationsTab({ hackathonId }: { hackathonId: number }) {
         ) : evaluations.length === 0 ? (
           <div className="text-center py-10">
             <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
-              لم يتم نشر التقييمات بعد
-            </p>
-            <p className="text-gray-400 text-xs mt-1">ستظهر هنا تقييمات الحكّام بعد التحكيم</p>
+            {visibility?.reason === 'before_winners_date' && visibility.winnersDate ? (
+              <>
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  ستظهر النتائج بتاريخ {formatDateAr(visibility.winnersDate)}
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  لم يحن موعد إعلان النتائج بعد
+                </p>
+              </>
+            ) : visibility?.reason === 'evaluations_hidden' ? (
+              <>
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  لم يُتح المنظم ظهور التقييمات بعد
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  ستظهر هنا تقييمات الحكّام بعد إتاحتها من جهة التنظيم
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>
+                  لم يتم نشر التقييمات بعد
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  ستظهر هنا تقييمات الحكّام بعد التحكيم
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-5">

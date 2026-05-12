@@ -5,7 +5,6 @@ import { AuthPage } from "./components/AuthPage";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { SponsorHome } from "./components/SponsorHome";
 import { SponsorSponsorships } from "./components/SponsorSponsorships";
-import { NegotiationFlow } from "./components/NegotiationFlow";
 import { MessagesPage } from "./components/MessagesPage";
 import { HackathonsExplore } from "./components/HackathonsExplore";
 import { HackathonDetails } from "./components/HackathonDetails";
@@ -42,6 +41,7 @@ import { ForgotPassword } from "./components/ForgotPassword";
 import { PublicHackathonPage } from "./components/PublicHackathonPage";
 import { SystemStatus } from "./components/SystemStatus";
 import { InviteAcceptPage } from "./components/InviteAcceptPage";
+import { TeamInviteAcceptPage } from "./components/TeamInviteAcceptPage";
 
 export const router = createBrowserRouter([
   {
@@ -63,6 +63,8 @@ export const router = createBrowserRouter([
       { path: "hackathon/:slug", Component: PublicHackathonPage },
       /* ── Invitation acceptance landing (public) ── */
       { path: "invite/:token", Component: InviteAcceptPage },
+      /* ── Team invitation acceptance (public; for participant-to-participant invites) ── */
+      { path: "team-invite/:token", Component: TeamInviteAcceptPage },
       /* ── Admin (independent layout) ── */
       {
         path: "admin",
@@ -96,11 +98,9 @@ export const router = createBrowserRouter([
           { path: "sponsorships", Component: SponsorSponsorships },
           { path: "opportunities", Component: HackathonsExplore },
           { path: "hackathon/:id", Component: HackathonDetails },
-          { path: "payments", Component: PaymentsPage },
           { path: "messages", Component: MessagesPage },
           { path: "notifications", Component: SponsorNotifications },
           { path: "profile", Component: SponsorProfile },
-          { path: "negotiation", Component: NegotiationFlow },
         ],
       },
       /* ── Participant (independent layout) ── */

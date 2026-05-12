@@ -13,11 +13,7 @@ function getActivePage(pathname: string): SponsorNavPage {
       return "sponsorships";
     case "opportunities":
       return "opportunities";
-    case "payments":
-      return "payments";
     case "messages":
-      return "messages";
-    case "negotiation":
       return "messages";
     case "notifications":
       return "notifications";
@@ -59,9 +55,6 @@ export function SponsorLayout() {
             <p className="text-gray-400 text-sm">
               © 2026 مُمكّن — منصة الهاكاثونات الرقمية. جميع الحقوق محفوظة.
             </p>
-            <div className="flex gap-4 text-sm text-gray-500">
-              
-            </div>
           </div>
         </div>
       </footer>

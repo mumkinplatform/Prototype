@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -159,7 +159,18 @@ function firstChar(text: string | null): string {
 
 export function HackathonDetails() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
+
+  // مسار الرجوع — يحفظ من أي صفحة جينا
+  const backTo =
+    (location.state as { from?: string } | null)?.from ?? "/sponsor/opportunities";
+  const backLabel =
+    backTo === "/sponsor/sponsorships"
+      ? "العودة لرعاياتي"
+      : backTo === "/sponsor/notifications"
+      ? "العودة للإشعارات"
+      : "العودة للهاكاثونات";
 
   const [data, setData] = useState<OpportunityDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -225,17 +236,9 @@ export function HackathonDetails() {
         packageId: selectedPackage,
       });
       toast.success(`تم تقديم طلبك على ${target.name} بنجاح`, {
-        description: "سيتم نقلك لمرحلة التفاوض مع المنظم.",
+        description: "ستجد محادثة التفاوض في صفحة الرسائل.",
       });
-      // Navigate to negotiation page with hackathon + package context
-      navigate("/sponsor/negotiation", {
-        state: {
-          hackathonId: data.hackathon.id,
-          hackathonTitle: data.hackathon.title,
-          packageId: selectedPackage,
-          packageName: target.name,
-        },
-      });
+      navigate("/sponsor/messages");
     } catch (err: unknown) {
       const message =
         err instanceof ApiError ? err.message : "حدث خطأ، حاول لاحقاً";
@@ -270,10 +273,10 @@ export function HackathonDetails() {
             {loadError ?? "تعذّر تحميل البيانات"}
           </p>
           <button
-            onClick={() => navigate("/sponsor/opportunities")}
+            onClick={() => navigate(backTo)}
             className="mt-4 text-sm text-[#e35654] hover:underline"
           >
-            رجوع لقائمة الفرص
+            {backLabel}
           </button>
         </div>
       </div>
@@ -324,12 +327,12 @@ export function HackathonDetails() {
         {/* Back Button */}
         <div className="relative max-w-6xl mx-auto px-4 sm:px-8 pt-5">
           <button
-            onClick={() => navigate("/sponsor/opportunities")}
+            onClick={() => navigate(backTo)}
             className="flex items-center gap-2 text-white/80 hover:text-white transition-colors text-sm"
             style={{ fontWeight: 500 }}
           >
             <ArrowRight className="w-4 h-4" />
-            العودة للهاكاثونات
+            {backLabel}
           </button>
         </div>
 

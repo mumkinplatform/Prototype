@@ -372,3 +372,79 @@ export async function sendRegistrationDecisionEmail(
     html,
   });
 }
+
+// ─── Team Invitation (participant invites teammate by email) ───────
+interface TeamInviteEmailParams {
+  to: string;
+  inviteeName: string;
+  leaderName: string;
+  teamName: string;
+  hackathonTitle: string;
+  ideaTitle: string;
+  inviteUrl: string;   // رابط /participant/team-invite/:token
+  expiresAt: Date;
+}
+
+function renderTeamInviteEmail(p: TeamInviteEmailParams): string {
+  const expiryStr = new Intl.DateTimeFormat('ar-SA-u-ca-gregory', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(p.expiresAt);
+  return `
+    <div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;background:#fafaf9;padding:40px;text-align:center">
+      <div style="background:white;padding:36px;border-radius:16px;max-width:520px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+        <div style="display:inline-block;background:#e35654;color:white;width:56px;height:56px;border-radius:14px;line-height:56px;font-size:28px;margin-bottom:18px">👥</div>
+        <h2 style="color:#111;margin:0 0 8px;font-size:22px">دعوة للانضمام إلى فريق</h2>
+        <p style="color:#666;margin:0 0 20px;font-size:14px">منصة مُمكّن</p>
+
+        <div style="background:#fef2f4;border-radius:12px;padding:20px;margin-bottom:24px;text-align:right">
+          <p style="color:#111;margin:0 0 14px;line-height:1.7">
+            مرحباً ${p.inviteeName}،<br/>
+            دعاك <strong>${p.leaderName}</strong> للانضمام إلى فريقه في هاكاثون
+            <strong>"${p.hackathonTitle}"</strong>.
+          </p>
+          <table style="width:100%;font-size:14px;color:#333">
+            <tr>
+              <td style="padding:6px 0;color:#888;width:110px">اسم الفريق</td>
+              <td style="padding:6px 0"><strong>${p.teamName}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#888">فكرة المشروع</td>
+              <td style="padding:6px 0"><strong>${p.ideaTitle}</strong></td>
+            </tr>
+          </table>
+        </div>
+
+        <a href="${p.inviteUrl}" style="display:inline-block;background:#e35654;color:white;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:15px;box-shadow:0 4px 12px rgba(227,86,84,0.3)">
+          فتح الدعوة
+        </a>
+
+        <p style="color:#999;font-size:12px;margin:28px 0 0;line-height:1.7">
+          الدعوة صالحة حتى <strong>${expiryStr}</strong>. اضغط الرابط للقبول أو الرفض.
+          <br/>
+          إذا لم تكن تتوقع هذه الدعوة، يمكنك تجاهل الرسالة.
+        </p>
+        <p style="color:#bbb;font-size:11px;margin:18px 0 0;direction:ltr">
+          ${p.inviteUrl}
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendTeamInviteEmail(params: TeamInviteEmailParams): Promise<void> {
+  if (!transporter) {
+    console.log(
+      `[team-invite fallback — Gmail not configured]  to=${params.to}  ` +
+        `team="${params.teamName}"  hackathon="${params.hackathonTitle}"  url=${params.inviteUrl}`,
+    );
+    return;
+  }
+  await transporter.sendMail({
+    from: `"Mumkin" <${env.mail.user}>`,
+    to: params.to,
+    subject: `دعوة للانضمام إلى فريق في هاكاثون "${params.hackathonTitle}"`,
+    html: renderTeamInviteEmail(params),
+  });
+}

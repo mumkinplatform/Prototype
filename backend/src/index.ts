@@ -10,6 +10,11 @@ import participantRoutes from './routes/participant.routes';
 import matchmakingRoutes from './routes/matchmaking.routes';
 import judgeRoutes from './routes/judge.routes';
 import { getInvitationByToken, acceptInvitation } from './controllers/hackathon.controller';
+import {
+  getTeamInviteByToken,
+  acceptTeamInvite,
+  declineTeamInvite,
+} from './controllers/participant.controller';
 import { requireAuth } from './middleware/auth.middleware';
 
 const app = express();
@@ -37,6 +42,13 @@ app.use('/judges', judgeRoutes);
 app.get('/invitations/:token', getInvitationByToken);
 // Accept an invitation — requires the logged-in user's email to match the invite email.
 app.post('/invitations/:token/accept', requireAuth, acceptInvitation);
+
+// Team invitations (participant-to-participant). Preview is public so an
+// unregistered invitee can see what they're being asked to join before
+// deciding to sign up. Accept/decline require the recipient to be logged in.
+app.get('/team-invitations/:token', getTeamInviteByToken);
+app.post('/team-invitations/:token/accept', requireAuth, acceptTeamInvite);
+app.post('/team-invitations/:token/decline', requireAuth, declineTeamInvite);
 
 app.listen(env.port, () => {
   console.log(`Server on http://localhost:${env.port}`);
