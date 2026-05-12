@@ -12,6 +12,7 @@ import {
   sendCoManagerInviteEmail,
   sendRegistrationDecisionEmail,
   sendJudgeInviteEmail,
+  sendJudgeAssignmentEmail,
 } from '../lib/mail';
 import { env } from '../config/env';
 
@@ -2422,6 +2423,22 @@ export const updateEvaluationSettings = async (req: Request, res: Response) => {
     announcementDate = d;
   }
 
+  // Enforce the chain rule: winners date must come AFTER judging ends. Same
+  // check the frontend does, kept here as a safety net (catches API clients
+  // that bypass the UI).
+  if (announcementDate) {
+    const [endRows] = await pool.query<RowDataPacket[]>(
+      'SELECT H_Judging_EndDate FROM hackathon WHERE hackathon_ID = ?',
+      [id],
+    );
+    const judgingEnd = (endRows[0] as { H_Judging_EndDate: Date | null } | undefined)?.H_Judging_EndDate ?? null;
+    if (judgingEnd && announcementDate.getTime() <= new Date(judgingEnd).getTime()) {
+      return res.status(400).json({
+        error: 'يجب أن يكون تاريخ إعلان الفائزين بعد "نهاية التقييم"',
+      });
+    }
+  }
+
   await pool.execute(
     `UPDATE hackathon
         SET H_Show_Evaluations_To_Participants = ?,
@@ -2580,6 +2597,24 @@ async function sendJudgeInviteEmailSafe(args: {
     });
   } catch (err) {
     console.error('[judge invite] failed to send email to', args.to, err);
+  }
+}
+
+// Fire-and-forget wrapper around the post-distribution assignment email so
+// SMTP failures don't bubble up and break the HTTP response.
+async function sendJudgeAssignmentEmailSafe(args: {
+  to: string;
+  judgeName: string;
+  hackathonTitle: string;
+  organizerName: string;
+  projectCount: number;
+  evaluationEndDate: Date | null;
+  workspaceUrl: string;
+}): Promise<void> {
+  try {
+    await sendJudgeAssignmentEmail(args);
+  } catch (err) {
+    console.error('[judge assignment] failed to send email to', args.to, err);
   }
 }
 
@@ -3177,16 +3212,44 @@ export const distributeJudging = async (req: Request, res: Response) => {
       [id],
     );
 
-    // Re-fetch judge names in the shuffled order so the UI can render the
-    // breakdown with names and avatars.
+    // Re-fetch judge contact info in the shuffled order so the UI can render
+    // the breakdown AND we can send each assignee an email below.
     const namePh = judgeIds.map(() => '?').join(',');
-    const [judgeNames] = await pool.query<RowDataPacket[]>(
-      `SELECT HJ_ID, HJ_FullName FROM hackathon_judge WHERE HJ_ID IN (${namePh})`,
+    const [judgeRows] = await pool.query<RowDataPacket[]>(
+      `SELECT HJ_ID, HJ_FullName, HJ_Email FROM hackathon_judge WHERE HJ_ID IN (${namePh})`,
       judgeIds,
     );
     const nameById = new Map<number, string>();
-    for (const r of judgeNames as Array<{ HJ_ID: number; HJ_FullName: string }>) {
+    const emailById = new Map<number, string>();
+    for (const r of judgeRows as Array<{ HJ_ID: number; HJ_FullName: string; HJ_Email: string }>) {
       nameById.set(r.HJ_ID, r.HJ_FullName);
+      emailById.set(r.HJ_ID, r.HJ_Email);
+    }
+
+    // Notify each judge by email — fire-and-forget so the response isn't
+    // blocked on SMTP. Pulls the organizer + hackathon title in one query.
+    const ctx = await getHackathonInviteContext(id);
+    const [hackMeta] = await pool.query<RowDataPacket[]>(
+      'SELECT H_Judging_EndDate FROM hackathon WHERE hackathon_ID = ?',
+      [id],
+    );
+    const evaluationEndDate = (hackMeta[0] as { H_Judging_EndDate: Date | null } | undefined)?.H_Judging_EndDate ?? null;
+    if (ctx) {
+      for (const hjId of judgeIds) {
+        const count = tally.get(hjId) ?? 0;
+        const email = emailById.get(hjId);
+        const name = nameById.get(hjId);
+        if (!email || !name || count === 0) continue;
+        void sendJudgeAssignmentEmailSafe({
+          to: email,
+          judgeName: name,
+          hackathonTitle: ctx.title,
+          organizerName: ctx.organizerName,
+          projectCount: count,
+          evaluationEndDate,
+          workspaceUrl: `${env.frontendUrl}/admin/hackathon/${id}/projects`,
+        });
+      }
     }
 
     return res.json({

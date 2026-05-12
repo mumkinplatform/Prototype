@@ -198,6 +198,78 @@ export async function sendJudgeInviteEmail(params: JudgeInviteEmailParams): Prom
   });
 }
 
+// ─── Judge: projects assigned (fired after the organizer hits "ابدأ التوزيع") ──
+interface JudgeAssignmentEmailParams {
+  to: string;
+  judgeName: string;
+  hackathonTitle: string;
+  organizerName: string;
+  projectCount: number;
+  evaluationEndDate: Date | null;
+  workspaceUrl: string;
+}
+
+function renderJudgeAssignmentEmail(p: JudgeAssignmentEmailParams): string {
+  const dateLine = p.evaluationEndDate
+    ? `<tr><td style="padding:6px 0;color:#888;width:140px">الموعد النهائي للتقييم</td><td style="padding:6px 0"><strong>${new Date(p.evaluationEndDate).toLocaleString('ar-SA', { dateStyle: 'long', timeStyle: 'short' })}</strong></td></tr>`
+    : '';
+  return `
+    <div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;background:#fafaf9;padding:40px;text-align:center">
+      <div style="background:white;padding:36px;border-radius:16px;max-width:520px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+        <div style="display:inline-block;background:#6366f1;color:white;width:56px;height:56px;border-radius:14px;line-height:56px;font-size:28px;margin-bottom:18px">⚖️</div>
+        <h2 style="color:#111;margin:0 0 8px;font-size:22px">تم إسناد مشاريع لك للتقييم</h2>
+        <p style="color:#666;margin:0 0 20px;font-size:14px">منصة مُمكّن</p>
+
+        <div style="background:#eef2ff;border-radius:12px;padding:20px;margin-bottom:24px;text-align:right">
+          <p style="color:#111;margin:0 0 14px;line-height:1.7">
+            مرحباً ${p.judgeName}،<br/>
+            تم إسناد <strong>${p.projectCount}</strong> مشروع لك للتقييم في هاكاثون
+            <strong>"${p.hackathonTitle}"</strong>.
+          </p>
+          <table style="width:100%;font-size:14px;color:#333">
+            <tr>
+              <td style="padding:6px 0;color:#888;width:140px">الجهة المنظمة</td>
+              <td style="padding:6px 0"><strong>${p.organizerName}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#888">عدد المشاريع</td>
+              <td style="padding:6px 0"><strong>${p.projectCount}</strong></td>
+            </tr>
+            ${dateLine}
+          </table>
+        </div>
+
+        <a href="${p.workspaceUrl}" style="display:inline-block;background:#6366f1;color:white;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:15px;box-shadow:0 4px 12px rgba(99,102,241,0.3)">
+          ابدأ تقييم المشاريع
+        </a>
+
+        <p style="color:#999;font-size:12px;margin:28px 0 0;line-height:1.7">
+          ادخل إلى مساحة الحكم لمراجعة المشاريع وتقييمها بناءً على معايير الهاكاثون.
+        </p>
+        <p style="color:#bbb;font-size:11px;margin:18px 0 0;direction:ltr">
+          ${p.workspaceUrl}
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+export async function sendJudgeAssignmentEmail(params: JudgeAssignmentEmailParams): Promise<void> {
+  if (!transporter) {
+    console.log(
+      `[judge assignment fallback — Gmail not configured]  to=${params.to}  ` +
+        `projects=${params.projectCount}  hackathon="${params.hackathonTitle}"`,
+    );
+    return;
+  }
+  await transporter.sendMail({
+    from: `"Mumkin" <${env.mail.user}>`,
+    to: params.to,
+    subject: `تم إسناد ${params.projectCount} مشروع للتقييم — "${params.hackathonTitle}"`,
+    html: renderJudgeAssignmentEmail(params),
+  });
+}
+
 // ─── Registration decision (accept / reject) ────────────────
 interface RegistrationDecisionEmailParams {
   to: string;

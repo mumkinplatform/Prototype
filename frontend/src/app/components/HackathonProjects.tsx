@@ -211,31 +211,45 @@ export function HackathonProjects() {
   const [myRole, setMyRole] = useState<'owner' | 'co_manager' | 'judge' | null>(null);
   const [loadingMyRole, setLoadingMyRole] = useState(true);
   // Live submission + judging dates from the hackathon row — used by the
-  // header timeline cards instead of hardcoded sample dates.
+  // header timeline cards and as bounds for the date-chain validation in the
+  // "تعديل المواعيد" and "إعدادات التقييم" modals.
   const [hackathonDates, setHackathonDates] = useState<{
+    hackathonStart: string | null;
     submissionStart: string | null;
     submissionEnd: string | null;
     judgingStart: string | null;
     judgingEnd: string | null;
-  }>({ submissionStart: null, submissionEnd: null, judgingStart: null, judgingEnd: null });
+    winnersDate: string | null;
+  }>({
+    hackathonStart: null,
+    submissionStart: null,
+    submissionEnd: null,
+    judgingStart: null,
+    judgingEnd: null,
+    winnersDate: null,
+  });
   useEffect(() => {
     if (!hackathonId) return;
     apiGet<{
       myAccess: { role: 'owner' | 'co_manager' | 'judge' } | null;
       hackathon: {
+        H_Hackathon_StartDate: string | null;
         H_Submission_StartDate: string | null;
         H_Submission_Deadline: string | null;
         H_Judging_StartDate: string | null;
         H_Judging_EndDate: string | null;
+        H_Winners_Date: string | null;
       };
     }>(`/hackathons/${hackathonId}`)
       .then((r) => {
         setMyRole(r.myAccess?.role ?? null);
         setHackathonDates({
+          hackathonStart: r.hackathon.H_Hackathon_StartDate,
           submissionStart: r.hackathon.H_Submission_StartDate,
           submissionEnd: r.hackathon.H_Submission_Deadline,
           judgingStart: r.hackathon.H_Judging_StartDate,
           judgingEnd: r.hackathon.H_Judging_EndDate,
+          winnersDate: r.hackathon.H_Winners_Date,
         });
       })
       .catch(() => setMyRole(null))
@@ -698,11 +712,59 @@ export function HackathonProjects() {
     });
   }, [showEditDeadlineModal, hackathonDates]);
 
+  // Inline validation for the deadline modal. Enforces the chain rule used
+  // across the platform: each milestone falls after its predecessor and
+  // before its successor. Returns a per-field error map (empty when valid).
+  const editDateErrors = (() => {
+    const errs: Partial<Record<'submissionStart' | 'submissionEnd' | 'judgingStart' | 'judgingEnd', string>> = {};
+    const ts = (v: string | null | undefined): number | null => {
+      if (!v) return null;
+      const n = new Date(v).getTime();
+      return Number.isNaN(n) ? null : n;
+    };
+    if (activeTab === 'judges') {
+      const subEnd = ts(hackathonDates.submissionEnd);
+      const winners = ts(hackathonDates.winnersDate);
+      const js = ts(editDates.judgingStart);
+      const je = ts(editDates.judgingEnd);
+      if (js != null && subEnd != null && js < subEnd) {
+        errs.judgingStart = 'يجب أن يكون بعد "إغلاق التسليم"';
+      }
+      // نهاية التقييم: يسمح بأن تساوي بداية التقييم (نفس اليوم) أو بعدها،
+      // لكن لازم تكون قبل تاريخ إعلان الفائزين.
+      if (je != null) {
+        if (js != null && je < js) errs.judgingEnd = 'يجب أن يكون في نفس وقت بداية التقييم أو بعده';
+        else if (winners != null && je >= winners) errs.judgingEnd = 'يجب أن يكون قبل "تاريخ إعلان الفائزين"';
+      }
+    } else {
+      const hackStart = ts(hackathonDates.hackathonStart);
+      const judgingStart = ts(hackathonDates.judgingStart);
+      const ss = ts(editDates.submissionStart);
+      const se = ts(editDates.submissionEnd);
+      if (ss != null && hackStart != null && ss < hackStart) {
+        errs.submissionStart = 'يجب أن يكون بعد "بداية الهاكاثون"';
+      }
+      if (se != null) {
+        if (ss != null && se <= ss) errs.submissionEnd = 'يجب أن يكون بعد "فتح التسليم"';
+        else if (judgingStart != null && se >= judgingStart) errs.submissionEnd = 'يجب أن يكون قبل "بداية التقييم"';
+      }
+    }
+    return errs;
+  })();
+  const hasEditDateError = Object.keys(editDateErrors).length > 0;
+
   // Save the deadline edits. Only sends the fields relevant to the current
   // tab — the submissions banner edits submission dates, the judges banner
   // edits judging dates. Persists via the existing PUT /hackathons/:id.
   const handleUpdateDeadline = async () => {
     if (!hackathonId) return;
+    if (hasEditDateError) {
+      toast.error('تواريخ غير صالحة', {
+        description: 'صحّح الأخطاء الظاهرة أسفل كل حقل قبل الحفظ.',
+        duration: 4500,
+      });
+      return;
+    }
     setSavingDates(true);
     try {
       const body: Record<string, string | null> =
@@ -718,6 +780,7 @@ export function HackathonProjects() {
       await apiPut(`/hackathons/${hackathonId}`, body);
       // Refresh the dates that drive the timeline banners.
       setHackathonDates((prev) => ({
+        ...prev,
         submissionStart: activeTab === 'judges' ? prev.submissionStart : (editDates.submissionStart || null),
         submissionEnd:   activeTab === 'judges' ? prev.submissionEnd   : (editDates.submissionEnd   || null),
         judgingStart:    activeTab === 'judges' ? (editDates.judgingStart || null) : prev.judgingStart,
@@ -756,8 +819,33 @@ export function HackathonProjects() {
       });
   }, [showSettingsModal, hackathonId]);
 
+  // Inline error for the winners-announcement date input. Enforces the same
+  // chain rule used in CreateHackathon: announcement must come AFTER the
+  // judging end date. Returns an empty string when the field is valid (or
+  // empty — empty is allowed and just means "no schedule lock").
+  const announcementDateError = (() => {
+    if (!announcementDate) return '';
+    if (!hackathonDates.judgingEnd) return '';
+    const announceMs = new Date(announcementDate).getTime();
+    const judgingEndMs = new Date(hackathonDates.judgingEnd).getTime();
+    if (Number.isNaN(announceMs) || Number.isNaN(judgingEndMs)) return '';
+    if (announceMs <= judgingEndMs) {
+      return 'يجب أن يكون بعد "نهاية التقييم". عدّل نهاية التقييم أولاً أو اختر تاريخاً لاحقاً.';
+    }
+    return '';
+  })();
+
   const handleUpdateSettings = async () => {
     if (!hackathonId) return;
+    // Frontend pre-check so the user gets the friendly inline error instead
+    // of waiting for a server round-trip + a generic toast.
+    if (announcementDateError) {
+      toast.error('تاريخ إعلان الفائزين غير صالح', {
+        description: announcementDateError,
+        duration: 5000,
+      });
+      return;
+    }
     setSavingSettings(true);
     try {
       await apiPut(`/hackathons/${hackathonId}/evaluation-settings`, {
@@ -1883,26 +1971,28 @@ export function HackathonProjects() {
                 )}
               </div>
 
-              {selectedProject.status === 'completed' && (
+              {selectedProject.status === 'completed' && selectedProject.assignedJudge && (
                 <div>
                   <h3 className="text-sm text-gray-900 mb-3" style={{ fontWeight: 600 }}>
                     حالة التقييم
                   </h3>
                   <div className="space-y-2">
-                    {judges.filter((j) => j.inviteStatus === 'accepted').slice(0, 3).map((judge) => {
-                      const initial = judge.fullName.trim()[0] ?? 'م';
+                    {/* عرض المحكم المسؤول عن هذا المشروع فقط، مش كل حكام
+                        الهاكاثون. كل مشروع يتوزع لمحكم واحد فقط. */}
+                    {(() => {
+                      const initial = selectedProject.assignedJudge.name.trim()[0] ?? 'م';
                       return (
-                        <div key={judge.id} className="flex items-center justify-between p-3 rounded-xl bg-gray-50">
+                        <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#e35654] to-[#cc4a48] text-white flex items-center justify-center text-xs" style={{ fontWeight: 700 }}>
                               {initial}
                             </div>
-                            <span className="text-sm text-gray-700">{judge.fullName}</span>
+                            <span className="text-sm text-gray-700">{selectedProject.assignedJudge.name}</span>
                           </div>
                           <Check className="w-4 h-4 text-green-600" />
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
               )}
@@ -2282,7 +2372,9 @@ export function HackathonProjects() {
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-gray-200 bg-gray-50">
+              <div className={`p-4 rounded-xl border bg-gray-50 ${
+                announcementDateError ? 'border-red-300' : 'border-gray-200'
+              }`}>
                 <label className="block text-sm text-gray-900 mb-2" style={{ fontWeight: 600 }}>
                   تاريخ ووقت إعلان الفائزين
                 </label>
@@ -2290,11 +2382,29 @@ export function HackathonProjects() {
                   لن تظهر نتائج التقييم للمشاركين قبل هذا التاريخ، حتى لو كان التقييم مفعّلاً.
                   هذا غير "تاريخ إعلان قبول المشاركين".
                 </p>
+                {hackathonDates.judgingEnd && (
+                  <p className="text-xs text-gray-500 mb-2">
+                    <span style={{ fontWeight: 600 }}>نهاية التقييم الحالية:</span>{' '}
+                    {new Date(hackathonDates.judgingEnd).toLocaleString('ar-SA', {
+                      dateStyle: 'long',
+                      timeStyle: 'short',
+                    })}
+                  </p>
+                )}
+                {announcementDateError && (
+                  <p className="text-xs text-red-600 mb-2" style={{ fontWeight: 600 }}>
+                    {announcementDateError}
+                  </p>
+                )}
                 <input
                   type="datetime-local"
                   value={announcementDate}
                   onChange={(e) => setAnnouncementDate(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                  className={`w-full px-4 py-2.5 rounded-xl border bg-white text-sm focus:outline-none ${
+                    announcementDateError
+                      ? 'border-red-300 focus:border-red-500'
+                      : 'border-gray-200 focus:border-[#e35654]'
+                  }`}
                 />
               </div>
             </div>
@@ -2305,8 +2415,8 @@ export function HackathonProjects() {
               </button>
               <button
                 onClick={handleUpdateSettings}
-                disabled={savingSettings}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] disabled:opacity-50"
+                disabled={savingSettings || !!announcementDateError}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontWeight: 600 }}
               >
                 {savingSettings ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
@@ -2530,43 +2640,97 @@ export function HackathonProjects() {
             <div className="space-y-4">
               {activeTab === 'judges' ? (
                 <>
+                  {/* Show the surrounding chain bounds so the organizer knows
+                      what window the date must fit into. */}
+                  {(hackathonDates.submissionEnd || hackathonDates.winnersDate) && (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded-xl p-3 leading-relaxed">
+                      {hackathonDates.submissionEnd && (
+                        <p>
+                          <span style={{ fontWeight: 600 }}>إغلاق التسليم:</span>{' '}
+                          {new Date(hackathonDates.submissionEnd).toLocaleString('ar-SA', { dateStyle: 'long', timeStyle: 'short' })}
+                        </p>
+                      )}
+                      {hackathonDates.winnersDate && (
+                        <p>
+                          <span style={{ fontWeight: 600 }}>إعلان الفائزين:</span>{' '}
+                          {new Date(hackathonDates.winnersDate).toLocaleString('ar-SA', { dateStyle: 'long', timeStyle: 'short' })}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>بداية التقييم</label>
+                    {editDateErrors.judgingStart && (
+                      <p className="text-xs text-red-600 mb-1.5" style={{ fontWeight: 600 }}>{editDateErrors.judgingStart}</p>
+                    )}
                     <input
                       type="datetime-local"
                       value={editDates.judgingStart}
                       onChange={(e) => setEditDates((s) => ({ ...s, judgingStart: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]"
+                      className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none ${
+                        editDateErrors.judgingStart ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-[#e35654]'
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>نهاية التقييم</label>
+                    {editDateErrors.judgingEnd && (
+                      <p className="text-xs text-red-600 mb-1.5" style={{ fontWeight: 600 }}>{editDateErrors.judgingEnd}</p>
+                    )}
                     <input
                       type="datetime-local"
                       value={editDates.judgingEnd}
                       onChange={(e) => setEditDates((s) => ({ ...s, judgingEnd: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]"
+                      className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none ${
+                        editDateErrors.judgingEnd ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-[#e35654]'
+                      }`}
                     />
                   </div>
                 </>
               ) : (
                 <>
+                  {(hackathonDates.hackathonStart || hackathonDates.judgingStart) && (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded-xl p-3 leading-relaxed">
+                      {hackathonDates.hackathonStart && (
+                        <p>
+                          <span style={{ fontWeight: 600 }}>بداية الهاكاثون:</span>{' '}
+                          {new Date(hackathonDates.hackathonStart).toLocaleString('ar-SA', { dateStyle: 'long', timeStyle: 'short' })}
+                        </p>
+                      )}
+                      {hackathonDates.judgingStart && (
+                        <p>
+                          <span style={{ fontWeight: 600 }}>بداية التقييم:</span>{' '}
+                          {new Date(hackathonDates.judgingStart).toLocaleString('ar-SA', { dateStyle: 'long', timeStyle: 'short' })}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>بداية فتح التسليم</label>
+                    {editDateErrors.submissionStart && (
+                      <p className="text-xs text-red-600 mb-1.5" style={{ fontWeight: 600 }}>{editDateErrors.submissionStart}</p>
+                    )}
                     <input
                       type="datetime-local"
                       value={editDates.submissionStart}
                       onChange={(e) => setEditDates((s) => ({ ...s, submissionStart: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]"
+                      className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none ${
+                        editDateErrors.submissionStart ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-[#e35654]'
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>نهاية التسليم</label>
+                    {editDateErrors.submissionEnd && (
+                      <p className="text-xs text-red-600 mb-1.5" style={{ fontWeight: 600 }}>{editDateErrors.submissionEnd}</p>
+                    )}
                     <input
                       type="datetime-local"
                       value={editDates.submissionEnd}
                       onChange={(e) => setEditDates((s) => ({ ...s, submissionEnd: e.target.value }))}
-                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#e35654]"
+                      className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none ${
+                        editDateErrors.submissionEnd ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-[#e35654]'
+                      }`}
                     />
                   </div>
                 </>
@@ -2579,8 +2743,8 @@ export function HackathonProjects() {
               </button>
               <button
                 onClick={handleUpdateDeadline}
-                disabled={savingDates}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] disabled:opacity-50"
+                disabled={savingDates || hasEditDateError}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white hover:bg-[#cc4a48] disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ fontWeight: 600 }}
               >
                 {savingDates ? 'جاري الحفظ...' : 'حفظ التعديلات'}

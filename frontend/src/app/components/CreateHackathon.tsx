@@ -1074,6 +1074,11 @@ export function CreateHackathon() {
   }
 
   // Range check first (out-of-window is the primary violation), then chain order.
+  // For each date, scan ALL earlier dates in the chain (not just the most
+  // recent one) — otherwise a violation can hide behind a valid intermediate
+  // step. Example: if hackathonStartDate=June 5 and judgingEnd=May 10, the
+  // old code would compare winnersDate=May 11 only against judgingEnd (passes)
+  // and never notice it falls before hackathonStartDate.
   for (let i = 0; i < dateChain.length; i++) {
     const cur = dateChain[i];
     const curVal = tsLocal(form[cur.key] as string);
@@ -1087,14 +1092,20 @@ export function CreateHackathon() {
       continue;
     }
     if (i === 0) continue;
+    // Find the latest preceding milestone the current value violates. We pick
+    // the latest violator (closest to `cur`) so the error message points at
+    // the most actionable predecessor for the user.
+    let violator: { label: string; val: number } | null = null;
     for (let j = i - 1; j >= 0; j--) {
       const prev = dateChain[j];
       const prevVal = tsLocal(form[prev.key] as string);
       if (prevVal == null) continue;
-      if (curVal < prevVal) {
-        dateErrors[cur.key] = `يجب أن يكون بعد "${prev.label}"`;
+      if (curVal < prevVal && (violator == null || prevVal > violator.val)) {
+        violator = { label: prev.label, val: prevVal };
       }
-      break;
+    }
+    if (violator) {
+      dateErrors[cur.key] = `يجب أن يكون بعد "${violator.label}"`;
     }
   }
 
