@@ -976,16 +976,23 @@ export function CreateHackathon() {
           })),
         });
         await apiPut(`/hackathons/${currentId}/sponsor-packages`, {
-          sponsorPackages: sponsorPackages.map((s) => ({
-            name: s.name,
-            type: s.type,
-            description: s.description,
-            duration: s.duration,
-            price: s.price,
-            sponsorOffer: s.sponsorOffer,
-            resources: s.resources,
-            benefits: s.benefits.filter((b) => b.trim() !== ''),
-          })),
+          sponsorPackages: sponsorPackages.map((s) => {
+            // نمرّر SP_ID للباقات الموجودة (لها id رقمي من الـ DB) عشان الباك
+            // يعمل UPDATE بدل DELETE+INSERT — يحمي طلبات الرعاية المرتبطة بها.
+            // الباقات الجديدة في الفورم لها id محلي بصيغة "new-xxx" فنتركها بدون.
+            const numericId = Number(s.id);
+            return {
+              id: Number.isInteger(numericId) && numericId > 0 ? numericId : undefined,
+              name: s.name,
+              type: s.type,
+              description: s.description,
+              duration: s.duration,
+              price: s.price,
+              sponsorOffer: s.sponsorOffer,
+              resources: s.resources,
+              benefits: s.benefits.filter((b) => b.trim() !== ''),
+            };
+          }),
         });
       }
       return true;

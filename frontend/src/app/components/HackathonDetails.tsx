@@ -90,6 +90,14 @@ interface DisplayPackage {
   badge: string | null;
   perks: string[];
   hasApplied: boolean;
+  // Full detail surface: the sponsor sees everything the organizer wrote
+  // about this package, not just name + price + a few perks.
+  description: string;
+  duration: string;
+  sponsorOffer: string;   // ما يقدّمه الراعي بالمقابل
+  resources: string;       // الموارد التي يحصل عليها الراعي
+  type: string;            // النوع الخام — نستخدمه لإخفاء قسم القيمة المالية للباقات غير المالية
+  typeLabel: string;       // نوع الرعاية (مالية / تقنية / لوجستية ...)
 }
 
 interface DisplayTimeline {
@@ -203,6 +211,15 @@ export function HackathonDetails() {
   // Map API packages to the shape the rich UI expects
   const displayPackages: DisplayPackage[] = useMemo(() => {
     if (!data) return [];
+    const typeToArabic = (t: string) =>
+      ({
+        financial: 'رعاية مالية',
+        hospitality: 'رعاية ضيافة',
+        logistics: 'رعاية لوجستية',
+        technical: 'رعاية تقنية',
+        media: 'رعاية إعلامية',
+        other: 'رعاية',
+      } as Record<string, string>)[t] ?? 'رعاية';
     return data.packages.map((p, idx) => {
       const visual = PACKAGE_VISUALS[p.type] ?? PACKAGE_VISUALS.other;
       return {
@@ -214,8 +231,15 @@ export function HackathonDetails() {
         borderColor: visual.borderColor,
         price: formatPrice(p.price),
         badge: idx === 0 ? "الأكثر تأثيراً" : null,
-        perks: p.benefits,
+        // فلترة الإدخالات الفاضية بحيث يطلع بس المميزات اللي عبّاها المنظم فعلاً
+        perks: (p.benefits ?? []).filter((b) => b && b.trim() !== ''),
         hasApplied: p.hasApplied,
+        description: p.description ?? '',
+        duration: p.duration ?? '',
+        sponsorOffer: p.sponsorOffer ?? '',
+        resources: p.resources ?? '',
+        type: p.type,
+        typeLabel: typeToArabic(p.type),
       };
     });
   }, [data]);
@@ -577,38 +601,100 @@ export function HackathonDetails() {
                           )
                         )}
 
-                        <div className="flex items-start gap-3 mb-3">
+                        {/* Header — icon + name */}
+                        <div className="flex items-start gap-3 mb-4">
                           <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                             style={{ background: pkg.bg }}
                           >
-                            <pkg.icon className="w-5 h-5" style={{ color: pkg.color }} />
+                            <pkg.icon className="w-6 h-6" style={{ color: pkg.color }} />
                           </div>
-                          <div>
-                            <p className="text-gray-900" style={{ fontWeight: 700, fontSize: "0.9rem" }}>
+                          <div className="flex-1 min-w-0 pt-0.5">
+                            <p className="text-gray-900" style={{ fontWeight: 700, fontSize: "1rem" }}>
                               {pkg.name}
                             </p>
                           </div>
                         </div>
 
-                        <p className="mb-3" style={{ fontWeight: 800, fontSize: "1.1rem", color: pkg.color }}>
-                          {pkg.price}
-                        </p>
-
-                        {pkg.perks.length > 0 && (
-                          <ul className="space-y-1.5">
-                            {pkg.perks.slice(0, 3).map((perk, i) => (
-                              <li key={i} className="flex items-start gap-1.5 text-gray-500" style={{ fontSize: "0.72rem" }}>
-                                <CheckCircle2 className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: pkg.color }} />
-                                {perk}
-                              </li>
-                            ))}
-                            {pkg.perks.length > 3 && (
-                              <li className="text-gray-400" style={{ fontSize: "0.7rem", fontWeight: 500 }}>
-                                +{pkg.perks.length - 3} مزايا إضافية...
-                              </li>
+                        {/* 🧾 معلومات عامة */}
+                        <div className="mb-4">
+                          <h5 className="text-gray-900 mb-2 flex items-center gap-1.5" style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                            🧾 معلومات عامة
+                          </h5>
+                          <div className="space-y-2 pr-1">
+                            <div className="flex items-start gap-2">
+                              <span className="text-gray-500 text-[11px] min-w-[80px]" style={{ fontWeight: 600 }}>نوع الرعاية:</span>
+                              <span
+                                className="inline-block text-[10px] px-2 py-0.5 rounded-full"
+                                style={{ background: pkg.bg, color: pkg.color, fontWeight: 600 }}
+                              >
+                                {pkg.typeLabel}
+                              </span>
+                            </div>
+                            {pkg.description && (
+                              <div className="flex items-start gap-2">
+                                <span className="text-gray-500 text-[11px] min-w-[80px]" style={{ fontWeight: 600 }}>الوصف:</span>
+                                <span className="text-gray-700 text-[11px] leading-relaxed flex-1">{pkg.description}</span>
+                              </div>
                             )}
-                          </ul>
+                            {pkg.duration && (
+                              <div className="flex items-start gap-2">
+                                <span className="text-gray-500 text-[11px] min-w-[80px]" style={{ fontWeight: 600 }}>مدة الرعاية:</span>
+                                <span className="text-gray-700 text-[11px]">{pkg.duration}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 💰 القيمة المالية — يظهر فقط للباقات المالية. الباقات الأخرى
+                            (تقنية / لوجستية / ضيافة / إعلامية) قيمتها هي ما يقدّمه الراعي
+                            من موارد ومنتجات، فلا معنى لعرض "حسب التفاوض" كقيمة مالية لها. */}
+                        {pkg.type === 'financial' && (
+                          <div className="mb-4">
+                            <h5 className="text-gray-900 mb-2 flex items-center gap-1.5" style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                              💰 القيمة المالية
+                            </h5>
+                            <p style={{ fontWeight: 800, fontSize: "1.15rem", color: pkg.color }}>
+                              {pkg.price}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* 🎁 ما يقدمه الراعي */}
+                        {(pkg.sponsorOffer || pkg.resources) && (
+                          <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-100">
+                            <h5 className="text-amber-800 mb-2 flex items-center gap-1.5" style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                              🎁 ما يقدمه الراعي
+                            </h5>
+                            {pkg.sponsorOffer && (
+                              <p className="text-gray-700 text-[11px] leading-relaxed whitespace-pre-line mb-2">
+                                {pkg.sponsorOffer}
+                              </p>
+                            )}
+                            {pkg.resources && (
+                              <div className="flex items-start gap-2 mt-2 pt-2 border-t border-amber-100">
+                                <span className="text-amber-700 text-[11px]" style={{ fontWeight: 700 }}>عدد الموارد:</span>
+                                <span className="text-gray-700 text-[11px]">{pkg.resources}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* ⭐ ما يحصل عليه الراعي */}
+                        {pkg.perks.length > 0 && (
+                          <div className="p-3 rounded-lg bg-green-50 border border-green-100">
+                            <h5 className="text-green-800 mb-2 flex items-center gap-1.5" style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                              ⭐ ما يحصل عليه الراعي
+                            </h5>
+                            <ul className="space-y-1.5">
+                              {pkg.perks.map((perk, i) => (
+                                <li key={i} className="flex items-start gap-2 text-gray-700" style={{ fontSize: "0.75rem" }}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-green-600" />
+                                  <span className="leading-relaxed">{perk}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </button>
                     );
@@ -651,6 +737,8 @@ export function HackathonDetails() {
                   <p className="text-gray-900" style={{ fontWeight: 700 }}>
                     {selectedPackageData.name}
                   </p>
+                  {/* للباقات المالية نعرض السعر؛ لغيرها نعرض نوع الرعاية بدلاً
+                      من "حسب التفاوض" المُضلِّل. */}
                   <p
                     style={{
                       fontWeight: 800,
@@ -658,7 +746,9 @@ export function HackathonDetails() {
                       fontSize: "1.05rem",
                     }}
                   >
-                    {selectedPackageData.price}
+                    {selectedPackageData.type === 'financial'
+                      ? selectedPackageData.price
+                      : selectedPackageData.typeLabel}
                   </p>
                 </div>
               ) : (

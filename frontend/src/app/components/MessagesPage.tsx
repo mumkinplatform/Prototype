@@ -106,7 +106,16 @@ const NEGOTIATION_STEPS = [
   { id: 4, label: "مكتمل", icon: CheckCircle2 },
 ];
 
-type Msg = { from: "me" | "other"; text: string; time: string; read: boolean };
+// شكل الرسالة من الباك (نفس الشكل عند المنظم — جدول sponsor_message).
+// `isMine` يحدد محاذاة الفقاعة من منظور المستخدم الحالي (الراعي هنا).
+interface ChatMessage {
+  id: number;
+  senderId: number;
+  senderName: string;
+  text: string;
+  createdAt: string;
+  isMine: boolean;
+}
 
 export function MessagesPage() {
   const navigate = useNavigate();
@@ -120,7 +129,11 @@ export function MessagesPage() {
   const [uploading, setUploading] = useState(false);
   const [viewedStep, setViewedStep] = useState(0);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
-  const [msgs, setMsgs] = useState<Record<number, Msg[]>>({});
+  // الرسائل الحقيقية لكل SA_ID. تُحمَّل عند اختيار محادثة + polling كل 5
+  // ثوانٍ لمتابعة الرسائل من المنظم. الرسائل تشترك في نفس جدول sponsor_message
+  // الذي يقرأ ويكتب منه الطرفان.
+  const [msgs, setMsgs] = useState<Record<number, ChatMessage[]>>({});
+  const [sendingMsg, setSendingMsg] = useState(false);
   const [newMsg, setNewMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -215,19 +228,7 @@ export function MessagesPage() {
         const mapped = res.items.map(mapConversation);
         setConversations(mapped);
         if (mapped.length > 0) setSelected(mapped[0].id);
-        // رسالة ترحيب لكل محادثة كحالة افتراضية
-        const initialHistories: Record<number, Msg[]> = {};
-        mapped.forEach((c) => {
-          initialHistories[c.id] = [
-            {
-              from: "other",
-              text: `أهلًا بكم! شكرًا لتقدّمكم على ${c.packageName} في ${c.name}.`,
-              time: "—",
-              read: true,
-            },
-          ];
-        });
-        setMsgs(initialHistories);
+        // الرسائل الفعلية ستُحمَّل من الباك في effect منفصل عند اختيار محادثة.
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -254,30 +255,52 @@ export function MessagesPage() {
     (c) => c.name.includes(search) || c.sub.includes(search)
   );
 
-  const activeMessages = selected !== null ? msgs[selected] || [] : [];
+  const activeMessages: ChatMessage[] = selected !== null ? msgs[selected] || [] : [];
 
-  const send = () => {
-    if (!newMsg.trim() || selected === null) return;
-    const now = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-    setMsgs((prev) => ({
-      ...prev,
-      [selected]: [...(prev[selected] || []), { from: "me", text: newMsg, time: now, read: false }],
-    }));
+  // تحميل رسائل المحادثة المختارة + polling كل 5 ثوانٍ. نوقفه عند تبديل
+  // المحادثة أو إلغاء الـ mount عشان نمنع تسريب timers.
+  useEffect(() => {
+    if (selected === null) return;
+    const saId = selected;
+    let cancelled = false;
+
+    const fetchMessages = async () => {
+      try {
+        const r = await apiGet<{ items: ChatMessage[] }>(
+          `/sponsors/applications/${saId}/messages`,
+        );
+        if (!cancelled) setMsgs((prev) => ({ ...prev, [saId]: r.items }));
+      } catch {
+        // فشل صامت داخل الـ polling
+      }
+    };
+
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selected]);
+
+  const send = async () => {
+    if (!newMsg.trim() || selected === null || sendingMsg) return;
+    const text = newMsg.trim();
+    const saId = selected;
     setNewMsg("");
-    setTimeout(() => {
-      setMsgs((prev) => ({
-        ...prev,
-        [selected]: [
-          ...(prev[selected] || []),
-          {
-            from: "other",
-            text: "شكرًا لرسالتكم، سنردّ عليكم في أقرب وقت ممكن.",
-            time: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
-            read: false,
-          },
-        ],
-      }));
-    }, 1400);
+    setSendingMsg(true);
+    try {
+      const sent = await apiPost<ChatMessage>(
+        `/sponsors/applications/${saId}/messages`,
+        { text },
+      );
+      setMsgs((prev) => ({ ...prev, [saId]: [...(prev[saId] || []), sent] }));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "تعذّر إرسال الرسالة");
+      setNewMsg(text);
+    } finally {
+      setSendingMsg(false);
+    }
   };
 
   return (
@@ -502,40 +525,48 @@ export function MessagesPage() {
                   <div className="flex-1 h-px bg-gray-200" />
                 </div>
 
-                {activeMessages.map((m, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}
-                  >
-                    {m.from === "other" && (
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
-                        style={{ background: conv.color, fontWeight: 700 }}
-                      >
-                        {conv.avatar}
-                      </div>
-                    )}
-                    <div className={`max-w-[65%] flex flex-col gap-1 ${m.from === "me" ? "items-end" : "items-start"}`}>
-                      <div
-                        className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                          m.from === "me"
-                            ? "bg-[#e35654] text-white rounded-tr-sm"
-                            : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
-                        }`}
-                      >
-                        {m.text}
-                      </div>
-                      <div className={`flex items-center gap-1 px-1 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
-                        <span className="text-gray-300 text-xs">{m.time}</span>
-                        {m.from === "me" && (
-                          m.read
-                            ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
-                            : <Check className="w-3.5 h-3.5 text-gray-300" />
-                        )}
+                {activeMessages.length === 0 && (
+                  <p className="text-center text-sm text-gray-400 py-6">
+                    لا توجد رسائل بعد. ابدأ المحادثة برسالة للمنظم.
+                  </p>
+                )}
+                {activeMessages.map((m) => {
+                  const time = new Date(m.createdAt).toLocaleTimeString("ar-SA", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  return (
+                    <div
+                      key={m.id}
+                      className={`flex items-end gap-2.5 ${m.isMine ? "flex-row-reverse" : ""}`}
+                    >
+                      {!m.isMine && (
+                        <div
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
+                          style={{ background: conv.color, fontWeight: 700 }}
+                        >
+                          {conv.avatar}
+                        </div>
+                      )}
+                      <div className={`max-w-[65%] flex flex-col gap-1 ${m.isMine ? "items-end" : "items-start"}`}>
+                        <div
+                          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
+                            m.isMine
+                              ? "bg-[#e35654] text-white rounded-tr-sm"
+                              : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
+                          }`}
+                        >
+                          {m.text}
+                        </div>
+                        <div className={`flex items-center gap-1 px-1 ${m.isMine ? "flex-row-reverse" : ""}`}>
+                          <span className="text-gray-300 text-xs">{time}</span>
+                          {/* علامتي الـ ✓ القديمة (read receipts) محذوفتين — لا
+                              يوجد في الباك عمود لتسجيل القراءة بعد. */}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Input */}

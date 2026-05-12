@@ -50,6 +50,9 @@ export default function HackathonManagement() {
   // Number of registrations waiting for organizer review — drives the "X طلب جديد"
   // badge on the registrations card. Drops to 0 once they've all been accepted/rejected.
   const [pendingRegistrations, setPendingRegistrations] = useState(0);
+  // نفس فكرة pendingRegistrations لكن للرعايات — يدفع باج "X طلب رعاية جديد"
+  // على كرت "الرعاة والمفاوضات".
+  const [pendingSponsors, setPendingSponsors] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -59,13 +62,14 @@ export default function HackathonManagement() {
         const data = await apiGet<{
           hackathon: { H_status: string; H_title: string | null };
           myAccess: MyAccess | null;
-          counts?: { pendingRegistrations?: number };
+          counts?: { pendingRegistrations?: number; pendingSponsorApplications?: number };
         }>(`/hackathons/${id}`);
         if (!cancelled) {
           setStatus(data.hackathon.H_status);
           setHackathonTitle(data.hackathon.H_title);
           setMyAccess(data.myAccess);
           setPendingRegistrations(data.counts?.pendingRegistrations ?? 0);
+          setPendingSponsors(data.counts?.pendingSponsorApplications ?? 0);
         }
       } catch (err) {
         if (!cancelled) setStatus(null);
@@ -153,7 +157,8 @@ export default function HackathonManagement() {
       iconColor: 'text-emerald-600',
       buttonColor: 'bg-blue-600',
       buttonHoverColor: 'hover:bg-blue-700',
-      link: `/admin/hackathon/${id}/sponsors`
+      link: `/admin/hackathon/${id}/sponsors`,
+      badge: pendingSponsors > 0 ? `${pendingSponsors} طلب رعاية جديد` : undefined,
     },
     {
       id: 'winners',

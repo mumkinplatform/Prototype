@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
+import { apiGet, apiPost, apiPut, ApiError } from '../../lib/api';
 import {
   ArrowRight,
   Plus,
@@ -21,6 +22,8 @@ import {
   Edit3,
   Search,
   Filter,
+  Trash2,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -44,15 +47,15 @@ interface SponsorRequest {
   unreadMessages?: number;
 }
 
-interface Message {
-  from: 'org' | 'sponsor';
+// شكل الرسالة كما يرجّعها الباك — نفس الشكل عند الراعي عشان نشارك الكود
+// لاحقاً. `isMine` يحدّد محاذاة الفقاعة (يمين/يسار) من منظور المستخدم الحالي.
+interface ChatMessage {
+  id: number;
+  senderId: number;
+  senderName: string;
   text: string;
-  time: string;
-}
-
-interface Conversation {
-  requestId: number;
-  messages: Message[];
+  createdAt: string;
+  isMine: boolean;
 }
 
 const mockRequests: SponsorRequest[] = [
@@ -149,12 +152,49 @@ const mockRequests: SponsorRequest[] = [
   },
 ];
 
-const packages = [
-  { id: 1, name: 'ماسي', price: 150000, benefits: ['جناح VIP', 'شعار كبير', 'كلمة افتتاحية', '10 تذاكر'], color: 'cyan' },
-  { id: 2, name: 'بلاتيني', price: 100000, benefits: ['جناح خاص', 'شعار متوسط', 'جلسة توضيحية', '7 تذاكر'], color: 'purple' },
-  { id: 3, name: 'ذهبي', price: 75000, benefits: ['طاولة', 'شعار صغير', '5 تذاكر'], color: 'amber' },
-  { id: 4, name: 'فضي', price: 50000, benefits: ['لوحة إعلانية', '3 تذاكر'], color: 'gray' },
-];
+// Color palette assigned by index — keeps the sidebar visually consistent
+// even after the organizer reorders / adds / removes packages. The 4 first
+// packages get the "premium" palette (cyan→purple→amber→gray); anything
+// beyond rolls back to neutral.
+const PACKAGE_COLOR_PALETTE = ['cyan', 'purple', 'amber', 'gray', 'blue', 'green'];
+
+// UI shape the sidebar render expects (id/name/price/benefits/color). Built
+// from the API's ApiSponsorPackage rows on load.
+interface UiPackage {
+  id: number;
+  name: string;
+  type: string;
+  price: number;
+  description: string;
+  duration: string;
+  sponsorOffer: string;
+  resources: string;
+  benefits: string[];
+  color: string;
+}
+
+function mapApiPackage(p: ApiSponsorPackage, idx: number): UiPackage {
+  let benefits: string[] = [];
+  try {
+    const raw = p.SP_Benefits;
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) benefits = parsed.filter((b): b is string => typeof b === 'string');
+  } catch {
+    benefits = [];
+  }
+  return {
+    id: p.SP_ID,
+    name: p.SP_Name,
+    type: p.SP_Type,
+    price: p.SP_Price ? Number(p.SP_Price) : 0,
+    description: p.SP_Description ?? '',
+    duration: p.SP_Duration ?? '',
+    sponsorOffer: p.SP_Sponsor_Offer ?? '',
+    resources: p.SP_Resources ?? '',
+    benefits,
+    color: PACKAGE_COLOR_PALETTE[idx % PACKAGE_COLOR_PALETTE.length],
+  };
+}
 
 const termDefs = [
   { label: 'مدة الرعاية', value: '6 أشهر', icon: Clock, editable: true },
@@ -165,30 +205,263 @@ const termDefs = [
   { label: 'تاريخ بدء الفعالية', value: '15 مارس 2025', icon: Calendar, editable: false },
 ];
 
+// Shape returned by GET /hackathons/:id/sponsor-applications. Mapped to the
+// SponsorRequest shape below so the existing UI keeps working without
+// changes to every render branch.
+interface ApiSponsorApplication {
+  applicationId: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  negotiationStep: number;
+  appliedAt: string;
+  paidAt: string | null;
+  receiptFile: string | null;
+  organizerSigned: boolean;
+  organizerSignedAt: string | null;
+  sponsor: {
+    memberId: number;
+    fullName: string;
+    email: string;
+    avatar: string | null;
+    brand: string | null;
+    industry: string | null;
+  };
+  package: {
+    id: number;
+    name: string;
+    type: string;
+    price: string | null;
+  };
+}
+
+interface ApiSponsorPackage {
+  SP_ID: number;
+  SP_Name: string;
+  SP_Type: string;
+  SP_Description: string | null;
+  SP_Duration: string | null;
+  SP_Price: string | null;
+  SP_Sponsor_Offer: string | null;
+  SP_Resources: string | null;
+  SP_Benefits: unknown;
+}
+
+// Map "accepted but step < 4" to the UI's "negotiating" state. "Completed"
+// only when step reaches 4 (receipt uploaded). Old in-flight states from the
+// mock data map to the closest real state.
+function deriveUiStatus(s: ApiSponsorApplication): SponsorRequest['status'] {
+  if (s.status === 'rejected') return 'rejected';
+  if (s.status === 'pending') return 'pending';
+  // accepted — pick a phase based on negotiationStep
+  if (s.negotiationStep >= 4) return 'completed';
+  if (s.negotiationStep >= 2) return 'organizer_signing';
+  if (s.negotiationStep >= 1) return 'contract_review';
+  return 'negotiating';
+}
+
+function deriveUiStep(s: ApiSponsorApplication): NegotiationStep | undefined {
+  if (s.status !== 'accepted') return undefined;
+  if (s.negotiationStep >= 4) return 'completed';
+  if (s.negotiationStep >= 2) return 'organizer_sign';
+  if (s.negotiationStep >= 1) return 'review';
+  return 'negotiation';
+}
+
+// رمز emoji لكل نوع رعاية — يطابق التخصيص في CreateHackathon.
+const TYPE_ICON: Record<string, string> = {
+  financial: '💰',
+  technical: '💻',
+  logistic: '📦',
+  hospitality: '🏨',
+  media: '📢',
+  other: '🎯',
+};
+
+// أول حرفين من اسم الشركة لاستخدامهما في الـ avatar البديل عن الصورة. نفلتر
+// الفراغات والرموز عشان نحصل على حروف معبّرة فقط.
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '؟';
+  if (parts.length === 1) return parts[0].slice(0, 2);
+  return (parts[0][0] ?? '') + (parts[1][0] ?? '');
+}
+
+// لون ثابت لكل اسم شركة بناءً على hash بسيط — يضمن نفس اللون لنفس الشركة
+// عبر إعادات التحميل بدون الحاجة لتخزينه في الـ DB.
+const AVATAR_COLORS = [
+  'bg-blue-500',
+  'bg-purple-500',
+  'bg-emerald-500',
+  'bg-amber-500',
+  'bg-pink-500',
+  'bg-cyan-500',
+  'bg-indigo-500',
+  'bg-rose-500',
+];
+function getAvatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function mapApiToRequest(s: ApiSponsorApplication): SponsorRequest {
+  const priceNum = s.package.price ? Number(s.package.price) : 0;
+  return {
+    id: s.applicationId,
+    companyName: s.sponsor.brand || s.sponsor.fullName,
+    companyLogo: s.sponsor.avatar || '',
+    package: s.package.name,
+    subCategory: s.package.type,
+    sponsorshipType: (s.package.type as SponsorshipType) || 'other',
+    amount: priceNum,
+    value: priceNum > 0 ? `${priceNum.toLocaleString('ar-SA')} ر.س` : '—',
+    status: deriveUiStatus(s),
+    submittedDate: s.appliedAt ? new Date(s.appliedAt).toLocaleDateString('ar-SA') : '—',
+    negotiationStep: deriveUiStep(s),
+  };
+}
+
 export function HackathonSponsors() {
   const { id } = useParams();
-  const [mainTab, setMainTab] = useState<'requests' | 'negotiations'>('requests');
-  const [requests, setRequests] = useState<SponsorRequest[]>(mockRequests);
+  const hackathonId = id ? Number(id) : null;
+  const [mainTab, setMainTab] = useState<'requests' | 'negotiations' | 'contracts'>('requests');
+  const [requests, setRequests] = useState<SponsorRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  // Packages from the hackathon's customization step. The sidebar reads from
+  // here and editing flows write back via replaceSponsorPackages.
+  const [packages, setPackages] = useState<UiPackage[]>([]);
+  const [savingPackages, setSavingPackages] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SponsorRequest | null>(null);
-  const [showPackageModal, setShowPackageModal] = useState(false);
-  const [showEditPackage, setShowEditPackage] = useState(false);
-  const [editingPackage, setEditingPackage] = useState<any>(null);
-  
+  // Unified package editor — used for both "add" and "edit". `editingIdx` is
+  // -1 when creating a new package, otherwise it's the index in the packages
+  // array we're updating. `draft` mirrors the CreateHackathon form fields.
+  const [showPackageEditor, setShowPackageEditor] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number>(-1);
+  const emptyDraft: UiPackage = {
+    id: 0,
+    name: '',
+    type: '',
+    price: 0,
+    description: '',
+    duration: '',
+    sponsorOffer: '',
+    resources: '',
+    benefits: ['', '', '', ''],
+    color: PACKAGE_COLOR_PALETTE[0],
+  };
+  const [draft, setDraft] = useState<UiPackage>(emptyDraft);
+  // كرت الباقة في السايدبار يكون مطوي بشكل افتراضي ويتوسّع عند الضغط — يوفّر
+  // مساحة للسايدبار لمن يكون فيه كثير باقات. null = الكل مطوي.
+  const [expandedPkgIdx, setExpandedPkgIdx] = useState<number | null>(null);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [packageFilter, setPackageFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   
-  // Conversations
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  // الشات الحقيقي — رسائل لكل SA_ID. نحمّلها عند اختيار طلب ونعمل
+  // polling كل 5 ثوانٍ لجلب رسائل جديدة من الراعي. الرسالة الجديدة عند
+  // الإرسال تنحقن مباشرة في الـ map عشان تظهر فوراً بدون انتظار الـ poll.
+  const [messagesByAppId, setMessagesByAppId] = useState<Record<number, ChatMessage[]>>({});
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [termValues, setTermValues] = useState(termDefs.map((t) => t.value));
   const [editingTerm, setEditingTerm] = useState<number | null>(null);
   const [agreed, setAgreed] = useState(false);
 
-  // Get current conversation
-  const currentConversation = conversations.find(c => c.requestId === selectedRequest?.id);
-  const currentMessages = currentConversation?.messages || [];
+  // Load real applications on mount + after start-negotiation. Mapped through
+  // mapApiToRequest so the existing render branches don't need to change.
+  useEffect(() => {
+    if (!hackathonId) return;
+    setLoadingRequests(true);
+    apiGet<{ items: ApiSponsorApplication[] }>(`/hackathons/${hackathonId}/sponsor-applications`)
+      .then((r) => setRequests(r.items.map(mapApiToRequest)))
+      .catch((e) => {
+        toast.error(e instanceof ApiError ? e.message : 'فشل تحميل طلبات الرعاية');
+      })
+      .finally(() => setLoadingRequests(false));
+  }, [hackathonId]);
+
+  // Packages come from getHackathon (same endpoint the management hub uses).
+  // We map the raw rows to the UiPackage shape the sidebar renders.
+  useEffect(() => {
+    if (!hackathonId) return;
+    apiGet<{ sponsorPackages: ApiSponsorPackage[] }>(`/hackathons/${hackathonId}`)
+      .then((r) => setPackages(r.sponsorPackages.map(mapApiPackage)))
+      .catch(() => {
+        // Non-blocking — the page still works with an empty sidebar.
+      });
+  }, [hackathonId]);
+
+  // Persist the current packages array via the existing replace-all endpoint.
+  // Callers mutate `packages` locally first (add/edit/delete), then call this.
+  const savePackages = async (next: UiPackage[]) => {
+    if (!hackathonId) return;
+    setSavingPackages(true);
+    try {
+      await apiPut(`/hackathons/${hackathonId}/sponsor-packages`, {
+        sponsorPackages: next.map((p) => ({
+          // نمرّر SP_ID للباقات الموجودة عشان الباك يعمل UPDATE بدل
+          // DELETE+INSERT، فلا تنحذف طلبات الرعاية المرتبطة بها.
+          id: p.id > 0 ? p.id : undefined,
+          name: p.name,
+          type: p.type,
+          description: p.description,
+          duration: p.duration,
+          price: p.price || null,
+          sponsorOffer: p.sponsorOffer,
+          resources: p.resources,
+          benefits: p.benefits,
+        })),
+      });
+      // Reload from API so we get the fresh SP_IDs the backend assigned to
+      // any newly-added rows (the modal stays in sync for future edits).
+      const r = await apiGet<{ sponsorPackages: ApiSponsorPackage[] }>(`/hackathons/${hackathonId}`);
+      setPackages(r.sponsorPackages.map(mapApiPackage));
+      toast.success('تم حفظ الباقات');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'تعذّر حفظ الباقات');
+    } finally {
+      setSavingPackages(false);
+    }
+  };
+
+  // الرسائل الحالية للطلب المختار — مصدر العرض الوحيد للشات.
+  const currentMessages: ChatMessage[] = selectedRequest
+    ? messagesByAppId[selectedRequest.id] ?? []
+    : [];
+
+  // تحميل رسائل الطلب المختار + polling كل 5 ثوانٍ لمتابعة رسائل الراعي
+  // الجديدة بدون WebSocket. نوقف الـ polling لمن المستخدم يبدل طلب أو
+  // يخرج من تبويب المفاوضات.
+  useEffect(() => {
+    if (!hackathonId || !selectedRequest) return;
+    const saId = selectedRequest.id;
+    let cancelled = false;
+
+    const fetchMessages = async (showSpinner: boolean) => {
+      if (showSpinner) setLoadingMessages(true);
+      try {
+        const r = await apiGet<{ items: ChatMessage[] }>(
+          `/hackathons/${hackathonId}/sponsor-applications/${saId}/messages`,
+        );
+        if (!cancelled) {
+          setMessagesByAppId((prev) => ({ ...prev, [saId]: r.items }));
+        }
+      } catch {
+        // فشل صامت — نتجنب إزعاج المستخدم بإشعارات أثناء polling متكرر.
+      } finally {
+        if (showSpinner && !cancelled) setLoadingMessages(false);
+      }
+    };
+
+    fetchMessages(true);
+    const interval = setInterval(() => fetchMessages(false), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [hackathonId, selectedRequest]);
 
   // Filter requests
   const filteredRequests = requests.filter(req => {
@@ -211,81 +484,53 @@ export function HackathonSponsors() {
   const pendingCount = requests.filter(r => r.status === 'pending').length;
   const negotiatingCount = activeConversations.length;
 
-  const handleStartNegotiation = (request: SponsorRequest) => {
-    // Update request status
-    const updatedRequests = requests.map(r => 
-      r.id === request.id 
-        ? { ...r, status: 'negotiating' as const, negotiationStep: 'negotiation' as const }
-        : r
-    );
-    setRequests(updatedRequests);
-    
-    // Create initial conversation
-    const initialMessages: Message[] = [
-      { from: 'sponsor', text: `أهلاً! نود التقديم على باقة ${request.package} للرعاية.`, time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) },
-    ];
-    
-    setConversations([...conversations, { requestId: request.id, messages: initialMessages }]);
-    setSelectedRequest({ ...request, status: 'negotiating', negotiationStep: 'negotiation' });
-    setMainTab('negotiations');
-    
-    toast.success('تم بدء المفاوضات', {
-      description: `تم فتح قناة المفاوضات مع ${request.companyName}`,
-      duration: 3000,
-    });
-
-    // Auto response from sponsor
-    setTimeout(() => {
-      const autoResponse: Message = {
-        from: 'sponsor',
-        text: 'نحن متحمسون للشراكة معكم. هل يمكنكم مشاركة تفاصيل أكثر عن الفوائد المتاحة؟',
-        time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-      };
-      
-      setConversations(prev => prev.map(conv => 
-        conv.requestId === request.id 
-          ? { ...conv, messages: [...conv.messages, autoResponse] }
-          : conv
-      ));
-    }, 2000);
+  // Flip SA_Status → 'accepted' via the backend, then move the UI to the
+  // negotiations tab. The fake "sponsor auto-replies" are gone — real chat
+  // comes in Phase 2.
+  const handleStartNegotiation = async (request: SponsorRequest) => {
+    if (!hackathonId) return;
+    try {
+      await apiPost(`/hackathons/${hackathonId}/sponsor-applications/${request.id}/start-negotiation`, {});
+      // Local optimistic update — flip status so the UI updates immediately.
+      setRequests((prev) =>
+        prev.map((r) =>
+          r.id === request.id ? { ...r, status: 'negotiating', negotiationStep: 'negotiation' } : r,
+        ),
+      );
+      setSelectedRequest({ ...request, status: 'negotiating', negotiationStep: 'negotiation' });
+      setMainTab('negotiations');
+      toast.success('تم بدء المفاوضات', {
+        description: `تم فتح قناة المفاوضات مع ${request.companyName}`,
+        duration: 3000,
+      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'تعذّر بدء المفاوضات');
+    }
   };
 
-  const handleSendMessage = () => {
-    if (!newMessage.trim() || !selectedRequest) return;
-    
-    const now = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-    const newMsg: Message = { from: 'org', text: newMessage, time: now };
-    
-    setConversations(prev => prev.map(conv => 
-      conv.requestId === selectedRequest.id 
-        ? { ...conv, messages: [...conv.messages, newMsg] }
-        : conv
-    ));
-    
+  // إرسال رسالة حقيقية للراعي عبر POST. لا auto-reply — الرد يجي من الراعي
+  // الفعلي وينعكس عند الـ poll التالي (أو فوراً عند الراعي بعد polling).
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedRequest || !hackathonId || sendingMessage) return;
+    const text = newMessage.trim();
+    const saId = selectedRequest.id;
     setNewMessage('');
-    
-    // Auto response from sponsor
-    setTimeout(() => {
-      const responses = [
-        'شكراً على الرد السريع. سنراجع المعلومات ونعود لكم.',
-        'ممتاز! هذا يبدو رائعاً. دعونا نتابع التفاصيل.',
-        'نقدر تعاونكم. هل يمكننا الانتقال للمرحلة التالية؟',
-        'رائع! نحن متفقون على هذه النقاط.',
-      ];
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-      
-      const autoResponse: Message = {
-        from: 'sponsor',
-        text: randomResponse,
-        time: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
-      };
-      
-      setConversations(prev => prev.map(conv => 
-        conv.requestId === selectedRequest.id 
-          ? { ...conv, messages: [...conv.messages, autoResponse] }
-          : conv
-      ));
-    }, 1500);
+    setSendingMessage(true);
+    try {
+      const sent = await apiPost<ChatMessage>(
+        `/hackathons/${hackathonId}/sponsor-applications/${saId}/messages`,
+        { text },
+      );
+      setMessagesByAppId((prev) => ({
+        ...prev,
+        [saId]: [...(prev[saId] ?? []), sent],
+      }));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'تعذّر إرسال الرسالة');
+      setNewMessage(text); // ارجاع النص للحقل عشان المستخدم يقدر يحاول
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
   const handleMoveToReview = () => {
@@ -347,24 +592,60 @@ export function HackathonSponsors() {
     }, 3000);
   };
 
+  // Open the unified editor for a brand-new package — `editingIdx = -1`
+  // tells `handleSavePackage` to append rather than replace. We pick the next
+  // color in the palette so the sidebar swatch stays distinct.
   const handleAddPackage = () => {
-    setShowPackageModal(false);
-    toast.success('تم إضافة الباقة بنجاح', {
-      duration: 2000,
+    setDraft({
+      ...emptyDraft,
+      color: PACKAGE_COLOR_PALETTE[packages.length % PACKAGE_COLOR_PALETTE.length],
     });
+    setEditingIdx(-1);
+    setShowPackageEditor(true);
   };
 
-  const handleEditPackage = (pkg: any) => {
-    setEditingPackage(pkg);
-    setShowEditPackage(true);
+  // Open the unified editor pre-filled with an existing package. We pad the
+  // benefits array to 4 entries so the 4 inputs in the form always render.
+  const handleEditPackage = (idx: number) => {
+    const pkg = packages[idx];
+    setDraft({
+      ...pkg,
+      benefits: [...pkg.benefits, '', '', '', ''].slice(0, 4),
+    });
+    setEditingIdx(idx);
+    setShowPackageEditor(true);
   };
 
-  const handleSavePackage = () => {
-    setShowEditPackage(false);
-    setEditingPackage(null);
-    toast.success('تم تحديث الباقة بنجاح', {
-      duration: 2000,
-    });
+  // Insert (editingIdx === -1) or replace at editingIdx, then persist via
+  // savePackages — which calls the replaceSponsorPackages endpoint and
+  // reloads to pick up backend-assigned SP_IDs.
+  const handleSavePackage = async () => {
+    if (!draft.name.trim() || !draft.type) {
+      toast.error('اسم الباقة ونوعها مطلوبان');
+      return;
+    }
+    if (!draft.sponsorOffer.trim()) {
+      toast.error('عرض الراعي مطلوب');
+      return;
+    }
+    const cleaned: UiPackage = {
+      ...draft,
+      benefits: draft.benefits.filter((b) => b.trim() !== ''),
+    };
+    const next =
+      editingIdx === -1
+        ? [...packages, cleaned]
+        : packages.map((p, i) => (i === editingIdx ? cleaned : p));
+    setShowPackageEditor(false);
+    setDraft(emptyDraft);
+    setEditingIdx(-1);
+    await savePackages(next);
+  };
+
+  const handleDeletePackage = async (idx: number) => {
+    if (!confirm('هل أنت متأكد من حذف هذه الباقة؟')) return;
+    const next = packages.filter((_, i) => i !== idx);
+    await savePackages(next);
   };
 
   const getStatusBadge = (status: string) => {
@@ -409,8 +690,9 @@ export function HackathonSponsors() {
               </div>
             </div>
             <button
-              onClick={() => setShowPackageModal(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-lg shadow-[#e35654]/30"
+              onClick={handleAddPackage}
+              disabled={savingPackages}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all shadow-lg shadow-[#e35654]/30 disabled:opacity-50"
               style={{ fontWeight: 600 }}
             >
               <Plus className="w-4 h-4" />
@@ -441,6 +723,17 @@ export function HackathonSponsors() {
               style={{ fontWeight: 600 }}
             >
               المحادثات ({negotiatingCount})
+            </button>
+            <button
+              onClick={() => setMainTab('contracts')}
+              className={`flex-1 px-4 py-2.5 rounded-xl text-sm transition-all ${
+                mainTab === 'contracts'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              style={{ fontWeight: 600 }}
+            >
+              إدارة العقود ({requests.filter((r) => r.status === 'completed' || r.status === 'organizer_signing').length})
             </button>
           </div>
         </div>
@@ -575,17 +868,25 @@ export function HackathonSponsors() {
                         <tr key={request.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <img
-                                src={request.companyLogo}
-                                alt={request.companyName}
-                                className="w-10 h-10 rounded-lg object-cover"
-                              />
-                              <div>
-                                <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>
-                                  {request.companyName}
-                                </p>
-                                <p className="text-xs text-gray-500">{request.subCategory}</p>
-                              </div>
+                              {/* avatar حقيقي: نعرض الصورة لو متوفرة، وإلا نظهر
+                                  أول حرفين من اسم الشركة على خلفية ملوّنة ثابتة. */}
+                              {request.companyLogo ? (
+                                <img
+                                  src={request.companyLogo}
+                                  alt={request.companyName}
+                                  className="w-10 h-10 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div
+                                  className={`w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm ${getAvatarColor(request.companyName)}`}
+                                  style={{ fontWeight: 700 }}
+                                >
+                                  {getInitials(request.companyName)}
+                                </div>
+                              )}
+                              <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>
+                                {request.companyName}
+                              </p>
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -661,50 +962,102 @@ export function HackathonSponsors() {
                 </div>
 
                 <div className="space-y-3">
-                  {packages.map((pkg) => (
-                    <div
-                      key={pkg.id}
-                      className="p-4 rounded-xl border border-gray-100 hover:border-gray-200 transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            pkg.color === 'cyan' ? 'bg-cyan-500' :
-                            pkg.color === 'purple' ? 'bg-purple-500' :
-                            pkg.color === 'amber' ? 'bg-amber-500' :
-                            'bg-gray-500'
-                          }`}></div>
-                          <h4 className="text-sm text-gray-900" style={{ fontWeight: 700 }}>
-                            باقة {pkg.name}
-                          </h4>
-                        </div>
+                  {packages.length === 0 && (
+                    <p className="text-xs text-gray-500 text-center py-4">
+                      لا توجد باقات بعد. أضف باقة رعاية للبدء.
+                    </p>
+                  )}
+                  {packages.map((pkg, idx) => {
+                    const isOpen = expandedPkgIdx === idx;
+                    return (
+                      <div
+                        key={pkg.id || `new-${idx}`}
+                        className="rounded-xl border border-gray-100 hover:border-gray-200 transition-all overflow-hidden"
+                      >
+                        {/* رأس مختصر: شعار النوع + اسم + أزرار + سهم. الضغط على
+                            الرأس يطوي/يفتح؛ الأزرار يستخدمن stopPropagation. */}
                         <button
-                          onClick={() => handleEditPackage(pkg)}
-                          className="w-6 h-6 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                          onClick={() => setExpandedPkgIdx(isOpen ? null : idx)}
+                          className="w-full p-3 flex items-center justify-between text-right hover:bg-gray-50 transition-colors"
                         >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <p className="text-lg text-gray-900 mb-3" style={{ fontWeight: 700 }}>
-                        {pkg.price.toLocaleString()} ر.س
-                      </p>
-
-                      <div className="space-y-1">
-                        {pkg.benefits.slice(0, 3).map((benefit, idx) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <div className="w-1 h-1 rounded-full bg-blue-600"></div>
-                            <span className="text-xs text-gray-600">{benefit}</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-lg flex-shrink-0">
+                              {TYPE_ICON[pkg.type] ?? '🎯'}
+                            </span>
+                            <h4 className="text-sm text-gray-900 truncate" style={{ fontWeight: 700 }}>
+                              {pkg.name}
+                            </h4>
                           </div>
-                        ))}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => { e.stopPropagation(); handleEditPackage(idx); }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleEditPackage(idx);
+                                }
+                              }}
+                              className="w-6 h-6 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-100 transition-colors cursor-pointer"
+                              title="تعديل"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => { e.stopPropagation(); handleDeletePackage(idx); }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDeletePackage(idx);
+                                }
+                              }}
+                              className="w-6 h-6 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-colors cursor-pointer"
+                              title="حذف"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </span>
+                            <ChevronDown
+                              className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                            />
+                          </div>
+                        </button>
+
+                        {/* محتوى مفصّل يظهر فقط عند التوسعة. للباقات غير المالية
+                            ما نعرض السعر — قيمتها = الموارد في "ما يقدمه الراعي". */}
+                        {isOpen && (
+                          <div className="px-3 pb-3 pt-1 border-t border-gray-100 space-y-2">
+                            {pkg.type === 'financial' && pkg.price > 0 && (
+                              <p className="text-base text-gray-900" style={{ fontWeight: 700 }}>
+                                {pkg.price.toLocaleString()} ر.س
+                              </p>
+                            )}
+                            {pkg.benefits.filter((b) => b.trim() !== '').length > 0 && (
+                              <div className="space-y-1">
+                                {pkg.benefits
+                                  .filter((b) => b.trim() !== '')
+                                  .map((benefit, bIdx) => (
+                                    <div key={bIdx} className="flex items-start gap-2">
+                                      <div className="w-1 h-1 rounded-full bg-blue-600 mt-1.5 flex-shrink-0"></div>
+                                      <span className="text-xs text-gray-600">{benefit}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </div>
-        ) : (
+        ) : mainTab === 'negotiations' ? (
           // Negotiations Tab - WhatsApp Style
           <div className="flex gap-6">
             {/* Conversations List */}
@@ -717,8 +1070,8 @@ export function HackathonSponsors() {
                 </div>
                 <div className="divide-y divide-gray-100">
                   {activeConversations.map((conv) => {
-                    const conversation = conversations.find(c => c.requestId === conv.id);
-                    const lastMsg = conversation?.messages[conversation.messages.length - 1];
+                    const convMessages = messagesByAppId[conv.id] ?? [];
+                    const lastMsg = convMessages[convMessages.length - 1];
                     const isSelected = selectedRequest?.id === conv.id;
                     
                     return (
@@ -730,23 +1083,34 @@ export function HackathonSponsors() {
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <img
-                            src={conv.companyLogo}
-                            alt={conv.companyName}
-                            className="w-12 h-12 rounded-lg object-cover"
-                          />
+                          {conv.companyLogo ? (
+                            <img
+                              src={conv.companyLogo}
+                              alt={conv.companyName}
+                              className="w-12 h-12 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <div
+                              className={`w-12 h-12 rounded-lg flex items-center justify-center text-white ${getAvatarColor(conv.companyName)}`}
+                              style={{ fontWeight: 700 }}
+                            >
+                              {getInitials(conv.companyName)}
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-1">
                               <p className="text-sm text-gray-900 truncate" style={{ fontWeight: 600 }}>
                                 {conv.companyName}
                               </p>
                               {lastMsg && (
-                                <span className="text-xs text-gray-500">{lastMsg.time}</span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(lastMsg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               )}
                             </div>
                             {lastMsg && (
                               <p className="text-xs text-gray-500 truncate">
-                                {lastMsg.from === 'org' ? 'أنت: ' : ''}{lastMsg.text}
+                                {lastMsg.isMine ? 'أنت: ' : ''}{lastMsg.text}
                               </p>
                             )}
                           </div>
@@ -765,11 +1129,20 @@ export function HackathonSponsors() {
                   {/* Negotiation Header */}
                   <div className="bg-white rounded-2xl border border-gray-100 p-6">
                     <div className="flex items-center gap-4 mb-6">
-                      <img
-                        src={selectedRequest.companyLogo}
-                        alt={selectedRequest.companyName}
-                        className="w-16 h-16 rounded-xl object-cover"
-                      />
+                      {selectedRequest.companyLogo ? (
+                        <img
+                          src={selectedRequest.companyLogo}
+                          alt={selectedRequest.companyName}
+                          className="w-16 h-16 rounded-xl object-cover"
+                        />
+                      ) : (
+                        <div
+                          className={`w-16 h-16 rounded-xl flex items-center justify-center text-white text-xl ${getAvatarColor(selectedRequest.companyName)}`}
+                          style={{ fontWeight: 700 }}
+                        >
+                          {getInitials(selectedRequest.companyName)}
+                        </div>
+                      )}
                       <div className="flex-1">
                         <h2 className="text-xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
                           {selectedRequest.companyName}
@@ -827,11 +1200,23 @@ export function HackathonSponsors() {
                       <div className="p-6">
                         {/* Messages */}
                         <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
-                          {currentMessages.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.from === 'org' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-md ${msg.from === 'org' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'} rounded-2xl px-4 py-3`}>
-                                <p className="text-sm">{msg.text}</p>
-                                <p className={`text-xs mt-1 ${msg.from === 'org' ? 'text-blue-100' : 'text-gray-500'}`}>{msg.time}</p>
+                          {loadingMessages && currentMessages.length === 0 && (
+                            <p className="text-center text-sm text-gray-400 py-6">
+                              جاري تحميل المحادثة...
+                            </p>
+                          )}
+                          {!loadingMessages && currentMessages.length === 0 && (
+                            <p className="text-center text-sm text-gray-400 py-6">
+                              لا توجد رسائل بعد. ابدأ المحادثة برسالة ترحيب.
+                            </p>
+                          )}
+                          {currentMessages.map((msg) => (
+                            <div key={msg.id} className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-md ${msg.isMine ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'} rounded-2xl px-4 py-3`}>
+                                <p className="text-sm whitespace-pre-line">{msg.text}</p>
+                                <p className={`text-xs mt-1 ${msg.isMine ? 'text-blue-100' : 'text-gray-500'}`}>
+                                  {new Date(msg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                                </p>
                               </div>
                             </div>
                           ))}
@@ -843,13 +1228,15 @@ export function HackathonSponsors() {
                             type="text"
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
                             placeholder="اكتب رسالتك..."
-                            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            disabled={sendingMessage}
+                            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50"
                           />
                           <button
                             onClick={handleSendMessage}
-                            className="px-4 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all"
+                            disabled={sendingMessage || !newMessage.trim()}
+                            className="px-4 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-50"
                           >
                             <Send className="w-5 h-5" />
                           </button>
@@ -1026,124 +1413,201 @@ export function HackathonSponsors() {
               )}
             </div>
           </div>
+        ) : (
+          // Contracts Tab — placeholder for Phase 3. Lists contracts that
+          // reached the signing/completed states (organizer_signing+) and
+          // will surface the signed PDFs/forms once the contract module is
+          // wired up.
+          <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg text-gray-900 mb-2" style={{ fontWeight: 700 }}>
+              إدارة العقود
+            </h3>
+            <p className="text-sm text-gray-500 max-w-md mx-auto">
+              هنا ستظهر العقود الموقعة بينك وبين الرعاة بعد اكتمال التفاوض،
+              مع إمكانية متابعة تنفيذ التزامات الرعاية. يُفعّل هذا القسم في
+              المرحلة القادمة.
+            </p>
+          </div>
         )}
       </div>
 
-      {/* Add Package Modal */}
-      {showPackageModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6" onClick={() => setShowPackageModal(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()} dir="rtl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg text-gray-900" style={{ fontWeight: 700 }}>إضافة باقة رعاية جديدة</h3>
+      {/* Unified Package Editor — mirrors the CreateHackathon customization
+          step exactly (4 sections: معلومات عامة / القيمة / ما يقدمه الراعي /
+          ما يحصل عليه الراعي). Used for both add and edit; editingIdx === -1
+          means create. */}
+      {showPackageEditor && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6"
+          onClick={() => setShowPackageEditor(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between mb-6 sticky top-0 bg-white pb-2 border-b border-gray-100">
+              <h3 className="text-lg text-gray-900" style={{ fontWeight: 700 }}>
+                {editingIdx === -1 ? 'إضافة باقة رعاية جديدة' : `تعديل باقة ${packages[editingIdx]?.name || ''}`}
+              </h3>
               <button
-                onClick={() => setShowPackageModal(false)}
+                onClick={() => setShowPackageEditor(false)}
                 className="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>اسم الباقة</label>
-                <input
-                  type="text"
-                  placeholder="مثال: ماسي، بلاتيني..."
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
+            <div className="space-y-6">
+              {/* 🧾 معلومات عامة */}
+              <div className="space-y-3">
+                <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
+                  🧾 معلومات عامة
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>اسم الباقة</label>
+                    <input
+                      type="text"
+                      placeholder="الباقة الذهبية"
+                      value={draft.name}
+                      onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>نوع الرعاية</label>
+                    <select
+                      value={draft.type}
+                      onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                    >
+                      <option value="">اختر</option>
+                      <option value="financial">رعاية مالية 💰</option>
+                      <option value="technical">رعاية تقنية 💻</option>
+                      <option value="logistic">رعاية لوجستية 📦</option>
+                      <option value="hospitality">رعاية ضيافة 🏨</option>
+                      <option value="media">رعاية إعلامية 📢</option>
+                      <option value="other">أخرى 🎯</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>الوصف العام</label>
+                  <textarea
+                    rows={2}
+                    placeholder="وصف شامل للباقة وفوائدها للراعي والهاكاثون..."
+                    value={draft.description}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>مدة الرعاية</label>
+                  <input
+                    type="text"
+                    placeholder="3 أشهر"
+                    value={draft.duration}
+                    onChange={(e) => setDraft({ ...draft, duration: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>السعر (ر.س)</label>
-                <input
-                  type="number"
-                  placeholder="150000"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
+              {/* 💰 القيمة — only for financial sponsorships */}
+              {draft.type === 'financial' && (
+                <div className="space-y-3">
+                  <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
+                    💰 القيمة
+                  </h4>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>
+                      السعر (ريال سعودي)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="100000"
+                      value={draft.price || ''}
+                      onChange={(e) => setDraft({ ...draft, price: Number(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 🎁 ما يقدمه الراعي */}
+              <div className="space-y-3">
+                <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
+                  🎁 ما يقدمه الراعي
+                </h4>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>تفاصيل الرعاية المقدمة</label>
+                  <textarea
+                    rows={3}
+                    placeholder={
+                      draft.type === 'financial' ? 'مثال: دعم مالي لتغطية تكاليف الجوائز والمصاريف التشغيلية...' :
+                      draft.type === 'technical' ? 'مثال: توفير فريق من المطورين، أدوات برمجية، استشارات تقنية...' :
+                      draft.type === 'logistic' ? 'مثال: توفير قاعة انعقاد، أجهزة حواسيب، إنترنت عالي السرعة...' :
+                      draft.type === 'hospitality' ? 'مثال: وجبات طعام، مشروبات ومرطبات، ضيافة VIP...' :
+                      draft.type === 'media' ? 'مثال: تغطية إعلامية كاملة، نشر على منصات التواصل، تصوير...' :
+                      'حدد تفاصيل ما سيقدمه الراعي بالضبط...'
+                    }
+                    value={draft.sponsorOffer}
+                    onChange={(e) => setDraft({ ...draft, sponsorOffer: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>عدد الموارد (اختياري)</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: 2 مطور، 50 جهاز، 200 وجبة"
+                    value={draft.resources}
+                    onChange={(e) => setDraft({ ...draft, resources: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>المميزات</label>
-                <textarea
-                  rows={4}
-                  placeholder="اكتب المميزات، كل مميزة في سطر جديد..."
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                ></textarea>
+              {/* ⭐ ما يحصل عليه الراعي */}
+              <div className="space-y-3">
+                <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
+                  ⭐ ما يحصل عليه الراعي
+                </h4>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-2" style={{ fontWeight: 600 }}>المميزات المقدمة للراعي</label>
+                  <div className="space-y-2">
+                    {[0, 1, 2, 3].map((i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                        <input
+                          type="text"
+                          placeholder={`ميزة ${i + 1} - مثال: ظهور الشعار، جناح خاص، شهادة تقدير...`}
+                          value={draft.benefits[i] ?? ''}
+                          onChange={(e) => {
+                            const next = [...draft.benefits];
+                            next[i] = e.target.value;
+                            setDraft({ ...draft, benefits: next });
+                          }}
+                          className="flex-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-4">
-                <button
-                  onClick={handleAddPackage}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
-                  style={{ fontWeight: 600 }}
-                >
-                  إضافة الباقة
-                </button>
-                <button
-                  onClick={() => setShowPackageModal(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
-                  style={{ fontWeight: 600 }}
-                >
-                  إلغاء
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Package Modal */}
-      {showEditPackage && editingPackage && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6" onClick={() => setShowEditPackage(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()} dir="rtl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg text-gray-900" style={{ fontWeight: 700 }}>تعديل باقة {editingPackage.name}</h3>
-              <button
-                onClick={() => setShowEditPackage(false)}
-                className="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>اسم الباقة</label>
-                <input
-                  type="text"
-                  defaultValue={editingPackage.name}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>السعر (ر.س)</label>
-                <input
-                  type="number"
-                  defaultValue={editingPackage.price}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>المميزات</label>
-                <textarea
-                  rows={4}
-                  defaultValue={editingPackage.benefits.join('\n')}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                ></textarea>
-              </div>
-
-              <div className="flex items-center gap-3 pt-4">
+              <div className="flex items-center gap-3 pt-4 border-t border-gray-100">
                 <button
                   onClick={handleSavePackage}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
+                  disabled={savingPackages}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all disabled:opacity-50"
                   style={{ fontWeight: 600 }}
                 >
-                  حفظ التعديلات
+                  {savingPackages ? 'جاري الحفظ...' : editingIdx === -1 ? 'إضافة الباقة' : 'حفظ التعديلات'}
                 </button>
                 <button
-                  onClick={() => setShowEditPackage(false)}
+                  onClick={() => setShowPackageEditor(false)}
                   className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm hover:bg-gray-50 transition-all"
                   style={{ fontWeight: 600 }}
                 >

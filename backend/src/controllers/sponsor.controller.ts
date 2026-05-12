@@ -77,7 +77,9 @@ interface SponsorPackageRow extends RowDataPacket {
   SP_Price: string | null;
   SP_Sponsor_Offer: string | null;
   SP_Resources: string | null;
-  SP_Benefits: string | null;
+  // عمود JSON في قاعدة البيانات: mysql2 يفك التشفير تلقائياً ويرجّع array،
+  // لكن في بعض الإصدارات قد يرجّع string. نتعامل مع الحالتين أدناه.
+  SP_Benefits: unknown;
 }
 
 interface MyApplicationRow extends RowDataPacket {
@@ -350,16 +352,18 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
   );
 
   const packages = packageRows.map((p) => {
+    // SP_Benefits عمود JSON: mysql2 يرجّعه عادةً array مفكوكة، ونادراً string.
+    // نتعامل مع الحالتين: لو array نأخذها مباشرة، ولو string نفك تشفيرها.
     let benefits: string[] = [];
-    if (p.SP_Benefits) {
-      try {
-        const parsed: unknown = JSON.parse(p.SP_Benefits);
-        if (Array.isArray(parsed)) {
-          benefits = parsed.filter((b): b is string => typeof b === 'string');
-        }
-      } catch {
-        benefits = [];
-      }
+    const raw = p.SP_Benefits;
+    let parsed: unknown = null;
+    if (Array.isArray(raw)) {
+      parsed = raw;
+    } else if (typeof raw === 'string' && raw.length > 0) {
+      try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    }
+    if (Array.isArray(parsed)) {
+      benefits = parsed.filter((b): b is string => typeof b === 'string');
     }
 
     return {
@@ -1064,4 +1068,114 @@ export const applyToPackage = async (req: Request, res: Response) => {
     console.error('[applyToPackage] error:', err);
     return res.status(500).json({ error: 'تعذّر إتمام التقديم، حاول لاحقاً' });
   }
+};
+
+// ─── Chat between sponsor and organizer ──────────────────────────────────────
+// Each conversation is scoped to a single sponsor_application (SA_ID). Both
+// sides (organizer + sponsor) read/write the same `sponsor_message` rows;
+// auth differs by route — the sponsor pair below checks ownership of the
+// application, and the organizer pair on the hackathon controller checks
+// ownership of the hackathon.
+
+interface SponsorMessageRow extends RowDataPacket {
+  id: number;
+  senderId: number;
+  senderFirst: string | null;
+  senderLast: string | null;
+  text: string;
+  createdAt: Date;
+}
+
+// Resolve and verify that the requesting sponsor owns the application. We
+// return SA_ID + the sponsor's own member id (SM_ID) so the caller can decide
+// what to do next without an extra round-trip.
+async function requireMySponsorApplication(
+  req: Request,
+  res: Response,
+  saId: number,
+): Promise<{ saId: number; sponsorMemberId: number } | null> {
+  if (!Number.isInteger(saId) || saId <= 0) {
+    res.status(400).json({ error: 'invalid application id' });
+    return null;
+  }
+  const [rows] = await pool.query<ApplicationOwnerRow[]>(
+    'SELECT SM_ID, SA_Status FROM sponsor_application WHERE SA_ID = ?',
+    [saId],
+  );
+  if (rows.length === 0) {
+    res.status(404).json({ error: 'not_found', message: 'الطلب غير موجود' });
+    return null;
+  }
+  if (rows[0].SM_ID !== req.user!.memberId) {
+    res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لهذا الطلب' });
+    return null;
+  }
+  return { saId, sponsorMemberId: rows[0].SM_ID };
+}
+
+/**
+ * GET /sponsors/applications/:id/messages
+ * Sponsor reads the chat thread for one of their applications.
+ */
+export const listMyApplicationMessages = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+  const saId = Number(req.params.id);
+  const ctx = await requireMySponsorApplication(req, res, saId);
+  if (!ctx) return;
+
+  const [rows] = await pool.query<SponsorMessageRow[]>(
+    `SELECT
+       sm.SM_MsgID    AS id,
+       sm.M_ID        AS senderId,
+       m.M_FName      AS senderFirst,
+       m.M_LName      AS senderLast,
+       sm.SM_Text     AS text,
+       sm.SM_CreatedAt AS createdAt
+       FROM sponsor_message sm
+       JOIN member m ON m.M_ID = sm.M_ID
+      WHERE sm.SA_ID = ?
+      ORDER BY sm.SM_CreatedAt ASC`,
+    [saId],
+  );
+
+  const myId = req.user!.memberId;
+  return res.json({
+    items: rows.map((r) => ({
+      id: r.id,
+      senderId: r.senderId,
+      senderName: `${r.senderFirst ?? ''} ${r.senderLast ?? ''}`.trim() || '—',
+      text: r.text,
+      createdAt: r.createdAt,
+      isMine: r.senderId === myId,
+    })),
+  });
+};
+
+/**
+ * POST /sponsors/applications/:id/messages   Body: { text: string }
+ * Sponsor sends a message to the organizer for one of their applications.
+ */
+export const sendMyApplicationMessage = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+  const saId = Number(req.params.id);
+  const ctx = await requireMySponsorApplication(req, res, saId);
+  if (!ctx) return;
+
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (text.length === 0) return res.status(400).json({ error: 'الرسالة فارغة' });
+  if (text.length > 5000) return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 5000 حرف)' });
+
+  const memberId = req.user!.memberId;
+  const [result] = await pool.query<ResultSetHeader>(
+    'INSERT INTO sponsor_message (SA_ID, M_ID, SM_Text) VALUES (?, ?, ?)',
+    [saId, memberId, text],
+  );
+
+  return res.json({
+    id: result.insertId,
+    senderId: memberId,
+    text,
+    createdAt: new Date(),
+    isMine: true,
+  });
 };

@@ -537,6 +537,18 @@ export const getHackathon = async (req: Request, res: Response) => {
     );
     const pendingRegistrations = (pendingCountRows[0] as { pendingCount: number } | undefined)?.pendingCount ?? 0;
 
+    // نفس فكرة عدّاد التسجيلات لكن للرعايات — يدفع الباج "X طلب رعاية جديد"
+    // على كرت "الرعاة والمفاوضات" في إدارة الهاكاثون.
+    const [pendingSponsorRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS pendingCount
+         FROM sponsor_application sa
+         JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+        WHERE sp.hackathon_ID = ? AND sa.SA_Status = 'pending'`,
+      [id],
+    );
+    const pendingSponsorApplications =
+      (pendingSponsorRows[0] as { pendingCount: number } | undefined)?.pendingCount ?? 0;
+
     // Announcement metadata for the registrations page — drives the countdown
     // banner and the lock state of the "مراسلة" button.
     const announceMs = h.H_Announcement_Date ? new Date(h.H_Announcement_Date).getTime() : null;
@@ -551,7 +563,7 @@ export const getHackathon = async (req: Request, res: Response) => {
       prizes,
       sponsorPackages,
       myAccess,
-      counts: { pendingRegistrations },
+      counts: { pendingRegistrations, pendingSponsorApplications },
       notifications: {
         announcementDate: h.H_Announcement_Date,
         unlocked: notificationsUnlocked,
@@ -2183,6 +2195,260 @@ export const deleteHackathon = async (req: Request, res: Response) => {
   }
 };
 
+// ============================================================
+// Sponsor applications (organizer's view of incoming sponsorship requests).
+// Companion to the sponsor-side endpoints in sponsor.controller.ts.
+// ============================================================
+
+// GET /hackathons/:id/sponsor-applications — list every sponsorship request
+// this hackathon received. Used by HackathonSponsors.tsx to populate the
+// "طلبات الرعاية" + "المحادثات" tabs and the contract panel.
+export const listHackathonSponsorApplications = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!(await ensureOwner(id, req.user.memberId))) {
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+  }
+
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         sa.SA_ID                  AS applicationId,
+         sa.SA_Status              AS status,
+         sa.SA_NegotiationStep     AS negotiationStep,
+         sa.SA_AppliedAt           AS appliedAt,
+         sa.SA_PaidAt              AS paidAt,
+         sa.SA_ReceiptFile         AS receiptFile,
+         sa.SA_OrganizerSigned     AS organizerSigned,
+         sa.SA_OrganizerSignedAt   AS organizerSignedAt,
+         sa.SM_ID                  AS sponsorMemberId,
+         m.M_FName                 AS sponsorFirstName,
+         m.M_LName                 AS sponsorLastName,
+         m.M_Email                 AS sponsorEmail,
+         m.avatar_url              AS sponsorAvatar,
+         s.S_Brand                 AS sponsorBrand,
+         s.S_Industry              AS sponsorIndustry,
+         sa.SP_ID                  AS packageId,
+         sp.SP_Name                AS packageName,
+         sp.SP_Type                AS packageType,
+         sp.SP_Price               AS packagePrice
+         FROM sponsor_application sa
+         JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+         JOIN sponsor s          ON s.SM_ID  = sa.SM_ID
+         JOIN member m           ON m.M_ID   = sa.SM_ID
+        WHERE sp.hackathon_ID = ?
+        ORDER BY sa.SA_AppliedAt DESC`,
+      [id],
+    );
+
+    const items = (rows as Array<{
+      applicationId: number;
+      status: 'pending' | 'accepted' | 'rejected';
+      negotiationStep: number;
+      appliedAt: Date;
+      paidAt: Date | null;
+      receiptFile: string | null;
+      organizerSigned: number;
+      organizerSignedAt: Date | null;
+      sponsorMemberId: number;
+      sponsorFirstName: string;
+      sponsorLastName: string;
+      sponsorEmail: string;
+      sponsorAvatar: string | null;
+      sponsorBrand: string | null;
+      sponsorIndustry: string | null;
+      packageId: number;
+      packageName: string;
+      packageType: string;
+      packagePrice: string | null;
+    }>).map((r) => ({
+      applicationId: r.applicationId,
+      status: r.status,
+      negotiationStep: r.negotiationStep,
+      appliedAt: r.appliedAt,
+      paidAt: r.paidAt,
+      receiptFile: r.receiptFile,
+      organizerSigned: r.organizerSigned === 1,
+      organizerSignedAt: r.organizerSignedAt,
+      sponsor: {
+        memberId: r.sponsorMemberId,
+        fullName: `${r.sponsorFirstName} ${r.sponsorLastName}`.trim(),
+        email: r.sponsorEmail,
+        avatar: r.sponsorAvatar,
+        brand: r.sponsorBrand,
+        industry: r.sponsorIndustry,
+      },
+      package: {
+        id: r.packageId,
+        name: r.packageName,
+        type: r.packageType,
+        price: r.packagePrice,
+      },
+    }));
+
+    return res.json({ items });
+  } catch (err) {
+    console.error('listHackathonSponsorApplications error:', err);
+    return res.status(500).json({
+      error: 'internal server error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+};
+
+// POST /hackathons/:id/sponsor-applications/:saId/start-negotiation
+// Flips SA_Status from 'pending' → 'accepted', which unlocks the next steps
+// (contract review, signing) on the sponsor's side. This replaces the older
+// "accept/reject" decision pattern — the organizer signals willingness to
+// negotiate by hitting this single button.
+// ─── Organizer-side sponsor chat ─────────────────────────────────────────────
+// Same conversation as the sponsor sees on their MessagesPage — both sides
+// write to the `sponsor_message` table scoped by SA_ID. Auth here verifies
+// the organizer owns the hackathon AND the application belongs to it.
+
+interface OrgSponsorMessageRow extends RowDataPacket {
+  id: number;
+  senderId: number;
+  senderFirst: string | null;
+  senderLast: string | null;
+  text: string;
+  createdAt: Date;
+}
+
+// Confirms (1) the caller owns the hackathon, (2) the sponsor_application
+// belongs to that hackathon. Returns the resolved SA_ID on success.
+async function requireOrgSponsorApplication(
+  req: Request,
+  res: Response,
+): Promise<number | null> {
+  if (!req.user) {
+    res.status(401).json({ error: 'unauthenticated' });
+    return null;
+  }
+  const id = Number(req.params.id);
+  const saId = Number(req.params.saId);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'invalid id' });
+    return null;
+  }
+  if (!Number.isInteger(saId) || saId <= 0) {
+    res.status(400).json({ error: 'invalid saId' });
+    return null;
+  }
+  if (!(await ensureOwner(id, req.user.memberId))) {
+    res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+    return null;
+  }
+  const [check] = await pool.query<RowDataPacket[]>(
+    `SELECT sa.SA_ID FROM sponsor_application sa
+       JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+      WHERE sa.SA_ID = ? AND sp.hackathon_ID = ?`,
+    [saId, id],
+  );
+  if (check.length === 0) {
+    res.status(404).json({ error: 'not_found', message: 'الطلب غير موجود في هذا الهاكاثون' });
+    return null;
+  }
+  return saId;
+}
+
+/**
+ * GET /hackathons/:id/sponsor-applications/:saId/messages
+ * Organizer reads the chat thread with a sponsor.
+ */
+export const listOrgSponsorMessages = async (req: Request, res: Response) => {
+  const saId = await requireOrgSponsorApplication(req, res);
+  if (saId === null) return;
+
+  const [rows] = await pool.query<OrgSponsorMessageRow[]>(
+    `SELECT
+       sm.SM_MsgID    AS id,
+       sm.M_ID        AS senderId,
+       m.M_FName      AS senderFirst,
+       m.M_LName      AS senderLast,
+       sm.SM_Text     AS text,
+       sm.SM_CreatedAt AS createdAt
+       FROM sponsor_message sm
+       JOIN member m ON m.M_ID = sm.M_ID
+      WHERE sm.SA_ID = ?
+      ORDER BY sm.SM_CreatedAt ASC`,
+    [saId],
+  );
+
+  const myId = req.user!.memberId;
+  return res.json({
+    items: rows.map((r) => ({
+      id: r.id,
+      senderId: r.senderId,
+      senderName: `${r.senderFirst ?? ''} ${r.senderLast ?? ''}`.trim() || '—',
+      text: r.text,
+      createdAt: r.createdAt,
+      isMine: r.senderId === myId,
+    })),
+  });
+};
+
+/**
+ * POST /hackathons/:id/sponsor-applications/:saId/messages   Body: { text }
+ * Organizer sends a message to the sponsor.
+ */
+export const sendOrgSponsorMessage = async (req: Request, res: Response) => {
+  const saId = await requireOrgSponsorApplication(req, res);
+  if (saId === null) return;
+
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (text.length === 0) return res.status(400).json({ error: 'الرسالة فارغة' });
+  if (text.length > 5000) return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 5000 حرف)' });
+
+  const memberId = req.user!.memberId;
+  const [result] = await pool.query<ResultSetHeader>(
+    'INSERT INTO sponsor_message (SA_ID, M_ID, SM_Text) VALUES (?, ?, ?)',
+    [saId, memberId, text],
+  );
+
+  return res.json({
+    id: result.insertId,
+    senderId: memberId,
+    text,
+    createdAt: new Date(),
+    isMine: true,
+  });
+};
+
+export const startSponsorNegotiation = async (req: Request, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
+  const id = Number(req.params.id);
+  const saId = Number(req.params.saId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(saId) || saId <= 0) return res.status(400).json({ error: 'invalid saId' });
+  if (!(await ensureOwner(id, req.user.memberId))) {
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+  }
+
+  // Make sure the application belongs to THIS hackathon (the saId is
+  // user-controlled, so we re-verify via the package's hackathon_ID).
+  const [check] = await pool.query<RowDataPacket[]>(
+    `SELECT sa.SA_Status FROM sponsor_application sa
+       JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+      WHERE sa.SA_ID = ? AND sp.hackathon_ID = ?`,
+    [saId, id],
+  );
+  if (check.length === 0) {
+    return res.status(404).json({ error: 'not_found', message: 'الطلب غير موجود في هذا الهاكاثون' });
+  }
+  const current = (check[0] as { SA_Status: string }).SA_Status;
+  if (current === 'rejected') {
+    return res.status(400).json({ error: 'rejected', message: 'هذا الطلب مرفوض ولا يمكن استئنافه' });
+  }
+  // Idempotent — if already accepted, just return success so the UI can flow.
+  await pool.execute(
+    `UPDATE sponsor_application SET SA_Status = 'accepted' WHERE SA_ID = ?`,
+    [saId],
+  );
+  return res.json({ applicationId: saId, status: 'accepted' });
+};
+
 export const replaceSponsorPackages = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
@@ -2192,11 +2458,64 @@ export const replaceSponsorPackages = async (req: Request, res: Response) => {
   const items = Array.isArray(req.body?.sponsorPackages) ? req.body.sponsorPackages : null;
   if (!items) return res.status(400).json({ error: 'sponsorPackages must be an array' });
 
+  // ⚠️ Critical: this endpoint USED to "delete-then-insert" all packages, which
+  // — combined with `sponsor_application.SP_ID ON DELETE CASCADE` — silently
+  // wiped every sponsor application for the hackathon whenever an organizer
+  // tweaked a single package. The new implementation diffs the incoming list
+  // against existing rows:
+  //   - has id & matches existing → UPDATE (keeps SP_ID, so applications stay)
+  //   - no id (new row)           → INSERT
+  //   - existing not in incoming  → DELETE, but only if it has zero applications
+  // If a removed package still has applications, we abort the whole save with
+  // a clear Arabic error so the organizer knows why nothing happened.
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     try {
-      await conn.execute('DELETE FROM sponsor_package WHERE hackathon_ID = ?', [id]);
+      // 1) Snapshot existing SP_IDs for this hackathon.
+      const [existingRows] = await conn.query<RowDataPacket[]>(
+        'SELECT SP_ID, SP_Name FROM sponsor_package WHERE hackathon_ID = ?',
+        [id],
+      );
+      const existingMap = new Map<number, string>();
+      for (const r of existingRows as { SP_ID: number; SP_Name: string }[]) {
+        existingMap.set(r.SP_ID, r.SP_Name);
+      }
+
+      // 2) Build the set of incoming SP_IDs (only items that carry one).
+      const incomingIds = new Set<number>();
+      for (const p of items) {
+        const pid = Number(p?.id);
+        if (Number.isInteger(pid) && pid > 0) incomingIds.add(pid);
+      }
+
+      // 3) Compute deletions = existing − incoming. Refuse to delete any
+      //    package that still has sponsor applications, because the FK is
+      //    ON DELETE CASCADE and the applications would be wiped.
+      const toDelete = [...existingMap.keys()].filter((eid) => !incomingIds.has(eid));
+      if (toDelete.length > 0) {
+        const [appRows] = await conn.query<RowDataPacket[]>(
+          `SELECT sp.SP_ID, sp.SP_Name, COUNT(sa.SA_ID) AS cnt
+             FROM sponsor_package sp
+             LEFT JOIN sponsor_application sa ON sa.SP_ID = sp.SP_ID
+            WHERE sp.SP_ID IN (?)
+         GROUP BY sp.SP_ID, sp.SP_Name
+           HAVING cnt > 0`,
+          [toDelete],
+        );
+        if ((appRows as unknown[]).length > 0) {
+          await conn.rollback();
+          const first = (appRows as { SP_Name: string; cnt: number }[])[0];
+          return res.status(409).json({
+            error: 'package_has_applications',
+            message: `لا يمكن حذف باقة "${first.SP_Name}" لأن عليها ${first.cnt} طلب رعاية. عالجي الطلبات أولاً (قبول/رفض) ثم احذفي الباقة.`,
+          });
+        }
+        await conn.query('DELETE FROM sponsor_package WHERE SP_ID IN (?)', [toDelete]);
+      }
+
+      // 4) Upsert each incoming package — UPDATE when id matches an existing
+      //    row, otherwise INSERT a new one.
       for (const p of items) {
         const name = strOrNull(p?.name);
         if (!name) continue;
@@ -2207,10 +2526,22 @@ export const replaceSponsorPackages = async (req: Request, res: Response) => {
         const sponsorOffer = strOrNull(p?.sponsorOffer);
         const resources = strOrNull(p?.resources);
         const benefits = jsonOrNull(p?.benefits ?? []);
-        await conn.execute(
-          'INSERT INTO sponsor_package (hackathon_ID, SP_Name, SP_Type, SP_Description, SP_Duration, SP_Price, SP_Sponsor_Offer, SP_Resources, SP_Benefits) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [id, name, type, description, duration, price, sponsorOffer, resources, benefits]
-        );
+
+        const pid = Number(p?.id);
+        if (Number.isInteger(pid) && pid > 0 && existingMap.has(pid)) {
+          await conn.execute(
+            `UPDATE sponsor_package
+                SET SP_Name = ?, SP_Type = ?, SP_Description = ?, SP_Duration = ?,
+                    SP_Price = ?, SP_Sponsor_Offer = ?, SP_Resources = ?, SP_Benefits = ?
+              WHERE SP_ID = ? AND hackathon_ID = ?`,
+            [name, type, description, duration, price, sponsorOffer, resources, benefits, pid, id],
+          );
+        } else {
+          await conn.execute(
+            'INSERT INTO sponsor_package (hackathon_ID, SP_Name, SP_Type, SP_Description, SP_Duration, SP_Price, SP_Sponsor_Offer, SP_Resources, SP_Benefits) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, name, type, description, duration, price, sponsorOffer, resources, benefits],
+          );
+        }
       }
       await conn.commit();
     } catch (err) {
