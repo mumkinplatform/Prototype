@@ -113,6 +113,20 @@ interface MyContractRow extends RowDataPacket {
   receiptFile: string | null;
 }
 
+interface ChatMessageRow extends RowDataPacket {
+  id: number;
+  senderId: number;
+  senderType: 'SPONSOR' | 'ORGANIZER' | 'PARTICIPANT';
+  senderName: string;
+  text: string;
+  createdAt: Date;
+}
+
+interface ApplicationOwnersRow extends RowDataPacket {
+  SM_ID: number;
+  HAM_ID: number;
+}
+
 interface MyConversationRow extends RowDataPacket {
   applicationId: number;
   status: 'pending' | 'accepted' | 'rejected';
@@ -871,6 +885,103 @@ export const uploadBanner = async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[uploadBanner] error:', err);
     return res.status(500).json({ error: 'تعذّر رفع البنر، حاول لاحقاً' });
+  }
+};
+
+/**
+ * يتأكد إن المستخدم الحالي طرف في التقديم (الراعي صاحبه أو المنظم المالك للهاكاثون).
+ * يرجع true لو مسموح، يرسل خطأ ويرجع false لو غير مسموح.
+ */
+async function ensureChatParticipant(
+  req: Request,
+  res: Response,
+  applicationId: number,
+): Promise<{ allowed: boolean; sponsorId?: number }> {
+  if (!req.user) {
+    res.status(401).json({ error: 'unauthenticated' });
+    return { allowed: false };
+  }
+  const [rows] = await pool.query<ApplicationOwnersRow[]>(
+    `SELECT sa.SM_ID, h.HAM_ID
+       FROM sponsor_application sa
+       JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+       JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
+      WHERE sa.SA_ID = ?`,
+    [applicationId],
+  );
+  if (rows.length === 0) {
+    res.status(404).json({ error: 'التقديم غير موجود' });
+    return { allowed: false };
+  }
+  const { SM_ID, HAM_ID } = rows[0];
+  const me = req.user.memberId;
+  if (me !== SM_ID && me !== HAM_ID) {
+    res.status(403).json({ error: 'لا تملك صلاحية الوصول لهذه المحادثة' });
+    return { allowed: false };
+  }
+  return { allowed: true, sponsorId: SM_ID };
+}
+
+export const listApplicationMessages = async (req: Request, res: Response) => {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
+  }
+  const guard = await ensureChatParticipant(req, res, applicationId);
+  if (!guard.allowed) return;
+
+  try {
+    const [rows] = await pool.query<ChatMessageRow[]>(
+      `SELECT
+         msg.SAM_ID        AS id,
+         msg.M_ID          AS senderId,
+         m.M_Type          AS senderType,
+         CONCAT_WS(' ', m.M_FName, m.M_LName) AS senderName,
+         msg.SAM_Text      AS text,
+         msg.SAM_CreatedAt AS createdAt
+         FROM sponsor_application_message msg
+         JOIN member m ON m.M_ID = msg.M_ID
+        WHERE msg.SA_ID = ?
+        ORDER BY msg.SAM_CreatedAt ASC, msg.SAM_ID ASC`,
+      [applicationId],
+    );
+    return res.json({ items: rows });
+  } catch (err) {
+    console.error('[listApplicationMessages] error:', err);
+    return res.status(500).json({ error: 'تعذّر جلب الرسائل' });
+  }
+};
+
+export const sendApplicationMessage = async (req: Request, res: Response) => {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
+  }
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    return res.status(400).json({ error: 'نص الرسالة مطلوب' });
+  }
+  if (text.length > 2000) {
+    return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 2000 حرف)' });
+  }
+  const guard = await ensureChatParticipant(req, res, applicationId);
+  if (!guard.allowed) return;
+
+  try {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO sponsor_application_message (SA_ID, M_ID, SAM_Text)
+       VALUES (?, ?, ?)`,
+      [applicationId, req.user!.memberId, text],
+    );
+    return res.status(201).json({
+      id: result.insertId,
+      senderId: req.user!.memberId,
+      text,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.error('[sendApplicationMessage] error:', err);
+    return res.status(500).json({ error: 'تعذّر إرسال الرسالة' });
   }
 };
 

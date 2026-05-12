@@ -108,6 +108,29 @@ const NEGOTIATION_STEPS = [
 
 type Msg = { from: "me" | "other"; text: string; time: string; read: boolean };
 
+interface ApiMessage {
+  id: number;
+  senderId: number;
+  senderType: "SPONSOR" | "ORGANIZER" | "PARTICIPANT";
+  senderName: string;
+  text: string;
+  createdAt: string;
+}
+
+interface MessagesResponse {
+  items: ApiMessage[];
+}
+
+interface CurrentUser {
+  id: number;
+}
+
+function formatMessageTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+}
+
 export function MessagesPage() {
   const navigate = useNavigate();
 
@@ -122,6 +145,8 @@ export function MessagesPage() {
   const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [msgs, setMsgs] = useState<Record<number, Msg[]>>({});
   const [newMsg, setNewMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdvanceStep = async () => {
@@ -207,6 +232,23 @@ export function MessagesPage() {
     }
   };
 
+  // اجلب المستخدم الحالي مرة وحدة
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ id: number }>("/sponsors/me")
+      .then((me) => {
+        if (cancelled) return;
+        setCurrentUser({ id: me.id });
+      })
+      .catch(() => {
+        // إذا فشل، تظل الرسائل تظهر لكن "من" قد يكون غير صحيح
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // اجلب قائمة المحادثات
   useEffect(() => {
     let cancelled = false;
     apiGet<ConversationsResponse>("/sponsors/conversations")
@@ -215,19 +257,6 @@ export function MessagesPage() {
         const mapped = res.items.map(mapConversation);
         setConversations(mapped);
         if (mapped.length > 0) setSelected(mapped[0].id);
-        // رسالة ترحيب لكل محادثة كحالة افتراضية
-        const initialHistories: Record<number, Msg[]> = {};
-        mapped.forEach((c) => {
-          initialHistories[c.id] = [
-            {
-              from: "other",
-              text: `أهلًا بكم! شكرًا لتقدّمكم على ${c.packageName} في ${c.name}.`,
-              time: "—",
-              read: true,
-            },
-          ];
-        });
-        setMsgs(initialHistories);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -240,6 +269,35 @@ export function MessagesPage() {
       cancelled = true;
     };
   }, []);
+
+  // اجلب رسائل المحادثة المختارة + Poll كل 4 ثواني للتحديث
+  useEffect(() => {
+    if (selected === null || currentUser === null) return;
+    let cancelled = false;
+    const fetchMessages = async () => {
+      try {
+        const res = await apiGet<MessagesResponse>(
+          `/sponsors/applications/${selected}/messages`
+        );
+        if (cancelled) return;
+        const mapped: Msg[] = res.items.map((m) => ({
+          from: m.senderId === currentUser.id ? "me" : "other",
+          text: m.text,
+          time: formatMessageTime(m.createdAt),
+          read: true,
+        }));
+        setMsgs((prev) => ({ ...prev, [selected]: mapped }));
+      } catch {
+        // تجاهل أخطاء الـ poll الخلفية
+      }
+    };
+    fetchMessages();
+    const intervalId = setInterval(fetchMessages, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [selected, currentUser]);
 
   const conv = conversations.find((c) => c.id === selected) ?? null;
 
@@ -256,28 +314,37 @@ export function MessagesPage() {
 
   const activeMessages = selected !== null ? msgs[selected] || [] : [];
 
-  const send = () => {
-    if (!newMsg.trim() || selected === null) return;
-    const now = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  const send = async () => {
+    if (!newMsg.trim() || selected === null || sending) return;
+    const text = newMsg.trim();
+    setSending(true);
+    // أضفها بشكل تفاؤلي للواجهة مباشرة قبل ما يرد السيرفر
+    const optimistic: Msg = {
+      from: "me",
+      text,
+      time: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+      read: false,
+    };
     setMsgs((prev) => ({
       ...prev,
-      [selected]: [...(prev[selected] || []), { from: "me", text: newMsg, time: now, read: false }],
+      [selected]: [...(prev[selected] || []), optimistic],
     }));
     setNewMsg("");
-    setTimeout(() => {
+    try {
+      await apiPost<ApiMessage>(`/sponsors/applications/${selected}/messages`, { text });
+      // الـ poll القادم خلال 4 ثواني راح يجلب النسخة من السيرفر مع رسائل الطرف الثاني
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : "تعذّر إرسال الرسالة";
+      toast.error(message);
+      // ارجع الرسالة في حقل الإدخال + شيلها من الواجهة
       setMsgs((prev) => ({
         ...prev,
-        [selected]: [
-          ...(prev[selected] || []),
-          {
-            from: "other",
-            text: "شكرًا لرسالتكم، سنردّ عليكم في أقرب وقت ممكن.",
-            time: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
-            read: false,
-          },
-        ],
+        [selected]: (prev[selected] || []).filter((m) => m !== optimistic),
       }));
-    }, 1400);
+      setNewMsg(text);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -344,9 +411,6 @@ export function MessagesPage() {
                   >
                     {c.avatar}
                   </div>
-                  {c.online && (
-                    <div className="absolute -bottom-0.5 -left-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-                  )}
                 </div>
 
                 {/* Info */}
@@ -404,16 +468,13 @@ export function MessagesPage() {
                 >
                   {conv.avatar}
                 </div>
-                {conv.online && (
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />
-                )}
               </div>
               <div>
                 <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
                   {conv.name}
                 </p>
                 <p className="text-gray-400 text-xs">
-                  {conv.online ? "● متصل الآن" : "○ غير متصل"} · {conv.sub}
+                  {conv.sub}
                 </p>
               </div>
             </div>
@@ -608,14 +669,14 @@ export function MessagesPage() {
                   />
                   <button
                     onClick={send}
-                    disabled={!newMsg.trim()}
+                    disabled={!newMsg.trim() || sending}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                      newMsg.trim()
+                      newMsg.trim() && !sending
                         ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20"
                         : "bg-gray-100 text-gray-300"
                     }`}
                   >
-                    <Send className="w-4 h-4" />
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
                 {conv.status === "accepted" && (
