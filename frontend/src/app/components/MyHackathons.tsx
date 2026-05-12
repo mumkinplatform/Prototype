@@ -18,7 +18,7 @@ interface Hackathon {
   startDate: string | null;
   endDate: string | null;
   city: string | null;
-  myRole: 'owner' | 'co_manager';
+  myRole: 'owner' | 'co_manager' | 'judge';
   myCoRole?: 'manager' | 'staff' | null;
   mySection?: Section | null;
   branding: BrandingPayload | null;
@@ -34,7 +34,7 @@ interface ApiHackathon {
   H_EndDate: string | null;
   H_city: string | null;
   H_Branding: string | null;
-  my_role: 'owner' | 'co_manager';
+  my_role: 'owner' | 'co_manager' | 'judge';
   my_co_role: 'manager' | 'staff' | null;
   my_section: Section | null;
 }
@@ -49,7 +49,7 @@ function formatDateRange(start: string | null, end: string | null): string {
 export default function MyHackathons() {
   const navigate = useNavigate();
   const [filterStatus, setFilterStatus] = useState<'all' | Status>('all');
-  const [filterRole, setFilterRole] = useState<'all' | 'owner' | 'manager' | 'staff'>('all');
+  const [filterRole, setFilterRole] = useState<'all' | 'owner' | 'manager' | 'staff' | 'judge'>('all');
   const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
   const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(false);
   const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(null);
@@ -63,6 +63,7 @@ export default function MyHackathons() {
     if (r === 'owner') return h.myRole === 'owner';
     if (r === 'manager') return h.myRole === 'co_manager' && h.myCoRole === 'manager';
     if (r === 'staff') return h.myRole === 'co_manager' && h.myCoRole === 'staff';
+    if (r === 'judge') return h.myRole === 'judge';
     return true;
   };
 
@@ -71,6 +72,7 @@ export default function MyHackathons() {
     owner: hackathons.filter((h) => h.myRole === 'owner').length,
     manager: hackathons.filter((h) => h.myRole === 'co_manager' && h.myCoRole === 'manager').length,
     staff: hackathons.filter((h) => h.myRole === 'co_manager' && h.myCoRole === 'staff').length,
+    judge: hackathons.filter((h) => h.myRole === 'judge').length,
   };
 
   const handleDeleteConfirm = async () => {
@@ -245,6 +247,7 @@ export default function MyHackathons() {
             { id: 'owner', label: 'منشئ الهاكاثون', count: roleCounts.owner },
             { id: 'manager', label: 'مدير قسم', count: roleCounts.manager },
             { id: 'staff', label: 'موظف', count: roleCounts.staff },
+            { id: 'judge', label: 'محكم', count: roleCounts.judge },
           ] as const).map((opt) => {
             const active = filterRole === opt.id;
             return (
@@ -293,6 +296,10 @@ export default function MyHackathons() {
                   {hackathon.myRole === 'owner' ? (
                     <span className="px-3 py-1 rounded-full text-xs bg-[#e35654] text-white shadow-md" style={{ fontWeight: 600 }}>
                       أنت المنظّم
+                    </span>
+                  ) : hackathon.myRole === 'judge' ? (
+                    <span className="px-3 py-1 rounded-full text-xs bg-indigo-600 text-white shadow-md" style={{ fontWeight: 600 }}>
+                      محكم
                     </span>
                   ) : (
                     <span className="px-3 py-1 rounded-full text-xs bg-blue-600 text-white shadow-md" style={{ fontWeight: 600 }}>
@@ -360,11 +367,18 @@ export default function MyHackathons() {
                   ) : (
                     <>
                       <Link
-                        to={`/admin/hackathon/${hackathon.id}`}
+                        to={
+                          // Judges only have access to the projects/evaluation section,
+                          // so we send them straight there instead of the (locked-out)
+                          // management hub.
+                          hackathon.myRole === 'judge'
+                            ? `/admin/hackathon/${hackathon.id}/projects`
+                            : `/admin/hackathon/${hackathon.id}`
+                        }
                         className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
                         style={{ fontWeight: 600 }}
                       >
-                        <span>إدارة الهاكاثون</span>
+                        <span>{hackathon.myRole === 'judge' ? 'فتح صفحة التحكيم' : 'إدارة الهاكاثون'}</span>
                         <ChevronLeft className="w-4 h-4" />
                       </Link>
                       {/* Edit button — owner of a published hackathon can adjust basic info + branding live */}

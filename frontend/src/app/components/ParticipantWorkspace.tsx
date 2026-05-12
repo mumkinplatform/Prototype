@@ -1466,6 +1466,13 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // Minimal project-info form (name + description) — saved via PUT /submission.
+  // Adding this so the participant can actually mark a submission as final via
+  // POST /submission/submit, which is what unlocks the rest of the evaluation flow.
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const refetch = async () => {
     try {
@@ -1479,7 +1486,14 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
   useEffect(() => {
     let cancelled = false;
     apiGet<ApiSubmission>(`/participants/hackathons/${hackathonId}/submission`)
-      .then((d) => { if (!cancelled) setData(d); })
+      .then((d) => {
+        if (cancelled) return;
+        setData(d);
+        // Seed the form with whatever's already saved so the participant can
+        // edit instead of re-typing.
+        setProjectName(d.projectName ?? '');
+        setProjectDescription(d.projectDescription ?? '');
+      })
       .catch((e) => {
         if (cancelled) return;
         setError(e instanceof ApiError ? e.message : "فشل تحميل بيانات التسليم");
@@ -1487,6 +1501,59 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [hackathonId]);
+
+  // Save project info (name + description). Persists immediately; the
+  // submission isn't marked as final until the participant clicks "تسليم نهائي".
+  const handleSaveInfo = async () => {
+    if (!projectName.trim()) {
+      setUploadError('اسم المشروع مطلوب');
+      return;
+    }
+    setSavingInfo(true);
+    setUploadError(null);
+    try {
+      await apiPut(`/participants/hackathons/${hackathonId}/submission`, {
+        projectName: projectName.trim(),
+        projectDescription: projectDescription.trim(),
+      });
+      await refetch();
+    } catch (e) {
+      setUploadError(e instanceof ApiError ? e.message : 'فشل حفظ بيانات المشروع');
+    } finally {
+      setSavingInfo(false);
+    }
+  };
+
+  // Mark the submission as final — sets TS_SubmittedAt = NOW() in the DB.
+  // Once submitted, the project appears in the organizer's list and becomes
+  // eligible for distribution to judges.
+  const handleFinalSubmit = async () => {
+    if (!projectName.trim()) {
+      setUploadError('احفظ اسم المشروع ووصفه أولاً');
+      return;
+    }
+    if (!data || data.files.length === 0) {
+      setUploadError('ارفع ملفًا واحدًا على الأقل قبل التسليم');
+      return;
+    }
+    if (!confirm('بعد التسليم النهائي، لن تستطيع تعديل المشروع. هل أنت متأكد؟')) return;
+
+    setSubmitting(true);
+    setUploadError(null);
+    try {
+      // Persist any unsaved edits to name/description before locking.
+      await apiPut(`/participants/hackathons/${hackathonId}/submission`, {
+        projectName: projectName.trim(),
+        projectDescription: projectDescription.trim(),
+      });
+      await apiPost(`/participants/hackathons/${hackathonId}/submission/submit`, {});
+      await refetch();
+    } catch (e) {
+      setUploadError(e instanceof ApiError ? e.message : 'فشل التسليم النهائي');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -1604,140 +1671,163 @@ function SubmissionTab({ hackathonId }: { hackathonId: number }) {
         </p>
       </div>
 
-      {/* Upload Section */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <Upload className="w-5 h-5" style={{ color: "#e35654" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>رفع المشروع</h2>
-        </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
-        />
-
-        {/* Upload Area */}
-        <div
-          onClick={() => !uploading && fileInputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
-          className={`border-2 border-dashed rounded-2xl p-8 text-center mb-5 transition-all ${
-            uploading ? "opacity-50 cursor-wait" : "cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30"
-          }`}
-          style={{ borderColor: "#e5e7eb" }}
-        >
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "#fef2f2" }}>
-            <Upload className="w-8 h-8" style={{ color: "#e35654" }} />
+      {/* Already-submitted banner — once TS_SubmittedAt is set, lock the form. */}
+      {data.submittedAt && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-5 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-green-600" />
           </div>
-          <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-            {uploading ? "جاري الرفع..." : "اسحب الملفات هنا أو انقر للتحميل"}
-          </h3>
-          <p className="text-gray-400 text-sm">
-            الحد الأقصى لكل ملف: {data.maxFileSizeMb} MB
-          </p>
+          <div className="flex-1">
+            <p className="text-green-900 text-sm" style={{ fontWeight: 700 }}>
+              تم التسليم النهائي
+            </p>
+            <p className="text-green-700 text-xs mt-1">
+              مشروعك أُرسل للمنظم وأصبح ضمن المشاريع للتحكيم. لا يمكن تعديله بعد الآن.
+            </p>
+          </div>
         </div>
+      )}
 
-        {uploadError && (
-          <p className="text-red-500 text-sm mb-3 text-center">{uploadError}</p>
-        )}
-
-        <button
-          disabled={uploading}
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50"
-          style={{ background: "#e35654", fontWeight: 600 }}
-        >
-          <Plus className="w-4 h-4 inline-block ml-2" />
-          إضافة ملفات
-        </button>
-        <p className="text-gray-300 text-xs text-center mt-2">
-          أقصى حجم لكل ملف: {formatFileSize(maxBytes)}
-        </p>
-      </div>
-
-      {/* Uploaded Files */}
+      {/* Unified submission form — project info + file upload + final submit
+          all in one card so the participant sees a single coherent step. */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <FileText className="w-5 h-5" style={{ color: "#6366f1" }} />
-          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: "1.1rem" }}>
-            الملفات المرفوعة ({data.files.length})
+        <div className="flex items-center gap-2 mb-2">
+          <Upload className="w-5 h-5" style={{ color: '#e35654' }} />
+          <h2 className="text-gray-900" style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+            تسليم المشروع
           </h2>
         </div>
+        <p className="text-gray-500 text-xs mb-6">
+          أكمل بيانات مشروعك، ارفع الملفات، ثم اضغط "تسليم نهائي".
+        </p>
 
-        {data.files.length === 0 ? (
-          <div className="text-center py-10">
-            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm" style={{ fontWeight: 600 }}>لم يتم رفع أي ملف بعد</p>
-            <p className="text-gray-400 text-xs mt-1">الملفات اللي ترفعها بتظهر هنا</p>
+        <div className="space-y-5">
+          {/* Project name */}
+          <div>
+            <label className="block text-gray-700 text-sm mb-2" style={{ fontWeight: 600 }}>
+              اسم المشروع <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              disabled={!!data.submittedAt}
+              placeholder="مثال: منصة مُمكن"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] disabled:bg-gray-50 disabled:text-gray-500"
+            />
           </div>
-        ) : (
-          <div className="space-y-3">
-            {data.files.map((file, i) => {
-              const color = FILE_COLOR_PALETTE[i % FILE_COLOR_PALETTE.length];
-              const fullUrl = `${API_URL}${file.url}`;
-              return (
-                <div
-                  key={file.id}
-                  className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group"
-                >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${color}15` }}>
-                    <FileText className="w-5 h-5" style={{ color }} />
-                  </div>
 
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-900 text-sm mb-1 truncate" style={{ fontWeight: 600 }}>
-                      {file.name}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                      <span>{formatFileSize(file.size)}</span>
-                      <span>•</span>
-                      <span>{formatDateAr(file.uploadedAt)}</span>
-                      {file.uploaderName && (
-                        <>
-                          <span>•</span>
-                          <span>{file.uploaderName}</span>
-                        </>
-                      )}
+          {/* Project description */}
+          <div>
+            <label className="block text-gray-700 text-sm mb-2" style={{ fontWeight: 600 }}>
+              نبذة عن المشروع
+            </label>
+            <textarea
+              value={projectDescription}
+              onChange={(e) => setProjectDescription(e.target.value)}
+              disabled={!!data.submittedAt}
+              rows={4}
+              placeholder="فكرة المشروع، المشكلة اللي يحلها، والمميزات الرئيسية..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#e35654] disabled:bg-gray-50 disabled:text-gray-500 resize-none"
+            />
+          </div>
+
+          {/* File upload area + uploaded files list inline */}
+          {!data.submittedAt && (
+            <div>
+              <label className="block text-gray-700 text-sm mb-2" style={{ fontWeight: 600 }}>
+                ملفات المشروع <span className="text-red-500">*</span>
+              </label>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => handleFiles(e.target.files)}
+              />
+
+              <div
+                onClick={() => !uploading && fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${
+                  uploading ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:border-[#e35654] hover:bg-[#fef2f4]/30'
+                }`}
+                style={{ borderColor: '#e5e7eb' }}
+              >
+                <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-gray-700 text-sm" style={{ fontWeight: 600 }}>
+                  {uploading ? 'جاري الرفع...' : 'اسحب الملفات هنا أو انقر للاختيار'}
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  أقصى حجم لكل ملف: {formatFileSize(maxBytes)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Uploaded files list (inline) */}
+          {data.files.length > 0 && (
+            <div>
+              <p className="text-gray-700 text-sm mb-2" style={{ fontWeight: 600 }}>
+                الملفات المرفوعة ({data.files.length})
+              </p>
+              <div className="space-y-2">
+                {data.files.map((file) => (
+                  <div
+                    key={file.id}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50"
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4 text-gray-500" />
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-900 text-sm truncate" style={{ fontWeight: 600 }}>
+                        {file.name}
+                      </p>
+                      <p className="text-gray-400 text-xs">{formatFileSize(file.size)}</p>
+                    </div>
+                    {!data.submittedAt && (
+                      <button
+                        onClick={() => handleDelete(file.id)}
+                        className="w-8 h-8 rounded-lg hover:bg-red-50 text-red-500 flex items-center justify-center flex-shrink-0"
+                        title="حذف"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <a
-                      href={fullUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#6366f1] hover:bg-blue-50 transition-colors"
-                      title="معاينة"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </a>
-                    <a
-                      href={fullUrl}
-                      download={file.name}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#10b981] hover:bg-green-50 transition-colors"
-                      title="تحميل"
-                    >
-                      <Download className="w-4 h-4" />
-                    </a>
-                    <button
-                      onClick={() => handleDelete(file.id)}
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#e35654] hover:bg-[#fef2f4] transition-colors"
-                      title="حذف"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+          {uploadError && (
+            <p className="text-red-500 text-sm">{uploadError}</p>
+          )}
+
+          {/* Final submit — only shown while still a draft */}
+          {!data.submittedAt && (
+            <div className="pt-3 border-t border-gray-100">
+              <p className="text-gray-500 text-xs mb-3 leading-relaxed">
+                بعد التسليم النهائي، لن يمكنك تعديل البيانات أو الملفات. المشروع
+                يصبح جاهزًا للتحكيم.
+              </p>
+              <button
+                onClick={handleFinalSubmit}
+                disabled={submitting || uploading || savingInfo}
+                className="w-full py-3 rounded-xl text-white text-sm transition-colors disabled:opacity-50"
+                style={{ background: '#10b981', fontWeight: 600 }}
+              >
+                <CheckCircle2 className="w-4 h-4 inline-block ml-2" />
+                {submitting ? 'جاري التسليم...' : 'تسليم نهائي للمشروع'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
     </div>
   );
 }

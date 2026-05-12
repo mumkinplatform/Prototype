@@ -10,11 +10,17 @@ import { SECTION_LABELS, type Section } from '../../lib/permissions';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface Invitation {
+  // Backend tells us which kind of invite this is — 'co_manager' for organizer
+  // team members (manager/staff), 'judge' for evaluators.
+  kind: 'co_manager' | 'judge';
   invitee: {
     fullName: string;
     email: string;
-    role: 'manager' | 'staff';
-    section: Section | null;
+    role: 'manager' | 'staff' | 'judge';
+    // Co-manager only: which section they manage.
+    section?: Section | null;
+    // Judge only: their specialty (optional free text).
+    specialty?: string | null;
   };
   hackathon: {
     title: string;
@@ -148,8 +154,18 @@ export function InviteAcceptPage() {
     );
   }
 
-  const sectionLabel = data.invitee.section ? SECTION_LABELS[data.invitee.section] : '—';
-  const roleLabel = data.invitee.role === 'manager' ? 'مدير قسم' : 'موظف';
+  // Judge invites don't have a section — they only ever manage the projects/
+  // evaluation flow. Show their specialty (if provided) in place of "section".
+  const isJudge = data.kind === 'judge';
+  const sectionLabel = isJudge
+    ? (data.invitee.specialty || '—')
+    : (data.invitee.section ? SECTION_LABELS[data.invitee.section] : '—');
+  const roleLabel = isJudge
+    ? 'حكم'
+    : data.invitee.role === 'manager'
+    ? 'مدير قسم'
+    : 'موظف';
+  const sectionFieldLabel = isJudge ? 'التخصص' : 'القسم';
 
   // Already accepted — friendly state
   if (data.alreadyAccepted) {
@@ -237,7 +253,7 @@ export function InviteAcceptPage() {
               <span className="text-gray-900" style={{ fontWeight: 600 }}>{roleLabel}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">القسم</span>
+              <span className="text-gray-500">{sectionFieldLabel}</span>
               <span className="text-gray-900" style={{ fontWeight: 600 }}>{sectionLabel}</span>
             </div>
             <div className="flex items-center justify-between text-sm">

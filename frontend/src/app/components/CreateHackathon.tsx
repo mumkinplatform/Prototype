@@ -225,6 +225,11 @@ export function CreateHackathon() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [judges, setJudges] = useState<Judge[]>([]);
+  // Structured evaluation criteria (name + description + weight). Replaces the
+  // legacy free-text H_JudgingCriteria; saved to /hackathons/:id/evaluation-criteria.
+  const [evaluationCriteria, setEvaluationCriteria] = useState<
+    Array<{ id: string; name: string; description: string; weight: number }>
+  >([]);
   const [organizers, setOrganizers] = useState<Organizer[]>([]);
   const [expandedOrgIds, setExpandedOrgIds] = useState<Set<string>>(new Set());
   const [prizes, setPrizes] = useState<Prize[]>([]);
@@ -456,8 +461,19 @@ export function CreateHackathon() {
     form.projectRequirements.trim() !== '' &&
     submissionFields.length > 0;
 
+  // Evaluation is "complete" when at least one criterion has a name + weight,
+  // weights sum to 100%, and the judging window is set. Replaces the old
+  // free-text judgingCriteria check.
+  const validCriteriaCount = evaluationCriteria.filter(
+    (c) => c.name.trim() !== '' && Number(c.weight) > 0,
+  ).length;
+  const criteriaWeightSum = evaluationCriteria.reduce(
+    (s, c) => s + (Number(c.weight) || 0),
+    0,
+  );
   const isEvaluationComplete =
-    form.judgingCriteria.trim() !== '' &&
+    validCriteriaCount > 0 &&
+    Math.abs(criteriaWeightSum - 100) <= 0.05 &&
     form.judgingStart !== '' &&
     form.judgingEnd !== '';
 
@@ -541,7 +557,7 @@ export function CreateHackathon() {
       ].filter(Boolean).length) / 4,
     evaluation:
       ([
-        form.judgingCriteria.trim() !== '',
+        validCriteriaCount > 0 && Math.abs(criteriaWeightSum - 100) <= 0.05,
         form.judgingStart !== '',
         form.judgingEnd !== '',
       ].filter(Boolean).length) / 3,
@@ -589,7 +605,7 @@ export function CreateHackathon() {
     form.projectRequirements.trim() !== '' ||
     form.maxFileSize.trim() !== '' ||
     form.allowLateSubmission ||
-    form.judgingCriteria.trim() !== '' ||
+    evaluationCriteria.length > 0 ||
     form.judgingStart !== '' ||
     form.judgingEnd !== '' ||
     form.prizeTerms.trim() !== '' ||
@@ -780,6 +796,27 @@ export function CreateHackathon() {
             specialty: j.HJ_Specialty ?? '',
           }))
         );
+
+        // Load structured evaluation criteria — separate endpoint since they
+        // live in their own table (added in migration 017). Fire-and-forget
+        // since the outer callback is a Promise.then (not async).
+        apiGet<{
+          items: Array<{ id: number; name: string; description: string | null; weight: number }>;
+        }>(`/hackathons/${id}/evaluation-criteria`)
+          .then((critRes) => {
+            setEvaluationCriteria(
+              critRes.items.map((c) => ({
+                id: String(c.id),
+                name: c.name,
+                description: c.description ?? '',
+                weight: Number(c.weight),
+              })),
+            );
+          })
+          .catch(() => {
+            // Empty list on failure — organizer can add fresh criteria in the form.
+            setEvaluationCriteria([]);
+          });
         setPrizes(
           data.prizes.map((p) => ({
             id: String(p.HP_ID),
@@ -893,6 +930,30 @@ export function CreateHackathon() {
             specialty: j.specialty,
           })),
         });
+
+        // Structured evaluation criteria — only saves rows with a non-empty name.
+        // The backend re-validates weight sum = 100% and rejects otherwise; we
+        // catch that here so the rest of the draft save still succeeds.
+        const criteriaPayload = evaluationCriteria
+          .filter((c) => c.name.trim() !== '')
+          .map((c) => ({
+            name: c.name.trim(),
+            description: c.description.trim() || null,
+            weight: Number(c.weight) || 0,
+          }));
+        if (criteriaPayload.length > 0) {
+          try {
+            await apiPut(`/hackathons/${currentId}/evaluation-criteria`, {
+              items: criteriaPayload,
+            });
+          } catch (e) {
+            // Soft-fail: criteria can be fixed later from the projects page.
+            // We surface the message so the organizer knows their criteria didn't save.
+            const msg = e instanceof ApiError ? e.message : 'تعذّر حفظ معايير التقييم';
+            console.warn('evaluation-criteria save:', msg);
+            toast.warning(msg);
+          }
+        }
         await apiPut(`/hackathons/${currentId}/prizes`, {
           prizes: prizes.map((p) => ({
             position: p.position,
@@ -2537,18 +2598,107 @@ export function CreateHackathon() {
                   </div>
  
                   <div className="space-y-6">
-                    {/* Evaluation Criteria */}
+                    {/* Evaluation Criteria — structured (name + weight + description).
+                        Replaces the old free-text textarea. Saved to the dedicated
+                        endpoint /hackathons/:id/evaluation-criteria. */}
                     <div>
-                      <label className="block text-sm text-gray-700 mb-2" style={{ fontWeight: 600 }}>
-                        معايير التقييم <span className="text-red-500">*</span>
-                      </label>
-                      <textarea
-                        rows={5}
-                        placeholder="مثال:&#10;• الابتكار والإبداع (30%)&#10;• التنفيذ الفني والجودة (30%)&#10;• التأثير والفائدة (20%)&#10;• العرض والتقديم (20%)"
-                        value={form.judgingCriteria}
-                        onChange={(e) => updateForm('judgingCriteria', e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 focus:bg-white transition-all resize-none"
-                      />
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm text-gray-700" style={{ fontWeight: 600 }}>
+                          معايير التقييم <span className="text-red-500">*</span>
+                        </label>
+                        {(() => {
+                          const sum = evaluationCriteria.reduce(
+                            (s, c) => s + (Number(c.weight) || 0),
+                            0,
+                          );
+                          const balanced = Math.abs(sum - 100) <= 0.05;
+                          return (
+                            <span
+                              className={`text-xs ${balanced ? 'text-green-600' : 'text-gray-500'}`}
+                              style={{ fontWeight: 600 }}
+                            >
+                              المجموع: {sum.toFixed(2)}% {balanced ? '✓' : '(لازم 100%)'}
+                            </span>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="space-y-3">
+                        {evaluationCriteria.map((c, index) => {
+                          const update = (patch: Partial<typeof c>) => {
+                            setEvaluationCriteria((prev) =>
+                              prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+                            );
+                          };
+                          const remove = () => {
+                            setEvaluationCriteria((prev) => prev.filter((_, i) => i !== index));
+                          };
+                          return (
+                            <div key={c.id} className="p-3 rounded-xl border border-gray-200 bg-gray-50">
+                              <div className="flex items-center gap-2 mb-2">
+                                <input
+                                  type="text"
+                                  placeholder="اسم المعيار (مثال: الابتكار)"
+                                  value={c.name}
+                                  onChange={(e) => update({ name: e.target.value })}
+                                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                                  style={{ fontWeight: 600 }}
+                                />
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    placeholder="الوزن"
+                                    value={c.weight || ''}
+                                    onChange={(e) =>
+                                      update({ weight: Number(e.target.value) || 0 })
+                                    }
+                                    className="w-20 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-center"
+                                    style={{ fontWeight: 600 }}
+                                  />
+                                  <span className="text-sm text-gray-500">%</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={remove}
+                                  className="w-9 h-9 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 flex items-center justify-center"
+                                  title="حذف"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="وصف مختصر (اختياري)"
+                                value={c.description}
+                                onChange={(e) => update({ description: e.target.value })}
+                                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs text-gray-600"
+                              />
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEvaluationCriteria((prev) => [
+                              ...prev,
+                              {
+                                id: `new-${Date.now()}-${prev.length}`,
+                                name: '',
+                                description: '',
+                                weight: 0,
+                              },
+                            ])
+                          }
+                          className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-gray-600 text-sm hover:border-[#e35654] hover:text-[#e35654] transition-colors"
+                          style={{ fontWeight: 600 }}
+                        >
+                          + إضافة معيار جديد
+                        </button>
+                      </div>
                     </div>
 
                     {/* Judging Period */}
