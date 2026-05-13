@@ -8,7 +8,6 @@ import {
   ArrowRight,
   CheckCheck,
   Check,
-  Upload,
   CheckCircle2,
   CreditCard,
   FileText,
@@ -79,8 +78,9 @@ interface ApiConversation {
   status: "pending" | "accepted" | "rejected";
   appliedAt: string;
   currentStep: number;
-  hackathon: { id: number; title: string };
-  package: { id: number; name: string };
+  sponsorSignedAt: string | null;
+  hackathon: { id: number; title: string; startDate: string | null };
+  package: { id: number; name: string; type: string; price: number | null };
   organizer: { name: string };
 }
 
@@ -99,8 +99,15 @@ interface DisplayConversation {
   avatar: string;
   color: string;
   currentStep: number;
+  sponsorSignedAt: string | null;
   hackathonId: number;
+  hackathonTitle: string;
+  hackathonStartDate: string | null;
   packageName: string;
+  packageType: string;
+  packagePrice: number | null;
+  organizerName: string;
+  appliedAt: string;
   status: ApiConversation["status"];
 }
 
@@ -126,8 +133,15 @@ function mapConversation(c: ApiConversation, idx: number): DisplayConversation {
     avatar: firstChar,
     color: PALETTE[idx % PALETTE.length],
     currentStep: c.currentStep,
+    sponsorSignedAt: c.sponsorSignedAt,
     hackathonId: c.hackathon.id,
+    hackathonTitle: c.hackathon.title,
+    hackathonStartDate: c.hackathon.startDate,
     packageName: c.package.name,
+    packageType: c.package.type,
+    packagePrice: c.package.price,
+    organizerName: c.organizer.name,
+    appliedAt: c.appliedAt,
     status: c.status,
   };
 }
@@ -136,8 +150,7 @@ const NEGOTIATION_STEPS = [
   { id: 0, label: "التفاوض", icon: MessageCircle },
   { id: 1, label: "مراجعة الشروط", icon: Edit3 },
   { id: 2, label: "العقد الرقمي", icon: FileText },
-  { id: 3, label: "رفع العقد", icon: Upload },
-  { id: 4, label: "مكتمل", icon: CheckCircle2 },
+  { id: 3, label: "مكتمل", icon: CheckCircle2 },
 ];
 
 type Msg = {
@@ -190,7 +203,6 @@ export function MessagesPage() {
   const [advancing, setAdvancing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [viewedStep, setViewedStep] = useState(0);
-  const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [msgs, setMsgs] = useState<Record<number, Msg[]>>({});
   const [newMsg, setNewMsg] = useState("");
   const [sending, setSending] = useState(false);
@@ -199,7 +211,7 @@ export function MessagesPage() {
 
   const handleAdvanceStep = async () => {
     if (selected === null || !conv) return;
-    if (conv.currentStep >= 4) return;
+    if (conv.currentStep >= 3) return;
     setAdvancing(true);
     try {
       const res = await apiPost<{ id: number; negotiationStep: number }>(
@@ -220,7 +232,7 @@ export function MessagesPage() {
     }
   };
 
-  // وضع الرفع: "receipt" يرفع للسيرفر كإيصال دفع · "attach" يلصق الملف محلياً في الشات
+  // وضع الرفع: "receipt" يرفع للسيرفر كإيصال دفع · "attach" يرفع ملف عادي للشات
   const [attachMode, setAttachMode] = useState<"receipt" | "attach">("attach");
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,13 +241,12 @@ export function MessagesPage() {
     if (!file || selected === null) return;
     if (!conv) return;
 
-    // وضع "إرفاق ملف عادي" — يرفع للسيرفر ويُحفظ كرسالة في الـ DB
+    // إرفاق ملف عادي → يُحفظ كرسالة في الـ DB
     if (attachMode === "attach") {
       setUploading(true);
       try {
         await postChatMessage(selected, { file });
         toast.success("تم إرفاق الملف في المحادثة");
-        // الـ poll القادم خلال 4 ثواني راح يجلب الرسالة من الـ DB ويعرضها
       } catch (err: unknown) {
         const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
         toast.error(message);
@@ -245,28 +256,23 @@ export function MessagesPage() {
       return;
     }
 
-    // وضع "رفع إيصال الدفع" — يحتاج رفع العقد (مرحلة 3) أولاً
-    if (conv.currentStep < 3) {
-      toast.error("لا يمكنك رفع الإيصال قبل الوصول لمرحلة رفع العقد");
+    // رفع إيصال الدفع → endpoint منفصل + رسالة شات تأكيد
+    if (conv.status !== "accepted") {
+      toast.error("لا يمكنك رفع الإيصال قبل قبول طلب الرعاية");
       return;
     }
     setUploading(true);
     try {
       await uploadReceiptFile(selected, file);
       toast.success("تم رفع الإيصال بنجاح", {
-        description: "تمّ تسجيل الدفع وإتمام الرعاية.",
+        description: "تمّ تسجيل الدفع.",
       });
-      setReceiptUploaded(true);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === selected ? { ...c, currentStep: 4 } : c))
-      );
-      // ألصق رسالة في الشات تخبر الطرف الثاني بإتمام الدفع
       try {
         await postChatMessage(selected, {
           text: `💳 تم رفع إيصال الدفع: ${file.name}`,
         });
       } catch {
-        // إذا فشل لصق الرسالة، الإيصال نفسه نجح فلا داعي لإزعاج المستخدم
+        // الإيصال نجح، فشل لصق الرسالة لا يعني فشل الرفع
       }
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
@@ -354,11 +360,10 @@ export function MessagesPage() {
 
   const conv = conversations.find((c) => c.id === selected) ?? null;
 
-  // مزامنة المرحلة المعروضة + علم الإيصال عند تغيير المحادثة
+  // مزامنة المرحلة المعروضة عند تغيير المحادثة
   useEffect(() => {
     if (!conv) return;
     setViewedStep(conv.currentStep);
-    setReceiptUploaded(conv.currentStep >= 4);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredConvs = conversations.filter(
@@ -583,7 +588,7 @@ export function MessagesPage() {
                 );
               })}
             </div>
-            {conv.currentStep === 4 && (
+            {conv.currentStep === 3 && (
               <p className="text-xs text-green-600 text-center mt-2" style={{ fontWeight: 600 }}>
                 ✓ اكتملت جميع مراحل التفاوض
               </p>
@@ -694,13 +699,12 @@ export function MessagesPage() {
                 <div className="flex items-center gap-2.5">
                   <details className="relative group">
                     <summary className="list-none p-2.5 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center">
-                      <Paperclip className="w-5 h-5" />
+                      {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
                     </summary>
                     <div className="absolute bottom-full mb-2 right-0 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 w-56 z-50">
                       <p className="text-gray-400 text-xs px-3 pb-1.5 pt-0.5" style={{ fontWeight: 600 }}>
                         إرفاق ملف
                       </p>
-                      {/* إرفاق ملف عادي — يعمل دائماً */}
                       <button
                         onClick={(e) => {
                           setAttachMode("attach");
@@ -721,14 +725,13 @@ export function MessagesPage() {
                           </p>
                         </div>
                       </button>
-                      {/* رفع إيصال الدفع — متاح بعد رفع العقد (مرحلة 3) */}
                       <button
                         onClick={(e) => {
                           setAttachMode("receipt");
                           (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
                           setTimeout(() => fileInputRef.current?.click(), 0);
                         }}
-                        disabled={uploading || conv.currentStep < 3}
+                        disabled={uploading || conv.status !== "accepted"}
                         className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-right disabled:opacity-50 disabled:cursor-not-allowed mt-1"
                       >
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#fef2f2]">
@@ -743,9 +746,9 @@ export function MessagesPage() {
                           </p>
                         </div>
                       </button>
-                      {conv.currentStep < 3 && (
+                      {conv.status !== "accepted" && (
                         <p className="text-[10px] text-gray-400 px-3 pt-1.5 leading-relaxed">
-                          رفع الإيصال متاح بعد الوصول لمرحلة رفع العقد.
+                          رفع الإيصال متاح بعد قبول الطلب.
                         </p>
                       )}
                     </div>
@@ -788,17 +791,21 @@ export function MessagesPage() {
                 conversation={{
                   id: conv.id,
                   packageName: conv.packageName,
+                  packageType: conv.packageType,
+                  packagePrice: conv.packagePrice,
                   hackathonId: conv.hackathonId,
+                  hackathonTitle: conv.hackathonTitle,
+                  hackathonStartDate: conv.hackathonStartDate,
+                  organizerName: conv.organizerName,
+                  appliedAt: conv.appliedAt,
                   status: conv.status,
                   currentStep: conv.currentStep,
+                  sponsorSignedAt: conv.sponsorSignedAt,
                 }}
                 viewedStep={viewedStep}
                 serverStep={conv.currentStep}
                 advancing={advancing}
-                uploading={uploading}
-                receiptUploaded={receiptUploaded}
                 onAdvance={handleAdvanceStep}
-                onUploadClick={() => fileInputRef.current?.click()}
                 onViewStep={setViewedStep}
               />
             </div>

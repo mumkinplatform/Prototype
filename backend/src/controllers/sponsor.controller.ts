@@ -109,6 +109,7 @@ interface MyContractRow extends RowDataPacket {
   negotiationStep: number;
   paidAt: Date | null;
   appliedAt: Date;
+  sponsorSignedAt: Date | null;
   organizerSigned: number;
   organizerSignedAt: Date | null;
   receiptFile: string | null;
@@ -138,10 +139,14 @@ interface MyConversationRow extends RowDataPacket {
   status: 'pending' | 'accepted' | 'rejected';
   negotiationStep: number;
   appliedAt: Date;
+  sponsorSignedAt: Date | null;
   packageId: number;
   packageName: string;
+  packageType: string;
+  packagePrice: string | null;
   hackathonId: number;
   hackathonTitle: string;
+  hackathonStartDate: Date | null;
   organizerName: string | null;
 }
 
@@ -705,15 +710,19 @@ export const listMyConversations = async (req: Request, res: Response) => {
   // كل محادثة = تقديم. التقديم النشط (pending أو accepted) يكون محادثة فعّالة.
   const [rows] = await pool.query<MyConversationRow[]>(
     `SELECT
-       sa.SA_ID              AS applicationId,
-       sa.SA_Status          AS status,
-       sa.SA_NegotiationStep AS negotiationStep,
-       sa.SA_AppliedAt       AS appliedAt,
-       sp.SP_ID              AS packageId,
-       sp.SP_Name            AS packageName,
-       h.hackathon_ID        AS hackathonId,
-       h.H_title             AS hackathonTitle,
-       op.ORG_Name           AS organizerName
+       sa.SA_ID                AS applicationId,
+       sa.SA_Status            AS status,
+       sa.SA_NegotiationStep   AS negotiationStep,
+       sa.SA_AppliedAt         AS appliedAt,
+       sa.SA_SponsorSignedAt   AS sponsorSignedAt,
+       sp.SP_ID                AS packageId,
+       sp.SP_Name              AS packageName,
+       sp.SP_Type              AS packageType,
+       sp.SP_Price             AS packagePrice,
+       h.hackathon_ID          AS hackathonId,
+       h.H_title               AS hackathonTitle,
+       h.H_Hackathon_StartDate AS hackathonStartDate,
+       op.ORG_Name             AS organizerName
        FROM sponsor_application sa
        JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
@@ -728,8 +737,18 @@ export const listMyConversations = async (req: Request, res: Response) => {
     status: r.status,
     appliedAt: r.appliedAt,
     currentStep: r.negotiationStep,
-    hackathon: { id: r.hackathonId, title: r.hackathonTitle },
-    package: { id: r.packageId, name: r.packageName },
+    sponsorSignedAt: r.sponsorSignedAt,
+    hackathon: {
+      id: r.hackathonId,
+      title: r.hackathonTitle,
+      startDate: r.hackathonStartDate,
+    },
+    package: {
+      id: r.packageId,
+      name: r.packageName,
+      type: r.packageType,
+      price: r.packagePrice ? Number(r.packagePrice) : null,
+    },
     organizer: { name: r.organizerName ?? 'المنظم' },
   }));
 
@@ -811,6 +830,7 @@ export const listMyContracts = async (req: Request, res: Response) => {
        sa.SA_NegotiationStep   AS negotiationStep,
        sa.SA_PaidAt            AS paidAt,
        sa.SA_AppliedAt         AS appliedAt,
+       sa.SA_SponsorSignedAt   AS sponsorSignedAt,
        sa.SA_OrganizerSigned   AS organizerSigned,
        sa.SA_OrganizerSignedAt AS organizerSignedAt,
        sa.SA_ReceiptFile       AS receiptFile,
@@ -831,7 +851,7 @@ export const listMyContracts = async (req: Request, res: Response) => {
   );
 
   const items = rows.map((r) => {
-    const sponsorSigned = r.negotiationStep >= 4;
+    const sponsorSigned = r.negotiationStep >= 3;
     const status: 'ساري' | 'بانتظار توقيعك' = sponsorSigned ? 'ساري' : 'بانتظار توقيعك';
 
     return {
@@ -852,7 +872,7 @@ export const listMyContracts = async (req: Request, res: Response) => {
         startDate: r.hackathonStartDate,
       },
       organizer: { name: r.organizerName ?? 'المنظم' },
-      signDate: r.paidAt,
+      signDate: r.sponsorSignedAt,
       organizerSignedAt: r.organizerSignedAt,
       receiptFile: r.receiptFile,
       appliedAt: r.appliedAt,
@@ -1090,19 +1110,22 @@ export const advanceNegotiationStep = async (req: Request, res: Response) => {
     }
 
     const currentStep = rows[0].SA_NegotiationStep;
-    if (currentStep >= 4) {
+    if (currentStep >= 3) {
       return res.status(409).json({ error: 'وصلتِ إلى المرحلة الأخيرة بالفعل' });
     }
 
     const nextStep = currentStep + 1;
-    await pool.execute(
-      'UPDATE sponsor_application SET SA_NegotiationStep = ? WHERE SA_ID = ?',
-      [nextStep, applicationId]
-    );
-
-    // لما يدخل الراعي مرحلة 3 (رفع العقد) نلصق رسالة نظام في الشات
-    // تخبره بإمكانية رفع إيصال الدفع — تظهر للطرفين.
+    // الانتقال من مرحلة 2 (العقد الرقمي) لـ 3 (مكتمل) = توقيع الراعي
+    // على العقد. نحفظ التاريخ مرة واحدة (لو ما كان محفوظ من قبل).
     if (nextStep === 3) {
+      await pool.execute(
+        `UPDATE sponsor_application
+            SET SA_NegotiationStep = ?,
+                SA_SponsorSignedAt = COALESCE(SA_SponsorSignedAt, NOW())
+          WHERE SA_ID = ?`,
+        [nextStep, applicationId]
+      );
+      // رسالة نظام للطرفين تأكّد إتمام الرعاية بعد التوقيع.
       await pool.execute(
         `INSERT INTO sponsor_application_message
            (SA_ID, M_ID, SAM_Text, SAM_IsSystem)
@@ -1110,8 +1133,13 @@ export const advanceNegotiationStep = async (req: Request, res: Response) => {
         [
           applicationId,
           sponsorId,
-          'تم الوصول لمرحلة رفع العقد ✓ يمكنك الآن رفع إيصال الدفع من خلال زر المرفقات في هذه المحادثة 💳',
+          '🎉 تم توقيع العقد رقمياً واكتملت الرعاية بنجاح',
         ]
+      );
+    } else {
+      await pool.execute(
+        'UPDATE sponsor_application SET SA_NegotiationStep = ? WHERE SA_ID = ?',
+        [nextStep, applicationId]
       );
     }
 
