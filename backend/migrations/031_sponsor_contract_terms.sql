@@ -1,12 +1,13 @@
--- Migration 028: contract terms + sponsor signature columns
+-- Migration 031: contract terms + sponsor signature flag
 --
 -- يكمل فلو التفاوض: المنظم يكتب شروط العقد يدوياً (مدة، قيمة، حقوق
 -- الشعار، إلخ)، يرسلها للراعي. الراعي يراجع، يوقّع. المنظم يوقّع. لمن
 -- يوقّع الاثنين، العقد يصبح "ساري".
 --
 -- الأعمدة الجديدة كلها NULLable لأن الطلبات الموجودة (التي وصلت قبل
--- هذه المرحلة) لم تمر بالفورم بعد. SA_OrganizerSigned / At موجودة من
--- migration 023 فلا نكررها هنا.
+-- هذه المرحلة) لم تمر بالفورم بعد. SA_OrganizerSigned/At موجودة من
+-- migration 023 فلا نكررها هنا. SA_SponsorSignedAt تضيفها ربى في
+-- migration 029 فلا نكررها أيضاً.
 
 ALTER TABLE `sponsor_application`
   ADD COLUMN `SA_TermDuration`     VARCHAR(100) NULL AFTER `SA_NegotiationStep`,
@@ -16,5 +17,4 @@ ALTER TABLE `sponsor_application`
   ADD COLUMN `SA_TermDataAccess`   VARCHAR(100) NULL AFTER `SA_TermDisplayTime`,
   ADD COLUMN `SA_TermNotes`        TEXT NULL AFTER `SA_TermDataAccess`,
   ADD COLUMN `SA_TermsSubmittedAt` DATETIME NULL AFTER `SA_TermNotes`,
-  ADD COLUMN `SA_SponsorSigned`    TINYINT(1) NOT NULL DEFAULT 0 AFTER `SA_OrganizerSignedAt`,
-  ADD COLUMN `SA_SponsorSignedAt`  DATETIME NULL AFTER `SA_SponsorSigned`;
+  ADD COLUMN `SA_SponsorSigned`    TINYINT(1) NOT NULL DEFAULT 0 AFTER `SA_OrganizerSignedAt`;

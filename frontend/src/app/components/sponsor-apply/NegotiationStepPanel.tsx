@@ -7,16 +7,25 @@ import {
   Calendar,
   FileText,
   AlertCircle,
+  Tag,
   ArrowRight,
   Loader2,
+  User,
 } from "lucide-react";
 
 interface ConversationInfo {
   id: number;
   packageName: string;
+  packageType: string;
+  packagePrice: number | null;
   hackathonId: number;
+  hackathonTitle: string;
+  hackathonStartDate: string | null;
+  organizerName: string;
+  appliedAt: string;
   status: "pending" | "accepted" | "rejected";
   currentStep: number;
+  sponsorSignedAt: string | null;
 }
 
 // شكل العقد كما يرجّعه /sponsors/applications/:id/contract — مشترك بين
@@ -61,7 +70,8 @@ interface Props {
   onViewStep: (step: number) => void;
 }
 
-const TERM_LABELS = [
+// بنود الشروط المخصّصة اللي يكتبها المنظم في فورم العقد. تظهر فقط لو أرسلها.
+const CUSTOM_TERM_LABELS = [
   { key: "duration", label: "مدة الرعاية", icon: Clock },
   { key: "value", label: "قيمة الرعاية", icon: DollarSign },
   { key: "logoRights", label: "حقوق الشعار", icon: Building2 },
@@ -69,6 +79,35 @@ const TERM_LABELS = [
   { key: "dataAccess", label: "وصول لبيانات المشاركين", icon: AlertCircle },
   { key: "notes", label: "ملاحظات", icon: Calendar },
 ] as const;
+
+const PACKAGE_TYPE_LABELS: Record<string, string> = {
+  financial: "مالية",
+  technical: "تقنية",
+  logistic: "لوجستية",
+  hospitality: "ضيافة",
+  media: "إعلامية",
+  other: "أخرى",
+};
+
+function packageTypeLabel(type: string): string {
+  return PACKAGE_TYPE_LABELS[type] ?? type;
+}
+
+function formatLongDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("ar-SA", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatPrice(amount: number | null): string {
+  if (amount === null || amount === undefined) return "—";
+  return `${amount.toLocaleString("ar-SA")} ر.س`;
+}
 
 export function NegotiationStepPanel({
   conversation,
@@ -81,7 +120,17 @@ export function NegotiationStepPanel({
   onSign,
   onViewStep,
 }: Props) {
-  const { status, packageName } = conversation;
+  const {
+    status,
+    packageName,
+    packageType,
+    packagePrice,
+    hackathonTitle,
+    hackathonStartDate,
+    organizerName,
+    appliedAt,
+  } = conversation;
+  void serverStep;
   const [agreed, setAgreed] = useState(false);
   const [agreedTerms, setAgreedTerms] = useState(false);
 
@@ -90,7 +139,19 @@ export function NegotiationStepPanel({
   const sponsorSigned = contract?.signatures.sponsorSigned ?? false;
   const organizerSigned = contract?.signatures.organizerSigned ?? false;
 
-  // قبل القبول: المراحل 1-4 مقفلة، نعرض رسالة توضيحية
+  // المعلومات الأساسية للرعاية (من بيانات المحادثة) — تظهر في القسم العلوي
+  // من العقد الرقمي. مستقلة عن الشروط المخصّصة اللي يكتبها المنظم.
+  const baseInfo: Array<{ label: string; value: string; icon: typeof FileText }> = [
+    { label: "الهاكاثون", value: hackathonTitle, icon: FileText },
+    { label: "الباقة", value: packageName, icon: Building2 },
+    { label: "نوع الباقة", value: packageTypeLabel(packageType), icon: Tag },
+    { label: "قيمة الباقة", value: formatPrice(packagePrice), icon: DollarSign },
+    { label: "تاريخ التقديم", value: formatLongDate(appliedAt), icon: Calendar },
+    { label: "تاريخ بدء الفعالية", value: formatLongDate(hackathonStartDate), icon: Calendar },
+    { label: "المنظِّم", value: organizerName, icon: User },
+  ];
+
+  // قبل القبول: المراحل 1-3 مقفلة
   if (status === "pending") {
     return (
       <div className="mx-5 my-6 bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center max-w-md mx-auto">
@@ -101,7 +162,7 @@ export function NegotiationStepPanel({
           هذه المرحلة تُفتح بعد قبول طلب الرعاية
         </p>
         <p className="text-amber-700 text-xs mt-2 leading-relaxed">
-          الطلب حالياً قيد المراجعة من المنظم. بإمكانك متابعة المحادثة في خطوة "التفاوض" حتى يصل الرد.
+          الطلب حالياً قيد المراجعة من المنظم. تابع المحادثة في خطوة "التفاوض" حتى يصل الرد.
         </p>
         <button
           onClick={() => onViewStep(0)}
@@ -124,7 +185,7 @@ export function NegotiationStepPanel({
     );
   }
 
-  // Step 0 — الشات يكفي، نُظهر بانر بسيط
+  // Step 0 — بانر بسيط، الشات هو الواجهة الفعلية
   if (viewedStep === 0) {
     return (
       <div className="mx-5 my-3 bg-blue-50 border border-blue-200 rounded-2xl p-4 text-center">
@@ -138,7 +199,7 @@ export function NegotiationStepPanel({
     );
   }
 
-  // Step 1 — مراجعة الشروط
+  // Step 1 — مراجعة الشروط (الشروط المخصّصة + موافقة الراعي)
   if (viewedStep === 1) {
     if (!termsSubmitted) {
       return (
@@ -186,7 +247,7 @@ export function NegotiationStepPanel({
             </p>
           </div>
 
-          {TERM_LABELS.map((t) => {
+          {CUSTOM_TERM_LABELS.map((t) => {
             const value = contract?.terms[t.key] ?? null;
             if (!value) return null;
             return (
@@ -204,8 +265,8 @@ export function NegotiationStepPanel({
             );
           })}
         </div>
-        {/* بانر/زر موافقة الراعي — إن لم يوافق بعد، يلزم الموافقة قبل
-            الانتقال للعقد الرقمي. */}
+
+        {/* بانر/زر موافقة الراعي — لازم يوافق قبل الانتقال للعقد الرقمي. */}
         {sponsorAccepted ? (
           <div className="mx-5 mb-4 p-3 bg-green-50 border border-green-200 rounded-xl">
             <p className="text-green-800 text-xs flex items-center gap-1.5" style={{ fontWeight: 700 }}>
@@ -246,6 +307,7 @@ export function NegotiationStepPanel({
             </p>
           </div>
         )}
+
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
           <button
             onClick={() => onViewStep(0)}
@@ -268,7 +330,7 @@ export function NegotiationStepPanel({
     );
   }
 
-  // Step 2 — العقد الرقمي + توقيع الراعي
+  // Step 2 — العقد الرقمي + تواقيع الطرفين
   if (viewedStep === 2) {
     if (!termsSubmitted) {
       return (
@@ -286,8 +348,6 @@ export function NegotiationStepPanel({
         </div>
       );
     }
-    // مفتاح الحماية: لا عقد رقمي قبل قبول الراعي على الشروط — هذا الباك
-    // يفرضه برضو في /sign فلا ينفع الالتفاف.
     if (!sponsorAccepted) {
       return (
         <div className="mx-5 my-3 bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center max-w-md mx-auto">
@@ -318,7 +378,7 @@ export function NegotiationStepPanel({
             العقد الرقمي
           </h3>
           <p className="text-gray-400 text-xs mt-1">
-            راجع العقد النهائي قبل التوقيع الرقمي.
+            راجع العقد ووقّع عليه إلكترونياً لإتمام الرعاية.
           </p>
         </div>
         <div className="px-5 py-4">
@@ -342,10 +402,10 @@ export function NegotiationStepPanel({
                     الطرف الأول (المنظم)
                   </p>
                   <p className="text-gray-900 text-xs" style={{ fontWeight: 700 }}>
-                    {contract?.parties.organizerName ?? "—"}
+                    {contract?.parties.organizerName ?? organizerName}
                   </p>
                   <p className="text-gray-400 text-[10px] mt-1">
-                    {contract?.parties.hackathonTitle ?? ""}
+                    {contract?.parties.hackathonTitle ?? hackathonTitle}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
@@ -360,8 +420,25 @@ export function NegotiationStepPanel({
                   </p>
                 </div>
               </div>
+
+              {/* المعلومات الأساسية */}
               <div className="border-t border-dashed border-gray-200 pt-3 space-y-2">
-                {TERM_LABELS.map((t) => {
+                {baseInfo.map((t, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between items-start py-1.5 border-b border-gray-100 gap-3"
+                  >
+                    <span className="text-gray-500 text-xs">{t.label}</span>
+                    <span className="text-gray-900 text-xs text-left" style={{ fontWeight: 600 }}>
+                      {t.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* الشروط المخصّصة من المنظم */}
+              <div className="border-t border-dashed border-gray-200 pt-3 space-y-2">
+                {CUSTOM_TERM_LABELS.map((t) => {
                   const value = contract?.terms[t.key] ?? null;
                   if (!value) return null;
                   return (
@@ -416,7 +493,7 @@ export function NegotiationStepPanel({
                 </div>
               </div>
 
-              {/* checkbox + زر التوقيع (بانتظار توقيع المنظم أولاً) */}
+              {/* checkbox + زر التوقيع (يفتح فقط بعد توقيع المنظم) */}
               {!sponsorSigned && (
                 <div className="mt-4">
                   {!organizerSigned ? (
@@ -476,7 +553,7 @@ export function NegotiationStepPanel({
           </button>
           {organizerSigned && sponsorSigned && (
             <button
-              onClick={() => onViewStep(4)}
+              onClick={() => onViewStep(3)}
               className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
               style={{ fontWeight: 600 }}
             >
@@ -488,7 +565,7 @@ export function NegotiationStepPanel({
     );
   }
 
-  // Step 4 — تم
+  // Step 3 — مكتمل (الطرفان وقّعا)
   return (
     <div className="mx-5 my-3 bg-white rounded-2xl border border-gray-200 text-center px-5 py-8">
       <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
@@ -498,23 +575,35 @@ export function NegotiationStepPanel({
         🎉 تمّت الرعاية بنجاح
       </h3>
       <p className="text-gray-500 text-sm mb-4 max-w-sm mx-auto">
-        تمّ اعتماد عقد رعايتكِ لباقة{" "}
+        تمّ توقيع عقد رعايتكِ لباقة{" "}
         <span style={{ fontWeight: 700, color: "#e35654" }}>{packageName}</span>{" "}
         وأصبح نشطاً.
       </p>
       <div className="bg-gray-50 rounded-2xl p-4 max-w-xs mx-auto text-right mb-4 space-y-2">
-        {[
-          { label: "الباقة", value: packageName },
-          { label: "قيمة الرعاية", value: contract?.terms.value ?? "حسب الاتفاق" },
-          { label: "الحالة", value: "✅ نشط" },
-        ].map((item, i) => (
-          <div key={i} className="flex justify-between items-center">
-            <span className="text-gray-400 text-xs">{item.label}</span>
-            <span className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
-              {item.value}
-            </span>
-          </div>
-        ))}
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-xs">الهاكاثون</span>
+          <span className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
+            {hackathonTitle}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-xs">الباقة</span>
+          <span className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
+            {packageName}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-xs">القيمة</span>
+          <span className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
+            {contract?.terms.value ?? formatPrice(packagePrice)}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-gray-400 text-xs">الحالة</span>
+          <span className="text-green-700 text-xs" style={{ fontWeight: 700 }}>
+            ✅ ساري
+          </span>
+        </div>
       </div>
       <button
         onClick={() => onViewStep(0)}

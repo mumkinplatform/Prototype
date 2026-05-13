@@ -111,6 +111,7 @@ interface MyContractRow extends RowDataPacket {
   negotiationStep: number;
   paidAt: Date | null;
   appliedAt: Date;
+  sponsorSignedAt: Date | null;
   organizerSigned: number;
   organizerSignedAt: Date | null;
   receiptFile: string | null;
@@ -121,7 +122,12 @@ interface ChatMessageRow extends RowDataPacket {
   senderId: number;
   senderType: 'SPONSOR' | 'ORGANIZER' | 'PARTICIPANT';
   senderName: string;
-  text: string;
+  text: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+  fileSize: number | null;
+  mimeType: string | null;
+  isSystem: number;
   createdAt: Date;
 }
 
@@ -135,10 +141,14 @@ interface MyConversationRow extends RowDataPacket {
   status: 'pending' | 'accepted' | 'rejected';
   negotiationStep: number;
   appliedAt: Date;
+  sponsorSignedAt: Date | null;
   packageId: number;
   packageName: string;
+  packageType: string;
+  packagePrice: string | null;
   hackathonId: number;
   hackathonTitle: string;
+  hackathonStartDate: Date | null;
   organizerName: string | null;
 }
 
@@ -704,15 +714,19 @@ export const listMyConversations = async (req: Request, res: Response) => {
   // كل محادثة = تقديم. التقديم النشط (pending أو accepted) يكون محادثة فعّالة.
   const [rows] = await pool.query<MyConversationRow[]>(
     `SELECT
-       sa.SA_ID              AS applicationId,
-       sa.SA_Status          AS status,
-       sa.SA_NegotiationStep AS negotiationStep,
-       sa.SA_AppliedAt       AS appliedAt,
-       sp.SP_ID              AS packageId,
-       sp.SP_Name            AS packageName,
-       h.hackathon_ID        AS hackathonId,
-       h.H_title             AS hackathonTitle,
-       op.ORG_Name           AS organizerName
+       sa.SA_ID                AS applicationId,
+       sa.SA_Status            AS status,
+       sa.SA_NegotiationStep   AS negotiationStep,
+       sa.SA_AppliedAt         AS appliedAt,
+       sa.SA_SponsorSignedAt   AS sponsorSignedAt,
+       sp.SP_ID                AS packageId,
+       sp.SP_Name              AS packageName,
+       sp.SP_Type              AS packageType,
+       sp.SP_Price             AS packagePrice,
+       h.hackathon_ID          AS hackathonId,
+       h.H_title               AS hackathonTitle,
+       h.H_Hackathon_StartDate AS hackathonStartDate,
+       op.ORG_Name             AS organizerName
        FROM sponsor_application sa
        JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
@@ -727,8 +741,18 @@ export const listMyConversations = async (req: Request, res: Response) => {
     status: r.status,
     appliedAt: r.appliedAt,
     currentStep: r.negotiationStep,
-    hackathon: { id: r.hackathonId, title: r.hackathonTitle },
-    package: { id: r.packageId, name: r.packageName },
+    sponsorSignedAt: r.sponsorSignedAt,
+    hackathon: {
+      id: r.hackathonId,
+      title: r.hackathonTitle,
+      startDate: r.hackathonStartDate,
+    },
+    package: {
+      id: r.packageId,
+      name: r.packageName,
+      type: r.packageType,
+      price: r.packagePrice ? Number(r.packagePrice) : null,
+    },
     organizer: { name: r.organizerName ?? 'المنظم' },
   }));
 
@@ -814,6 +838,7 @@ export const listMyContracts = async (req: Request, res: Response) => {
        sa.SA_NegotiationStep   AS negotiationStep,
        sa.SA_PaidAt            AS paidAt,
        sa.SA_AppliedAt         AS appliedAt,
+       sa.SA_SponsorSignedAt   AS sponsorSignedAt,
        sa.SA_OrganizerSigned   AS organizerSigned,
        sa.SA_OrganizerSignedAt AS organizerSignedAt,
        sa.SA_ReceiptFile       AS receiptFile,
@@ -835,7 +860,7 @@ export const listMyContracts = async (req: Request, res: Response) => {
   );
 
   const items = rows.map((r) => {
-    const sponsorSigned = r.negotiationStep >= 4;
+    const sponsorSigned = r.negotiationStep >= 3;
     const status: 'ساري' | 'بانتظار توقيعك' = sponsorSigned ? 'ساري' : 'بانتظار توقيعك';
 
     return {
@@ -856,7 +881,7 @@ export const listMyContracts = async (req: Request, res: Response) => {
         startDate: r.hackathonStartDate,
       },
       organizer: { name: r.organizerName ?? 'المنظم' },
-      signDate: r.paidAt,
+      signDate: r.sponsorSignedAt,
       organizerSignedAt: r.organizerSignedAt,
       receiptFile: r.receiptFile,
       appliedAt: r.appliedAt,
@@ -950,6 +975,11 @@ export const listApplicationMessages = async (req: Request, res: Response) => {
          m.M_Type          AS senderType,
          CONCAT_WS(' ', m.M_FName, m.M_LName) AS senderName,
          msg.SAM_Text      AS text,
+         msg.SAM_FileName  AS fileName,
+         msg.SAM_FileUrl   AS fileUrl,
+         msg.SAM_FileSize  AS fileSize,
+         msg.SAM_MimeType  AS mimeType,
+         msg.SAM_IsSystem  AS isSystem,
          msg.SAM_CreatedAt AS createdAt
          FROM sponsor_application_message msg
          JOIN member m ON m.M_ID = msg.M_ID
@@ -969,26 +999,40 @@ export const sendApplicationMessage = async (req: Request, res: Response) => {
   if (!Number.isInteger(applicationId) || applicationId <= 0) {
     return res.status(400).json({ error: 'رقم التقديم غير صالح' });
   }
-  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
-  if (!text) {
-    return res.status(400).json({ error: 'نص الرسالة مطلوب' });
+  const rawText = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  const text = rawText.length > 0 ? rawText : null;
+  const file = req.file;
+
+  if (!text && !file) {
+    return res.status(400).json({ error: 'يجب إرفاق نص أو ملف' });
   }
-  if (text.length > 2000) {
+  if (text && text.length > 2000) {
     return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 2000 حرف)' });
   }
   const guard = await ensureChatParticipant(req, res, applicationId);
   if (!guard.allowed) return;
 
+  const fileName = file?.originalname ?? null;
+  const fileUrl = file ? `/uploads/chat/${file.filename}` : null;
+  const fileSize = file?.size ?? null;
+  const mimeType = file?.mimetype ?? null;
+
   try {
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO sponsor_application_message (SA_ID, M_ID, SAM_Text)
-       VALUES (?, ?, ?)`,
-      [applicationId, req.user!.memberId, text],
+      `INSERT INTO sponsor_application_message
+         (SA_ID, M_ID, SAM_Text, SAM_FileName, SAM_FileUrl, SAM_FileSize, SAM_MimeType, SAM_IsSystem)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [applicationId, req.user!.memberId, text, fileName, fileUrl, fileSize, mimeType],
     );
     return res.status(201).json({
       id: result.insertId,
       senderId: req.user!.memberId,
       text,
+      fileName,
+      fileUrl,
+      fileSize,
+      mimeType,
+      isSystem: 0,
       createdAt: new Date(),
     });
   } catch (err) {
@@ -1315,8 +1359,8 @@ export const signContract = async (req: Request, res: Response) => {
       // المنظم يوقّع: يرفع المرحلة إلى 2 على الأقل
       const newStep = Math.max(2, c.negotiationStep);
       // لو الراعي بالفعل موقّع (نادر لكن ممكن لو غيّرنا الترتيب لاحقاً)،
-      // يصبح العقد مكتملاً.
-      const finalStep = c.sponsorSigned === 1 ? 4 : newStep;
+      // يصبح العقد مكتملاً (step 3 بعد دمج migration ربى 030).
+      const finalStep = c.sponsorSigned === 1 ? 3 : newStep;
       await pool.execute(
         `UPDATE sponsor_application
             SET SA_OrganizerSigned = 1, SA_OrganizerSignedAt = NOW(),
@@ -1342,11 +1386,12 @@ export const signContract = async (req: Request, res: Response) => {
       if (c.organizerSigned !== 1) {
         return res.status(409).json({ error: 'لا يمكنك التوقيع قبل توقيع المنظم' });
       }
-      // الراعي يوقّع بعد المنظم → العقد مكتمل (step 4)
+      // الراعي يوقّع بعد المنظم → العقد مكتمل (step 3 بعد دمج migration
+      // ربى 030 اللي قلّصت المراحل من 5 إلى 4).
       await pool.execute(
         `UPDATE sponsor_application
             SET SA_SponsorSigned = 1, SA_SponsorSignedAt = NOW(),
-                SA_NegotiationStep = 4
+                SA_NegotiationStep = 3
           WHERE SA_ID = ?`,
         [applicationId],
       );
@@ -1358,7 +1403,7 @@ export const signContract = async (req: Request, res: Response) => {
         'عرض العقد',
         `/admin/hackathon/${c.hackathonId}/sponsors`,
       );
-      return res.json({ ok: true, signedBy: 'SPONSOR', negotiationStep: 4 });
+      return res.json({ ok: true, signedBy: 'SPONSOR', negotiationStep: 3 });
     }
 
     return res.status(403).json({ error: 'لا تملك صلاحية التوقيع على هذا العقد' });
@@ -1417,6 +1462,71 @@ export const uploadReceipt = async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[uploadReceipt] error:', err);
     return res.status(500).json({ error: 'تعذّر رفع الإيصال، حاولي لاحقاً' });
+  }
+};
+
+// شغل ربى — مرحلة advance يدوية (generic). نحتفظ بها كـ fallback لأي
+// flow يستخدمها، ونستخدم signContract حقّنا للتوقيع الصريح بـ gates أقوى.
+export const advanceNegotiationStep = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
+  }
+
+  const sponsorId = req.user!.memberId;
+
+  try {
+    const [rows] = await pool.query<NegotiationRow[]>(
+      'SELECT SM_ID, SA_NegotiationStep, SA_Status FROM sponsor_application WHERE SA_ID = ?',
+      [applicationId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'التقديم غير موجود' });
+    }
+    if (rows[0].SM_ID !== sponsorId) {
+      return res.status(403).json({ error: 'لا يحق لكِ تعديل هذا التقديم' });
+    }
+    if (rows[0].SA_Status === 'rejected') {
+      return res.status(409).json({ error: 'لا يمكن إكمال التفاوض على تقديم مرفوض' });
+    }
+
+    const currentStep = rows[0].SA_NegotiationStep;
+    if (currentStep >= 3) {
+      return res.status(409).json({ error: 'وصلتِ إلى المرحلة الأخيرة بالفعل' });
+    }
+
+    const nextStep = currentStep + 1;
+    if (nextStep === 3) {
+      await pool.execute(
+        `UPDATE sponsor_application
+            SET SA_NegotiationStep = ?,
+                SA_SponsorSignedAt = COALESCE(SA_SponsorSignedAt, NOW())
+          WHERE SA_ID = ?`,
+        [nextStep, applicationId]
+      );
+      await pool.execute(
+        `INSERT INTO sponsor_application_message
+           (SA_ID, M_ID, SAM_Text, SAM_IsSystem)
+         VALUES (?, ?, ?, 1)`,
+        [
+          applicationId,
+          sponsorId,
+          '🎉 تم توقيع العقد رقمياً واكتملت الرعاية بنجاح',
+        ]
+      );
+    } else {
+      await pool.execute(
+        'UPDATE sponsor_application SET SA_NegotiationStep = ? WHERE SA_ID = ?',
+        [nextStep, applicationId]
+      );
+    }
+
+    return res.json({ id: applicationId, negotiationStep: nextStep });
+  } catch (err) {
+    console.error('[advanceNegotiationStep] error:', err);
+    return res.status(500).json({ error: 'تعذّر تحديث الخطوة، حاولي لاحقاً' });
   }
 };
 

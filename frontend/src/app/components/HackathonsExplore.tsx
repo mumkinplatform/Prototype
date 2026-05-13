@@ -9,8 +9,6 @@ import {
   Handshake,
   Filter,
   MapPin,
-  Users,
-  Trophy,
   Clock,
   Star,
   ChevronDown,
@@ -346,18 +344,8 @@ export function HackathonsExplore() {
                       {h.date}
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                      <Trophy className="w-3.5 h-3.5 flex-shrink-0 text-[#f59e0b]" />
-                      <span style={{ color: "#f59e0b", fontWeight: 600 }}>
-                        {h.prize}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
                       <Clock className="w-3.5 h-3.5 flex-shrink-0 text-[#e35654]" />
                       <span>آخر تسجيل: {h.deadline}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                      <Users className="w-3.5 h-3.5 flex-shrink-0" />
-                      {h.teams} فريق
                     </div>
                   </div>
 

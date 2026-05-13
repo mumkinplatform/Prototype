@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
@@ -7,7 +8,6 @@ import {
   ArrowRight,
   CheckCheck,
   Check,
-  Upload,
   CheckCircle2,
   CreditCard,
   FileText,
@@ -40,13 +40,47 @@ async function uploadReceiptFile(applicationId: number, file: File): Promise<voi
   }
 }
 
+// يرسل رسالة شات (نص و/أو ملف) كـ multipart عشان الـ endpoint موحّد
+// والـ backend يقبل الاثنين بنفس multer.
+async function postChatMessage(
+  applicationId: number,
+  payload: { text?: string; file?: File }
+): Promise<ApiMessage> {
+  const token = localStorage.getItem("mumkin_token");
+  const form = new FormData();
+  if (payload.text) form.append("text", payload.text);
+  if (payload.file) form.append("file", payload.file);
+  const res = await fetch(
+    `${API_URL}/sponsors/applications/${applicationId}/messages`,
+    {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    }
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = (data as { error?: string }).error || `HTTP ${res.status}`;
+    throw new ApiError(res.status, message);
+  }
+  return data as ApiMessage;
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (bytes === null || bytes === undefined) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 interface ApiConversation {
   id: number;
   status: "pending" | "accepted" | "rejected";
   appliedAt: string;
   currentStep: number;
-  hackathon: { id: number; title: string };
-  package: { id: number; name: string };
+  sponsorSignedAt: string | null;
+  hackathon: { id: number; title: string; startDate: string | null };
+  package: { id: number; name: string; type: string; price: number | null };
   organizer: { name: string };
 }
 
@@ -65,8 +99,15 @@ interface DisplayConversation {
   avatar: string;
   color: string;
   currentStep: number;
+  sponsorSignedAt: string | null;
   hackathonId: number;
+  hackathonTitle: string;
+  hackathonStartDate: string | null;
   packageName: string;
+  packageType: string;
+  packagePrice: number | null;
+  organizerName: string;
+  appliedAt: string;
   status: ApiConversation["status"];
 }
 
@@ -92,29 +133,51 @@ function mapConversation(c: ApiConversation, idx: number): DisplayConversation {
     avatar: firstChar,
     color: PALETTE[idx % PALETTE.length],
     currentStep: c.currentStep,
+    sponsorSignedAt: c.sponsorSignedAt,
     hackathonId: c.hackathon.id,
+    hackathonTitle: c.hackathon.title,
+    hackathonStartDate: c.hackathon.startDate,
     packageName: c.package.name,
+    packageType: c.package.type,
+    packagePrice: c.package.price,
+    organizerName: c.organizer.name,
+    appliedAt: c.appliedAt,
     status: c.status,
   };
 }
 
 // مراحل التفاوض الأربع. الـ step=3 في الـ DB مهجور؛ الباك يقفز من 2 → 4
-// عند توقيع الراعي. ids متطابقة مع SA_NegotiationStep (0,1,2,4).
+// مراحل التفاوض الأربع. بعد دمج migration ربى 030، الـ ids متسلسلة 0,1,2,3
+// (step 3 = مكتمل، الـ DB ما تستخدم step 4).
 const NEGOTIATION_STEPS = [
   { id: 0, label: "التفاوض", icon: MessageCircle },
   { id: 1, label: "مراجعة الشروط", icon: Edit3 },
   { id: 2, label: "العقد الرقمي", icon: FileText },
-  { id: 4, label: "مكتمل", icon: CheckCircle2 },
+  { id: 3, label: "مكتمل", icon: CheckCircle2 },
 ];
 
-type Msg = { from: "me" | "other"; text: string; time: string; read: boolean };
+type Msg = {
+  from: "me" | "other" | "system";
+  text: string;
+  time: string;
+  read: boolean;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+};
 
 interface ApiMessage {
   id: number;
   senderId: number;
-  senderType: "SPONSOR" | "ORGANIZER" | "PARTICIPANT";
-  senderName: string;
-  text: string;
+  senderType?: "SPONSOR" | "ORGANIZER" | "PARTICIPANT";
+  senderName?: string;
+  text: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+  fileSize: number | null;
+  mimeType: string | null;
+  isSystem: number;
   createdAt: string;
 }
 
@@ -150,7 +213,6 @@ export function MessagesPage() {
   const [signing, setSigning] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [viewedStep, setViewedStep] = useState(0);
-  const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [msgs, setMsgs] = useState<Record<number, Msg[]>>({});
   const [newMsg, setNewMsg] = useState("");
   const [sending, setSending] = useState(false);
@@ -208,7 +270,7 @@ export function MessagesPage() {
     }
   };
 
-  // وضع الرفع: "receipt" يرفع للسيرفر كإيصال دفع · "attach" يلصق الملف محلياً في الشات
+  // وضع الرفع: "receipt" يرفع للسيرفر كإيصال دفع · "attach" يرفع ملف عادي للشات
   const [attachMode, setAttachMode] = useState<"receipt" | "attach">("attach");
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -217,27 +279,22 @@ export function MessagesPage() {
     if (!file || selected === null) return;
     if (!conv) return;
 
-    // وضع "إرفاق ملف عادي" — يضاف للشات مباشرة بدون رفع للسيرفر
+    // إرفاق ملف عادي → يُحفظ كرسالة في الـ DB
     if (attachMode === "attach") {
-      const now = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-      const sizeKb = (file.size / 1024).toFixed(1);
-      setMsgs((prev) => ({
-        ...prev,
-        [selected]: [
-          ...(prev[selected] || []),
-          {
-            from: "me",
-            text: `📎 ${file.name} — ${sizeKb} KB`,
-            time: now,
-            read: false,
-          },
-        ],
-      }));
-      toast.success("تم إرفاق الملف في المحادثة");
+      setUploading(true);
+      try {
+        await postChatMessage(selected, { file });
+        toast.success("تم إرفاق الملف في المحادثة");
+      } catch (err: unknown) {
+        const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
+        toast.error(message);
+      } finally {
+        setUploading(false);
+      }
       return;
     }
 
-    // وضع "رفع إيصال الدفع" — يرفع للسيرفر فعلياً
+    // رفع إيصال الدفع → endpoint منفصل + رسالة شات تأكيد
     if (conv.status !== "accepted") {
       toast.error("لا يمكنك رفع الإيصال قبل قبول طلب الرعاية");
       return;
@@ -246,20 +303,15 @@ export function MessagesPage() {
     try {
       await uploadReceiptFile(selected, file);
       toast.success("تم رفع الإيصال بنجاح", {
-        description: "تمّ تسجيل الدفع وإتمام الرعاية.",
+        description: "تمّ تسجيل الدفع.",
       });
-      setReceiptUploaded(true);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === selected ? { ...c, currentStep: 4 } : c))
-      );
-      const now = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-      setMsgs((prev) => ({
-        ...prev,
-        [selected]: [
-          ...(prev[selected] || []),
-          { from: "me", text: `📎 تم رفع إيصال الدفع: ${file.name}`, time: now, read: false },
-        ],
-      }));
+      try {
+        await postChatMessage(selected, {
+          text: `💳 تم رفع إيصال الدفع: ${file.name}`,
+        });
+      } catch {
+        // الإيصال نجح، فشل لصق الرسالة لا يعني فشل الرفع
+      }
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
       toast.error(message);
@@ -322,10 +374,19 @@ export function MessagesPage() {
         );
         if (cancelled) return;
         const mapped: Msg[] = res.items.map((m) => ({
-          from: m.senderId === currentUser.id ? "me" : "other",
-          text: m.text,
+          from:
+            m.isSystem === 1
+              ? "system"
+              : m.senderId === currentUser.id
+              ? "me"
+              : "other",
+          text: m.text ?? "",
           time: formatMessageTime(m.createdAt),
           read: true,
+          fileName: m.fileName,
+          fileUrl: m.fileUrl,
+          fileSize: m.fileSize,
+          mimeType: m.mimeType,
         }));
         setMsgs((prev) => ({ ...prev, [selected]: mapped }));
       } catch {
@@ -342,11 +403,10 @@ export function MessagesPage() {
 
   const conv = conversations.find((c) => c.id === selected) ?? null;
 
-  // مزامنة المرحلة المعروضة + علم الإيصال عند تغيير المحادثة
+  // مزامنة المرحلة المعروضة عند تغيير المحادثة
   useEffect(() => {
     if (!conv) return;
     setViewedStep(conv.currentStep);
-    setReceiptUploaded(conv.currentStep >= 4);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // تحميل العقد عند اختيار محادثة (بدون polling — التوقيع نادر نسبياً).
@@ -391,7 +451,7 @@ export function MessagesPage() {
     }));
     setNewMsg("");
     try {
-      await apiPost<ApiMessage>(`/sponsors/applications/${selected}/messages`, { text });
+      await postChatMessage(selected, { text });
       // الـ poll القادم خلال 4 ثواني راح يجلب النسخة من السيرفر مع رسائل الطرف الثاني
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.message : "تعذّر إرسال الرسالة";
@@ -591,7 +651,7 @@ export function MessagesPage() {
                 );
               })}
             </div>
-            {conv.currentStep === 4 && (
+            {conv.currentStep === 3 && (
               <p className="text-xs text-green-600 text-center mt-2" style={{ fontWeight: 600 }}>
                 ✓ اكتملت جميع مراحل التفاوض
               </p>
@@ -624,40 +684,77 @@ export function MessagesPage() {
                   <div className="flex-1 h-px bg-gray-200" />
                 </div>
 
-                {activeMessages.map((m, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}
-                  >
-                    {m.from === "other" && (
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
-                        style={{ background: conv.color, fontWeight: 700 }}
-                      >
-                        {conv.avatar}
+                {activeMessages.map((m, i) => {
+                  // رسائل النظام (تلقائية) — تظهر في المنتصف بتنسيق محايد
+                  if (m.from === "system") {
+                    return (
+                      <div key={i} className="flex justify-center my-1">
+                        <div className="bg-[#fff7ed] border border-[#fed7aa] text-[#9a3412] text-xs px-4 py-2 rounded-full max-w-[85%] text-center leading-relaxed">
+                          {m.text}
+                        </div>
                       </div>
-                    )}
-                    <div className={`max-w-[65%] flex flex-col gap-1 ${m.from === "me" ? "items-end" : "items-start"}`}>
-                      <div
-                        className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                          m.from === "me"
-                            ? "bg-[#e35654] text-white rounded-tr-sm"
-                            : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
-                        }`}
-                      >
-                        {m.text}
-                      </div>
-                      <div className={`flex items-center gap-1 px-1 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
-                        <span className="text-gray-300 text-xs">{m.time}</span>
-                        {m.from === "me" && (
-                          m.read
-                            ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
-                            : <Check className="w-3.5 h-3.5 text-gray-300" />
-                        )}
+                    );
+                  }
+                  const hasFile = Boolean(m.fileUrl);
+                  return (
+                    <div
+                      key={i}
+                      className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}
+                    >
+                      {m.from === "other" && (
+                        <div
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
+                          style={{ background: conv.color, fontWeight: 700 }}
+                        >
+                          {conv.avatar}
+                        </div>
+                      )}
+                      <div className={`max-w-[65%] flex flex-col gap-1 ${m.from === "me" ? "items-end" : "items-start"}`}>
+                        <div
+                          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                            m.from === "me"
+                              ? "bg-[#e35654] text-white rounded-tr-sm"
+                              : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
+                          }`}
+                        >
+                          {m.text && <div className={hasFile ? "mb-2" : ""}>{m.text}</div>}
+                          {hasFile && (
+                            <a
+                              href={`${API_URL}${m.fileUrl}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download={m.fileName ?? undefined}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-colors ${
+                                m.from === "me"
+                                  ? "bg-white/15 hover:bg-white/25"
+                                  : "bg-gray-50 hover:bg-gray-100 border border-gray-100"
+                              }`}
+                              style={{ minWidth: 200 }}
+                            >
+                              <Paperclip className={`w-4 h-4 flex-shrink-0 ${m.from === "me" ? "text-white" : "text-[#6366f1]"}`} />
+                              <div className="flex-1 min-w-0 text-right">
+                                <p className={`truncate ${m.from === "me" ? "text-white" : "text-gray-800"}`} style={{ fontWeight: 600, fontSize: 12 }}>
+                                  {m.fileName ?? "ملف"}
+                                </p>
+                                <p className={m.from === "me" ? "text-white/70" : "text-gray-400"} style={{ fontSize: 10 }}>
+                                  {formatFileSize(m.fileSize ?? null)}
+                                </p>
+                              </div>
+                            </a>
+                          )}
+                        </div>
+                        <div className={`flex items-center gap-1 px-1 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
+                          <span className="text-gray-300 text-xs">{m.time}</span>
+                          {m.from === "me" && (
+                            m.read
+                              ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
+                              : <Check className="w-3.5 h-3.5 text-gray-300" />
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Input */}
@@ -665,13 +762,12 @@ export function MessagesPage() {
                 <div className="flex items-center gap-2.5">
                   <details className="relative group">
                     <summary className="list-none p-2.5 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center">
-                      <Paperclip className="w-5 h-5" />
+                      {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
                     </summary>
                     <div className="absolute bottom-full mb-2 right-0 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 w-56 z-50">
                       <p className="text-gray-400 text-xs px-3 pb-1.5 pt-0.5" style={{ fontWeight: 600 }}>
                         إرفاق ملف
                       </p>
-                      {/* إرفاق ملف عادي — يعمل دائماً */}
                       <button
                         onClick={(e) => {
                           setAttachMode("attach");
@@ -692,7 +788,6 @@ export function MessagesPage() {
                           </p>
                         </div>
                       </button>
-                      {/* رفع إيصال الدفع — متاح بعد القبول */}
                       <button
                         onClick={(e) => {
                           setAttachMode("receipt");
@@ -759,9 +854,16 @@ export function MessagesPage() {
                 conversation={{
                   id: conv.id,
                   packageName: conv.packageName,
+                  packageType: conv.packageType,
+                  packagePrice: conv.packagePrice,
                   hackathonId: conv.hackathonId,
+                  hackathonTitle: conv.hackathonTitle,
+                  hackathonStartDate: conv.hackathonStartDate,
+                  organizerName: conv.organizerName,
+                  appliedAt: conv.appliedAt,
                   status: conv.status,
                   currentStep: conv.currentStep,
+                  sponsorSignedAt: conv.sponsorSignedAt,
                 }}
                 viewedStep={viewedStep}
                 serverStep={conv.currentStep}

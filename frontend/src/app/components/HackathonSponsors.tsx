@@ -50,15 +50,13 @@ interface SponsorRequest {
   unreadMessages?: number;
 }
 
-// مراحل التفاوض الأربع بالترتيب. ملاحظة: قيمة step=3 في الـ DB
-// (المهجورة) غير مستخدمة — لمن الراعي يوقّع، الباك يقفز من 2 → 4 مباشرة.
-// نخلي ids متطابقة مع SA_NegotiationStep في الـ DB (0,1,2,4) عشان مقارنات
-// isDone/isCurrent تشتغل بدون mapping إضافي.
+// مراحل التفاوض الأربع بالترتيب. بعد دمج migration ربى 030، الـ DB تخزن
+// step=3 للمكتمل (مش 4). الـ ids متسلسلة 0,1,2,3.
 const NEGOTIATION_STEPS = [
   { id: 0, label: 'التفاوض', icon: MessageCircle },
   { id: 1, label: 'مراجعة الشروط', icon: Edit3 },
   { id: 2, label: 'العقد الرقمي', icon: FileText },
-  { id: 4, label: 'مكتمل', icon: CheckCircle2 },
+  { id: 3, label: 'مكتمل', icon: CheckCircle2 },
 ];
 
 // شكل الرسالة كما يرجّعها endpoint الراعي المشترك (sponsor.controller.ts).
@@ -483,8 +481,8 @@ export function HackathonSponsors() {
     r.status !== 'rejected' && (r.status === 'pending' || r.currentStep === 0)
   ).length;
   const reviewCount = requests.filter(r => r.currentStep === 1).length;
-  const signingCount = requests.filter(r => r.currentStep === 2 || r.currentStep === 3).length;
-  const completedCount = requests.filter(r => r.currentStep === 4).length;
+  const signingCount = requests.filter(r => r.currentStep === 2).length;
+  const completedCount = requests.filter(r => r.currentStep === 3).length;
   // عداد المحادثات في تبويب المفاوضات (نفس النطاق القديم)
   const chatCount = activeConversations.length;
 
@@ -814,7 +812,7 @@ export function HackathonSponsors() {
               }`}
               style={{ fontWeight: 600 }}
             >
-              إدارة العقود ({requests.filter((r) => r.currentStep === 4).length})
+              إدارة العقود ({requests.filter((r) => r.currentStep === 3).length})
             </button>
           </div>
         </div>
@@ -1288,7 +1286,7 @@ export function HackathonSponsors() {
                         );
                       })}
                     </div>
-                    {selectedRequest.currentStep === 4 && (
+                    {selectedRequest.currentStep === 3 && (
                       <p className="text-xs text-green-600 text-center mt-2" style={{ fontWeight: 600 }}>
                         ✓ اكتملت جميع مراحل التفاوض
                       </p>
@@ -1575,7 +1573,7 @@ export function HackathonSponsors() {
                             </div>
                           </div>
                         </div>
-                      ) : viewedStep === 2 || viewedStep === 3 ? (
+                      ) : viewedStep === 2 ? (
                         // ── المرحلة 2/3: العقد الرقمي ومراحل التوقيع ──
                         // الباك يرفض التوقيع قبل موافقة الراعي على الشروط؛
                         // الـ UI يعكس هذا: لا تظهر معاينة العقد أصلاً قبل
@@ -1800,7 +1798,7 @@ export function HackathonSponsors() {
           // أي عقد يفتح المحادثة على المرحلة الرقمية لعرض البنود وحالة
           // التوقيع.
           (() => {
-            const signedContracts = requests.filter((r) => r.currentStep === 4);
+            const signedContracts = requests.filter((r) => r.currentStep === 3);
             if (signedContracts.length === 0) {
               return (
                 <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
