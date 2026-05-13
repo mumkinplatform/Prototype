@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Plus, Calendar, Users, MapPin, ChevronLeft, FileText, ArrowRight, Trash2, AlertTriangle, Pencil } from 'lucide-react';
+import { Plus, Calendar, MapPin, ChevronLeft, FileText, ArrowRight, Trash2, AlertTriangle, Pencil, Link2, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import PublishConfirmModal from './PublishConfirmModal';
 import PublishSuccessModal from './PublishSuccessModal';
@@ -13,8 +13,10 @@ type Status = 'draft' | 'published' | 'ongoing' | 'completed';
 interface Hackathon {
   id: number;
   title: string;
+  slug: string | null;
   description: string;
   status: Status;
+  type: string | null;
   startDate: string | null;
   endDate: string | null;
   city: string | null;
@@ -30,6 +32,7 @@ interface ApiHackathon {
   H_slug: string | null;
   H_description: string | null;
   H_status: Status;
+  H_type: string | null;
   H_StartDate: string | null;
   H_EndDate: string | null;
   H_city: string | null;
@@ -57,6 +60,23 @@ export default function MyHackathons() {
   const [loading, setLoading] = useState(true);
   const [deleteCandidate, setDeleteCandidate] = useState<Hackathon | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // نخزّن id الهاكاثون اللي اتنسخ رابطه عشان نعرض ✓ مؤقتاً (3 ثوانٍ).
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  // ينسخ رابط نشر الهاكاثون (الصفحة العامة) للحافظة. الزر يطلع فقط بعد
+  // النشر لأن الـ slug ما يتثبّت إلا بعدها.
+  const handleCopyPublicLink = async (h: Hackathon) => {
+    if (!h.slug) return;
+    const url = `${window.location.origin}/Prototype/hackathon/${h.slug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(h.id);
+      toast.success('تم نسخ الرابط');
+      setTimeout(() => setCopiedId((prev) => (prev === h.id ? null : prev)), 3000);
+    } catch {
+      toast.error('تعذّر نسخ الرابط');
+    }
+  };
 
   const matchesRole = (h: Hackathon, r: typeof filterRole): boolean => {
     if (r === 'all') return true;
@@ -98,8 +118,10 @@ export default function MyHackathons() {
           data.hackathons.map((h) => ({
             id: h.hackathon_ID,
             title: h.H_title ?? '',
+            slug: h.H_slug,
             description: h.H_description ?? '',
             status: h.H_status,
+            type: h.H_type,
             startDate: h.H_StartDate,
             endDate: h.H_EndDate,
             city: h.H_city,
@@ -159,7 +181,7 @@ export default function MyHackathons() {
               </Link>
               <div>
                 <h1 className="text-2xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
-                  إدارة هاكاثوناتي
+                  إدارة الهاكاثونات
                 </h1>
                 <p className="text-sm text-gray-500">
                   عرض وإدارة جميع الهاكاثونات
@@ -327,11 +349,13 @@ export default function MyHackathons() {
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
-                    <span className="line-clamp-1">{hackathon.city || 'بدون موقع'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    <span>0 مشارك</span>
+                    {/* "عن بعد" للهاكاثون عبر الإنترنت (لا توجد مدينة). غير ذلك
+                        نعرض المدينة، أو "بدون موقع" كاحتياط لمسودات لم تكتمل. */}
+                    <span className="line-clamp-1">
+                      {hackathon.type === 'عبر الإنترنت'
+                        ? 'عن بعد'
+                        : hackathon.city || 'بدون موقع'}
+                    </span>
                   </div>
                 </div>
 
@@ -355,15 +379,6 @@ export default function MyHackathons() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </>
-                  ) : hackathon.status === 'completed' ? (
-                    <Link
-                      to={`/admin/hackathon/${hackathon.id}/statistics`}
-                      className="flex-1 px-4 py-2 rounded-lg bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all text-center flex items-center justify-center gap-2"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <span>عرض النتائج</span>
-                      <ChevronLeft className="w-4 h-4" />
-                    </Link>
                   ) : (
                     <>
                       <Link
@@ -390,6 +405,21 @@ export default function MyHackathons() {
                         >
                           <Pencil className="w-4 h-4" />
                         </Link>
+                      )}
+                      {/* زر نسخ رابط الصفحة العامة — يظهر بعد النشر (status !== draft
+                          و slug موجود). يفيد المنظم إذا ضيّع الرابط بعد النشر. */}
+                      {hackathon.slug && hackathon.status !== 'draft' && (
+                        <button
+                          onClick={() => handleCopyPublicLink(hackathon)}
+                          className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm hover:border-[#e35654] hover:text-[#e35654] transition-all flex items-center justify-center"
+                          title="نسخ رابط الهاكاثون العام للنشر"
+                        >
+                          {copiedId === hackathon.id ? (
+                            <Check className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <Link2 className="w-4 h-4" />
+                          )}
+                        </button>
                       )}
                     </>
                   )}

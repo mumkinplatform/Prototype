@@ -237,7 +237,8 @@ function mapApplicationToDisplay(app: ApiApplication): DisplaySponsorship {
   const baseStatus = STATUS_LABELS[app.status];
   const packageVisual =
     PACKAGE_TYPE_VISUALS[app.package.type] ?? PACKAGE_TYPE_VISUALS.other;
-  const isCompleted = app.status === "accepted" && app.negotiationStep >= 4;
+  // مكتمل = step 3 بعد دمج migration ربى 030 (تقلّص المراحل من 5 لـ 4).
+  const isCompleted = app.status === "accepted" && app.negotiationStep >= 3;
 
   const label = isCompleted ? "مكتمل" : baseStatus.label;
   const color = isCompleted ? "#10b981" : baseStatus.color;

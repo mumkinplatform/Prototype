@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router';
 import { Search, Bell, Sparkles, LogOut } from 'lucide-react';
 import { clearAuth } from '../../lib/auth';
 
-export type AdminNavPage = 'home' | 'hackathons' | 'analytics';
+export type AdminNavPage = 'home' | 'hackathons' | 'create';
 
 interface AdminNavbarProps {
   activePage?: AdminNavPage;
@@ -17,9 +17,12 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
 
   return (
     <header className="bg-white border-b border-gray-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      {/* Grid بـ 3 أعمدة متساوية: لوغو يمين، nav منتصف فعلياً، أكشنز يسار.
+          استخدام grid بدل justify-between يضمن إن الـ nav في منتصف الصفحة
+          بالضبط بغض النظر عن عرض اللوغو/الأكشنز. */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 grid grid-cols-3 items-center">
         {/* Logo - يروح للصفحة الرئيسية */}
-        <Link to="/" className="flex items-center gap-2 group">
+        <Link to="/" className="flex items-center gap-2 group justify-self-start">
           <div className="w-9 h-9 rounded-xl bg-[#e35654] flex items-center justify-center shadow-sm">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
@@ -28,8 +31,8 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
           </span>
         </Link>
 
-        {/* Nav Items */}
-        <nav className="hidden md:flex items-center gap-1">
+        {/* Nav Items — gap-2 للمسافات المتماثلة بين الروابط الثلاثة */}
+        <nav className="hidden md:flex items-center gap-2 justify-self-center">
           <Link
             to="/admin"
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-all duration-200 ${
@@ -55,20 +58,20 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
           </Link>
 
           <Link
-            to="/admin/analytics"
+            to="/admin/create-hackathon"
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-all duration-200 ${
-              activePage === 'analytics'
+              activePage === 'create'
                 ? 'bg-[#e35654]/10 text-[#e35654]'
                 : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
             }`}
-            style={{ fontWeight: activePage === 'analytics' ? 600 : 400 }}
+            style={{ fontWeight: activePage === 'create' ? 600 : 400 }}
           >
-            التقارير
+            إنشاء هاكاثون
           </Link>
         </nav>
 
         {/* Actions (Left side) */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 justify-self-end">
           {/* Search */}
           <div className="relative hidden lg:block">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />

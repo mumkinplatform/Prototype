@@ -5,9 +5,7 @@ import {
   Gavel,
   UserCheck,
   Users,
-  BarChart3,
   DollarSign,
-  Trophy,
   ExternalLink,
   Undo2,
   Loader2,
@@ -17,7 +15,7 @@ import { apiGet, apiPost, ApiError } from '../../lib/api';
 import { type Section } from '../../lib/permissions';
 
 interface ManagementCard {
-  id: 'team' | 'projects' | 'registrations' | 'analytics' | 'sponsors' | 'winners';
+  id: 'team' | 'projects' | 'registrations' | 'sponsors';
   title: string;
   description: string;
   icon: React.ElementType;
@@ -97,18 +95,21 @@ export default function HackathonManagement() {
     }
   };
 
+  // الترتيب: من اليمين لليسار، فوق ثم تحت (RTL grid).
+  //   صف 1: إدارة فرق التنظيم  |  التسجيلات
+  //   صف 2: المشاريع           |  الرعاة
   const managementCards: ManagementCard[] = [
     {
-      id: 'projects',
-      title: 'إدارة المشاريع والحكام',
-      description: 'تتبع تسليمات المشاريع المرسلة، مراجعة إنجاز الفرق، وترصد الإدخالات التقييمية لكل مشروع.',
-      icon: Gavel,
-      bgColor: 'bg-indigo-50',
-      iconBgColor: 'bg-indigo-100',
-      iconColor: 'text-indigo-600',
-      buttonColor: 'bg-indigo-600',
-      buttonHoverColor: 'hover:bg-indigo-700',
-      link: `/admin/hackathon/${id}/projects`
+      id: 'team',
+      title: 'إدارة فرق التنظيم',
+      description: 'تحكم كامل في الأدوار الفريق، تعيين الصلاحيات، ومتابعة سجلات الدخول والنشاطات لضمان أمن التنسيق.',
+      icon: Users,
+      bgColor: 'bg-blue-50',
+      iconBgColor: 'bg-blue-100',
+      iconColor: 'text-blue-600',
+      buttonColor: 'bg-blue-600',
+      buttonHoverColor: 'hover:bg-blue-700',
+      link: `/admin/hackathon/${id}/teams`
     },
     {
       id: 'registrations',
@@ -124,28 +125,16 @@ export default function HackathonManagement() {
       badge: pendingRegistrations > 0 ? `${pendingRegistrations} طلب جديد` : undefined,
     },
     {
-      id: 'team',
-      title: 'إدارة فرق التنظيم',
-      description: 'تحكم كامل في الأدوار الفريق، تعيين الصلاحيات، ومتابعة سجلات الدخول والنشاطات لضمان أمن التنسيق.',
-      icon: Users,
-      bgColor: 'bg-blue-50',
-      iconBgColor: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-      buttonColor: 'bg-blue-600',
-      buttonHoverColor: 'hover:bg-blue-700',
-      link: `/admin/hackathon/${id}/teams`
-    },
-    {
-      id: 'analytics',
-      title: 'الإحصائيات والتقارير',
-      description: 'تحليل البيانات الفورية، معدلات النمو تقارير التفاصيل، وتوجهات الهاكاثون بصيغة قابلة للتصدير.',
-      icon: BarChart3,
-      bgColor: 'bg-gray-50',
-      iconBgColor: 'bg-gray-100',
-      iconColor: 'text-gray-600',
-      buttonColor: 'bg-gray-900',
-      buttonHoverColor: 'hover:bg-gray-800',
-      link: `/admin/hackathon/${id}/statistics`
+      id: 'projects',
+      title: 'إدارة المشاريع والحكام',
+      description: 'تتبع تسليمات المشاريع المرسلة، مراجعة إنجاز الفرق، وترصد الإدخالات التقييمية لكل مشروع.',
+      icon: Gavel,
+      bgColor: 'bg-indigo-50',
+      iconBgColor: 'bg-indigo-100',
+      iconColor: 'text-indigo-600',
+      buttonColor: 'bg-indigo-600',
+      buttonHoverColor: 'hover:bg-indigo-700',
+      link: `/admin/hackathon/${id}/projects`
     },
     {
       id: 'sponsors',
@@ -160,18 +149,6 @@ export default function HackathonManagement() {
       link: `/admin/hackathon/${id}/sponsors`,
       badge: pendingSponsors > 0 ? `${pendingSponsors} طلب رعاية جديد` : undefined,
     },
-    {
-      id: 'winners',
-      title: 'إعلان الفائزين والنتائج',
-      description: 'إعداد الترتيب النهائي، توزع الجوائز المحددة والشهادات، وتوليد شهادات الحضور للمشاركين.',
-      icon: Trophy,
-      bgColor: 'bg-yellow-50',
-      iconBgColor: 'bg-yellow-100',
-      iconColor: 'text-yellow-600',
-      buttonColor: 'bg-gray-900',
-      buttonHoverColor: 'hover:bg-gray-800',
-      link: `/admin/hackathon/${id}/winners`
-    }
   ];
 
   return (
@@ -298,7 +275,7 @@ export default function HackathonManagement() {
         )}
 
         {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {managementCards.map((card) => {
             // Owner sees everything. Co-managers see only the card matching their section.
             const isAccessible =

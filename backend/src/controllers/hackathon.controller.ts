@@ -305,7 +305,7 @@ export const listMyHackathons = async (req: Request, res: Response) => {
     // crashes with ER_OUT_OF_SORTMEMORY. Sort the small columns first, then fetch
     // the heavy branding column by ID and merge in JS.
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT h.hackathon_ID, h.H_title, h.H_slug, h.H_description, h.H_status,
+      `SELECT h.hackathon_ID, h.H_title, h.H_slug, h.H_description, h.H_status, h.H_type,
               h.H_StartDate, h.H_EndDate, h.H_city, h.H_visibility, h.H_created_at, h.HAM_ID,
               CASE
                 WHEN h.HAM_ID = ? THEN 'owner'

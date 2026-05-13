@@ -18,13 +18,10 @@ import MyHackathons from "./components/MyHackathons";
 import HackathonPreview from "./components/HackathonPreview";
 import HackathonManagement from "./components/HackathonManagement";
 import { AdminSponsorships } from "./components/AdminSponsorships";
-import { AdminAnalytics } from "./components/AdminAnalytics";
 import { HackathonProjects } from "./components/HackathonProjects";
 import { HackathonRegistrations } from "./components/HackathonRegistrations";
 import { HackathonTeams } from "./components/HackathonTeams";
 import { HackathonSponsors } from "./components/HackathonSponsors";
-import { HackathonWinners } from "./components/HackathonWinners";
-import { HackathonStatistics } from "./components/HackathonStatistics";
 import { Notifications } from "./components/Notifications";
 import { Profile } from "./components/Profile";
 import { ParticipantProfile } from "./components/ParticipantProfile";
@@ -80,11 +77,8 @@ export const router = createBrowserRouter([
           { path: "hackathon/:id/projects", Component: HackathonProjects },
           { path: "hackathon/:id/registrations", Component: HackathonRegistrations },
           { path: "hackathon/:id/teams", Component: HackathonTeams },
-          { path: "hackathon/:id/statistics", Component: HackathonStatistics },
           { path: "hackathon/:id/sponsors", Component: HackathonSponsors },
-          { path: "hackathon/:id/winners", Component: HackathonWinners },
           { path: "sponsorships", Component: AdminSponsorships },
-          { path: "analytics", Component: AdminAnalytics },
           { path: "notifications", Component: Notifications },
           { path: "profile", Component: Profile },
         ],

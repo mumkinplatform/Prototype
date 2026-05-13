@@ -8,18 +8,14 @@
 // Permission keys are derived from actual UI actions in each management page:
 //   • HackathonRegistrations.tsx  → registrations
 //   • HackathonProjects.tsx       → projects (includes judge management tab)
-//   • HackathonWinners.tsx        → winners
 //   • HackathonSponsors.tsx       → sponsors
-//   • HackathonStatistics.tsx     → analytics
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const SECTIONS = [
   'team',
   'registrations',
   'projects',
-  'winners',
   'sponsors',
-  'analytics',
 ] as const;
 
 export type Section = (typeof SECTIONS)[number];
@@ -28,9 +24,7 @@ export const SECTION_LABELS: Record<Section, string> = {
   team: 'إدارة فرق التنظيم',
   registrations: 'إدارة التسجيلات والمشاركين',
   projects: 'إدارة المشاريع والتحكم',
-  winners: 'إعلان الفائزين والنتائج',
   sponsors: 'الرعاة والمفاوضات',
-  analytics: 'الإحصائيات والتقارير',
 };
 
 export interface PermissionDef {
@@ -69,13 +63,6 @@ export const PERMISSIONS_BY_SECTION: Record<Section, PermissionDef[]> = {
     { key: 'add_judge', label: 'إضافة حكم' },
     { key: 'send_judge_reminder', label: 'تذكير الحكام' },
   ],
-  winners: [
-    { key: 'view_results', label: 'عرض النتائج' },
-    { key: 'edit_results', label: 'تعديل الترتيب' },
-    { key: 'publish_results', label: 'نشر النتائج' },
-    { key: 'send_winner_emails', label: 'إيميلات للفائزين' },
-    { key: 'generate_certificates', label: 'توليد الشهادات' },
-  ],
   sponsors: [
     { key: 'view_sponsors', label: 'عرض الرعاة' },
     { key: 'view_requests', label: 'عرض طلبات الرعاية' },
@@ -86,10 +73,6 @@ export const PERMISSIONS_BY_SECTION: Record<Section, PermissionDef[]> = {
     { key: 'sign_contract', label: 'توقيع العقد' },
     { key: 'add_package', label: 'إضافة باقة' },
     { key: 'edit_package', label: 'تعديل باقة' },
-  ],
-  analytics: [
-    { key: 'view_stats', label: 'عرض الإحصائيات' },
-    { key: 'export_report', label: 'تصدير التقرير' },
   ],
 };
 

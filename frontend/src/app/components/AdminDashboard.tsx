@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { 
-  LayoutGrid, 
-  Sparkles, 
-  BarChart3,
+import {
+  LayoutGrid,
+  Sparkles,
   Settings,
   ChevronLeft,
   Calendar,
@@ -14,8 +14,57 @@ import {
   Zap,
   TrendingUp
 } from 'lucide-react';
+import { apiGet } from '../../lib/api';
+
+// أحدث الهاكاثونات اللي يديرها المنظم — مصدرها /hackathons (نفس الـ
+// endpoint اللي تستخدمه صفحة "إدارة الهاكاثونات"). نعرض أحدث 3 فقط.
+interface ApiHackathon {
+  hackathon_ID: number;
+  H_title: string | null;
+  H_status: 'draft' | 'published' | 'ongoing' | 'completed';
+}
+interface RecentHackathon {
+  id: number;
+  title: string;
+  status: ApiHackathon['H_status'];
+}
+
+const STATUS_LABEL: Record<ApiHackathon['H_status'], string> = {
+  draft: 'مسودة',
+  published: 'منشور',
+  ongoing: 'قيد التنفيذ',
+  completed: 'مكتمل',
+};
+const STATUS_BADGE: Record<ApiHackathon['H_status'], string> = {
+  draft: 'bg-gray-100 text-gray-700',
+  published: 'bg-blue-50 text-blue-700',
+  ongoing: 'bg-cyan-50 text-[#00bcd4]',
+  completed: 'bg-emerald-50 text-emerald-700',
+};
 
 export function AdminDashboard() {
+  const [recent, setRecent] = useState<RecentHackathon[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(true);
+
+  useEffect(() => {
+    apiGet<{ hackathons: ApiHackathon[] }>('/hackathons')
+      .then((data) => {
+        // أحدث 3 — الـ endpoint يرجعهم بترتيب أحدث أولاً.
+        setRecent(
+          data.hackathons.slice(0, 3).map((h) => ({
+            id: h.hackathon_ID,
+            title: h.H_title ?? 'بدون عنوان',
+            status: h.H_status,
+          })),
+        );
+      })
+      .catch(() => {
+        // فشل صامت — القسم يطلع فاضي ولا يكسر الصفحة
+        setRecent([]);
+      })
+      .finally(() => setLoadingRecent(false));
+  }, []);
+
   return (
     <>
       {/* Hero Section */}
@@ -213,13 +262,13 @@ export function AdminDashboard() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <h2 className="text-2xl text-gray-900 mb-6" style={{ fontWeight: 700 }}>الخدمات السريعة</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Service Card 1 */}
             <Link to="/admin/my-hackathons" className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-[#e35654] transition-all cursor-pointer block">
               <div className="w-14 h-14 rounded-xl bg-[#fef2f4] flex items-center justify-center mb-4">
                 <LayoutGrid className="w-6 h-6 text-[#e35654]" />
               </div>
-              <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>إدارة هاكاثوناتي</h3>
+              <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>إدارة الهاكاثونات</h3>
               <p className="text-gray-500 text-sm mb-4 leading-relaxed">
                 تابع وحرر وأدر جميع الهاكاثونات الخاصة بك بدقة وعناية تامة للمشاركين.
               </p>
@@ -241,20 +290,6 @@ export function AdminDashboard() {
                 إنشاء الآن
               </Link>
             </div>
-
-            {/* Service Card 3 */}
-            <Link to="/admin/analytics" className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-1 hover:border-green-400 transition-all cursor-pointer block">
-              <div className="w-14 h-14 rounded-xl bg-green-50 flex items-center justify-center mb-4">
-                <BarChart3 className="w-6 h-6 text-green-600" />
-              </div>
-              <h3 className="text-gray-900 mb-2" style={{ fontWeight: 700 }}>الإحصائيات والتقارير</h3>
-              <p className="text-gray-500 text-sm mb-4 leading-relaxed">
-                تتبع تحليلات المشاركين الشاملة وتقارير الأداء والنتائج بدقة ووضوح.
-              </p>
-              <span className="w-full py-2.5 rounded-xl border-2 border-gray-100 text-[#00bcd4] text-sm hover:bg-cyan-50 hover:border-[#00bcd4] transition-all inline-block text-center" style={{ fontWeight: 600 }}>
-                عرض التقارير
-              </span>
-            </Link>
           </div>
         </div>
       </section>
@@ -270,103 +305,50 @@ export function AdminDashboard() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Hackathon Card 1 - نشط */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-lg transition-all">
-              <div className="mb-3">
-                <span className="inline-block px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs mb-2" style={{ fontWeight: 600 }}>
-                  نشط
-                </span>
-                <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-                  هاكاثون الابتكار الاستدامة والبيئة
-                </h3>
-              </div>
-              <p className="text-gray-400 text-xs mb-4">آخر تحديث منذ يوم</p>
-              
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-gray-600 text-sm" style={{ fontWeight: 600 }}>المرحلة الثانية</span>
-                  <span className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>100%</span>
-                </div>
-                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-500 rounded-full transition-all duration-500" style={{ width: '100%' }}></div>
-                </div>
-              </div>
-
-              <Link 
-                to="/admin/hackathon/2"
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-gray-100 text-gray-700 text-sm hover:bg-gray-50 hover:border-gray-200 transition-all" 
+          {loadingRecent ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-sm text-gray-400">
+              جاري تحميل هاكاثوناتك...
+            </div>
+          ) : recent.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
+              <p className="text-sm text-gray-500 mb-3">لا توجد هاكاثونات بعد</p>
+              <Link
+                to="/admin/create-hackathon"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e35654] text-white text-sm hover:bg-[#cc4a48] transition-all"
                 style={{ fontWeight: 600 }}
               >
-                <Settings className="w-4 h-4" />
-                إدارة
+                <Sparkles className="w-4 h-4" />
+                ابدأ بأول هاكاثون
               </Link>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {recent.map((h) => (
+                <div key={h.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-lg transition-all">
+                  <div className="mb-3">
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs mb-2 ${STATUS_BADGE[h.status]}`}
+                      style={{ fontWeight: 600 }}
+                    >
+                      {STATUS_LABEL[h.status]}
+                    </span>
+                    <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
+                      {h.title}
+                    </h3>
+                  </div>
 
-            {/* Hackathon Card 2 - مسودة */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-lg transition-all">
-              <div className="mb-3">
-                <span className="inline-block px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs mb-2" style={{ fontWeight: 600 }}>
-                  مسودة
-                </span>
-                <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-                  تحدي الأمن السيبراني
-                </h3>
-              </div>
-              <p className="text-gray-400 text-xs mb-4">آخر تحديث منذ أسبوع</p>
-              
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-gray-600 text-sm" style={{ fontWeight: 600 }}>المرحلة الأولى</span>
-                  <span className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>30%</span>
+                  <Link
+                    to={h.status === 'draft' ? `/admin/create-hackathon/${h.id}` : `/admin/hackathon/${h.id}`}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-gray-100 text-gray-700 text-sm hover:bg-gray-50 hover:border-gray-200 transition-all"
+                    style={{ fontWeight: 600 }}
+                  >
+                    <Settings className="w-4 h-4" />
+                    {h.status === 'draft' ? 'تعديل المسودة' : 'إدارة'}
+                  </Link>
                 </div>
-                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-gray-500 rounded-full transition-all duration-500" style={{ width: '30%' }}></div>
-                </div>
-              </div>
-
-              <Link 
-                to="/admin/create-hackathon/1"
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-gray-100 text-gray-700 text-sm hover:bg-gray-50 hover:border-gray-200 transition-all" 
-                style={{ fontWeight: 600 }}
-              >
-                <Settings className="w-4 h-4" />
-                تعديل المسودة
-              </Link>
+              ))}
             </div>
-
-            {/* Hackathon Card 3 - قيد التنفيذ */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-lg transition-all">
-              <div className="mb-3">
-                <span className="inline-block px-3 py-1 rounded-full bg-cyan-50 text-[#00bcd4] text-xs mb-2" style={{ fontWeight: 600 }}>
-                  قيد التنفيذ
-                </span>
-                <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-                  هاكاثون لقاء الإبداع الطلابي 2024
-                </h3>
-              </div>
-              <p className="text-gray-400 text-xs mb-4">آخر تحديث منذ ساعتين</p>
-              
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-gray-600 text-sm" style={{ fontWeight: 600 }}>المرحلة الثالثة</span>
-                  <span className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>75%</span>
-                </div>
-                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00bcd4] rounded-full transition-all duration-500" style={{ width: '75%' }}></div>
-                </div>
-              </div>
-
-              <Link 
-                to="/admin/hackathon/3"
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-gray-100 text-gray-700 text-sm hover:bg-gray-50 hover:border-gray-200 transition-all" 
-                style={{ fontWeight: 600 }}
-              >
-                <Settings className="w-4 h-4" />
-                إدارة
-              </Link>
-            </div>
-          </div>
+          )}
         </div>
       </section>
 

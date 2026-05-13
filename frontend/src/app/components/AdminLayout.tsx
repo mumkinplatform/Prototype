@@ -11,12 +11,11 @@ function getActivePage(pathname: string): AdminNavPage {
   const first = rest[0] ?? "";
 
   switch (first) {
+    case "create-hackathon":
+      return "create";
     case "my-hackathons":
     case "hackathon":
-    case "create-hackathon":
       return "hackathons";
-    case "analytics":
-      return "analytics";
     case "notifications":
     case "profile":
     case "sponsorships":
@@ -58,7 +57,7 @@ export function AdminLayout() {
               © 2026 مُمكّن — منصة الهاكاثونات الرقمية. جميع الحقوق محفوظة.
             </p>
             <div className="flex gap-4 text-sm text-gray-500">
-              
+
             </div>
           </div>
         </div>

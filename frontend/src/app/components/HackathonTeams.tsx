@@ -12,11 +12,10 @@ import {
 
 // Map UI department label ↔ Section enum
 const SECTION_BADGE_COLORS: Record<Section, string> = {
+  team: 'bg-blue-100 text-blue-700',
   registrations: 'bg-orange-100 text-orange-700',
   projects: 'bg-indigo-100 text-indigo-700',
-  winners: 'bg-yellow-100 text-yellow-700',
   sponsors: 'bg-emerald-100 text-emerald-700',
-  analytics: 'bg-blue-100 text-blue-700',
 };
 
 interface CoManagerRaw {
