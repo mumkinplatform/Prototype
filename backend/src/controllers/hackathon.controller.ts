@@ -2332,6 +2332,44 @@ export const startSponsorNegotiation = async (req: Request, res: Response) => {
     `UPDATE sponsor_application SET SA_Status = 'accepted' WHERE SA_ID = ?`,
     [saId],
   );
+
+  // إشعار للراعي ببدء التفاوض — مرة واحدة فقط (إذا الحالة كانت pending قبل
+  // التحديث). نتجنب إشعار مكرر لو المنظم ضغط الزر ثانية لخطأ.
+  if (current === 'pending') {
+    interface NotifyAcceptRow extends RowDataPacket {
+      SM_ID: number;
+      H_title: string;
+      SP_Name: string;
+    }
+    const [infoRows] = await pool.query<NotifyAcceptRow[]>(
+      `SELECT sa.SM_ID, h.H_title, sp.SP_Name
+         FROM sponsor_application sa
+         JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+         JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
+        WHERE sa.SA_ID = ?`,
+      [saId],
+    );
+    if (infoRows.length > 0) {
+      const info = infoRows[0];
+      try {
+        await pool.execute(
+          `INSERT INTO notification
+             (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+           VALUES (?, 'system', ?, ?, ?, ?)`,
+          [
+            info.SM_ID,
+            'تم قبول طلب رعايتكم',
+            `قبل المنظم طلب رعايتكم لـ "${info.H_title}" على باقة "${info.SP_Name}". ابدأ التفاوض الآن.`,
+            'فتح المحادثة',
+            '/sponsor/messages',
+          ],
+        );
+      } catch (err) {
+        console.error('[startSponsorNegotiation] failed to insert notification:', err);
+      }
+    }
+  }
+
   return res.json({ applicationId: saId, status: 'accepted' });
 };
 

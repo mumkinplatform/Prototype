@@ -6,7 +6,6 @@ import {
   DollarSign,
   Calendar,
   FileText,
-  Upload,
   AlertCircle,
   ArrowRight,
   Loader2,
@@ -20,41 +19,76 @@ interface ConversationInfo {
   currentStep: number;
 }
 
+// شكل العقد كما يرجّعه /sponsors/applications/:id/contract — مشترك بين
+// الجهتين. إذا كان `null` فالمحادثة دخلت قبل ما المنظم يبدأ صياغة العقد.
+export interface ContractView {
+  terms: {
+    duration: string | null;
+    value: string | null;
+    logoRights: string | null;
+    displayTime: string | null;
+    dataAccess: string | null;
+    notes: string | null;
+    submittedAt: string | null;
+  };
+  acceptance: {
+    sponsorAccepted: boolean;
+    sponsorAcceptedAt: string | null;
+  };
+  signatures: {
+    organizerSigned: boolean;
+    organizerSignedAt: string | null;
+    sponsorSigned: boolean;
+    sponsorSignedAt: string | null;
+  };
+  parties: {
+    hackathonTitle: string;
+    packageName: string;
+    sponsorName: string;
+    organizerName: string;
+  };
+}
+
 interface Props {
   conversation: ConversationInfo;
   viewedStep: number;
   serverStep: number;
-  advancing: boolean;
-  uploading: boolean;
-  receiptUploaded: boolean;
-  onAdvance: () => void;
-  onUploadClick: () => void;
+  contract: ContractView | null;
+  signing: boolean;
+  accepting: boolean;
+  onAccept: () => void;
+  onSign: () => void;
   onViewStep: (step: number) => void;
 }
 
-const TERM_DEFS = [
-  { label: "مدة الرعاية", value: "6 أشهر", icon: Clock },
-  { label: "قيمة الرعاية", value: "50,000 ر.س", icon: DollarSign },
-  { label: "حقوق الشعار", value: "مستوى أول — رقمي وفعلي", icon: Building2 },
-  { label: "وقت العرض", value: "10 دقائق", icon: Clock },
-  { label: "وصول لبيانات المشاركين", value: "نعم، مجهولة الهوية", icon: AlertCircle },
-  { label: "تاريخ بدء الفعالية", value: "15 مارس 2026", icon: Calendar },
-];
+const TERM_LABELS = [
+  { key: "duration", label: "مدة الرعاية", icon: Clock },
+  { key: "value", label: "قيمة الرعاية", icon: DollarSign },
+  { key: "logoRights", label: "حقوق الشعار", icon: Building2 },
+  { key: "displayTime", label: "وقت العرض", icon: Clock },
+  { key: "dataAccess", label: "وصول لبيانات المشاركين", icon: AlertCircle },
+  { key: "notes", label: "ملاحظات", icon: Calendar },
+] as const;
 
 export function NegotiationStepPanel({
   conversation,
   viewedStep,
   serverStep,
-  advancing,
-  uploading,
-  receiptUploaded,
-  onAdvance,
-  onUploadClick,
+  contract,
+  signing,
+  accepting,
+  onAccept,
+  onSign,
   onViewStep,
 }: Props) {
   const { status, packageName } = conversation;
-  const termValues = TERM_DEFS.map((t) => t.value);
   const [agreed, setAgreed] = useState(false);
+  const [agreedTerms, setAgreedTerms] = useState(false);
+
+  const termsSubmitted = !!contract?.terms.submittedAt;
+  const sponsorAccepted = contract?.acceptance.sponsorAccepted ?? false;
+  const sponsorSigned = contract?.signatures.sponsorSigned ?? false;
+  const organizerSigned = contract?.signatures.organizerSigned ?? false;
 
   // قبل القبول: المراحل 1-4 مقفلة، نعرض رسالة توضيحية
   if (status === "pending") {
@@ -98,33 +132,44 @@ export function NegotiationStepPanel({
           ابدأ الحوار مع المنظم حول تفاصيل الرعاية
         </p>
         <p className="text-blue-700 text-xs mt-1">
-          بعد الاتفاق المبدئي، انتقل للمرحلة التالية.
+          بعد الاتفاق المبدئي، المنظم سيرسل لك شروط العقد للمراجعة.
         </p>
-        {serverStep === 0 && (
-          <button
-            onClick={onAdvance}
-            disabled={advancing}
-            className="mt-3 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] disabled:opacity-60 inline-flex items-center gap-1.5"
-            style={{ fontWeight: 600 }}
-          >
-            {advancing && <Loader2 className="w-3 h-3 animate-spin" />}
-            الانتقال إلى مراجعة الشروط
-          </button>
-        )}
       </div>
     );
   }
 
   // Step 1 — مراجعة الشروط
   if (viewedStep === 1) {
+    if (!termsSubmitted) {
+      return (
+        <div className="mx-5 my-3 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center max-w-md mx-auto">
+          <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+            <Clock className="w-6 h-6 text-amber-500" />
+          </div>
+          <p className="text-amber-900 text-sm" style={{ fontWeight: 700 }}>
+            بانتظار شروط العقد من المنظم
+          </p>
+          <p className="text-amber-700 text-xs mt-2 leading-relaxed">
+            ستظهر هنا شروط العقد بعد أن يرسلها لك المنظم. تابع المحادثة معه للوصول لاتفاق مبدئي.
+          </p>
+          <button
+            onClick={() => onViewStep(0)}
+            className="mt-4 px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs hover:bg-amber-100"
+            style={{ fontWeight: 600 }}
+          >
+            ← الرجوع للمحادثة
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="mx-5 my-3 bg-white rounded-2xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-            مراجعة وتعديل الشروط
+            شروط العقد المُرسلة
           </h3>
           <p className="text-gray-400 text-xs mt-1">
-            راجع كل بند وعدّله قبل إصدار العقد الرسمي.
+            راجع البنود التالية بعناية. لو كل شيء واضح، انتقل للعقد الرقمي للتوقيع.
           </p>
         </div>
         <div className="px-5 py-4 space-y-2">
@@ -141,26 +186,66 @@ export function NegotiationStepPanel({
             </p>
           </div>
 
-          {TERM_DEFS.map((t, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
-              <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center flex-shrink-0">
-                <t.icon className="w-4 h-4 text-gray-400" />
+          {TERM_LABELS.map((t) => {
+            const value = contract?.terms[t.key] ?? null;
+            if (!value) return null;
+            return (
+              <div key={t.key} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
+                <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 flex items-center justify-center flex-shrink-0">
+                  <t.icon className="w-4 h-4 text-gray-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-gray-400 text-xs">{t.label}</p>
+                  <p className="text-gray-900 text-sm whitespace-pre-line" style={{ fontWeight: 600 }}>
+                    {value}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-gray-400 text-xs">{t.label}</p>
-                <p className="text-gray-900 text-sm" style={{ fontWeight: 600 }}>
-                  {termValues[i]}
-                </p>
-              </div>
-            </div>
-          ))}
-
-          <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 mt-2">
-            <p className="text-blue-700 text-xs leading-relaxed">
-              ℹ️ بعد مراجعة الشروط، سيُصدر العقد الرسمي تلقائياً لإتمام الإجراءات.
+            );
+          })}
+        </div>
+        {/* بانر/زر موافقة الراعي — إن لم يوافق بعد، يلزم الموافقة قبل
+            الانتقال للعقد الرقمي. */}
+        {sponsorAccepted ? (
+          <div className="mx-5 mb-4 p-3 bg-green-50 border border-green-200 rounded-xl">
+            <p className="text-green-800 text-xs flex items-center gap-1.5" style={{ fontWeight: 700 }}>
+              <CheckCircle2 className="w-4 h-4" /> وافقت على هذه الشروط
+            </p>
+            {contract?.acceptance.sponsorAcceptedAt && (
+              <p className="text-green-700 text-[11px] mt-1">
+                في {new Date(contract.acceptance.sponsorAcceptedAt).toLocaleString("ar-SA")}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="mx-5 mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreedTerms}
+                onChange={(e) => setAgreedTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-[#e35654]"
+              />
+              <span className="text-gray-700 text-xs leading-relaxed">
+                قرأت الشروط أعلاه بالكامل وأوافق عليها. إن كان لديّ تحفّظ
+                فسأناقشه مع المنظم في الشات قبل الموافقة.
+              </span>
+            </label>
+            <button
+              onClick={onAccept}
+              disabled={!agreedTerms || accepting}
+              className="mt-3 w-full px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+              style={{ fontWeight: 600 }}
+            >
+              {accepting && <Loader2 className="w-3 h-3 animate-spin" />}
+              موافق على الشروط
+            </button>
+            <p className="text-gray-500 text-[11px] mt-2 leading-relaxed">
+              بعد الموافقة، يُفتح العقد الرقمي للتوقيع. لا يمكن التراجع
+              عن الموافقة لذلك راجع البنود جيداً.
             </p>
           </div>
-        </div>
+        )}
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
           <button
             onClick={() => onViewStep(0)}
@@ -169,23 +254,13 @@ export function NegotiationStepPanel({
           >
             <ArrowRight className="w-3.5 h-3.5" /> رجوع للتفاوض
           </button>
-          {serverStep === 1 ? (
-            <button
-              onClick={onAdvance}
-              disabled={advancing}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] disabled:opacity-60"
-              style={{ fontWeight: 600 }}
-            >
-              {advancing && <Loader2 className="w-3 h-3 animate-spin" />}
-              التالي: العقد الرقمي
-            </button>
-          ) : (
+          {sponsorAccepted && (
             <button
               onClick={() => onViewStep(2)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
+              className="px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] inline-flex items-center gap-1.5"
               style={{ fontWeight: 600 }}
             >
-              عرض العقد الرقمي
+              <FileText className="w-3.5 h-3.5" /> الانتقال للعقد الرقمي
             </button>
           )}
         </div>
@@ -193,8 +268,49 @@ export function NegotiationStepPanel({
     );
   }
 
-  // Step 2 — العقد الرقمي
+  // Step 2 — العقد الرقمي + توقيع الراعي
   if (viewedStep === 2) {
+    if (!termsSubmitted) {
+      return (
+        <div className="mx-5 my-3 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center max-w-md mx-auto">
+          <p className="text-amber-800 text-sm" style={{ fontWeight: 700 }}>
+            لم يُرسل المنظم الشروط بعد
+          </p>
+          <button
+            onClick={() => onViewStep(0)}
+            className="mt-3 px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs hover:bg-amber-100"
+            style={{ fontWeight: 600 }}
+          >
+            ← الرجوع للمحادثة
+          </button>
+        </div>
+      );
+    }
+    // مفتاح الحماية: لا عقد رقمي قبل قبول الراعي على الشروط — هذا الباك
+    // يفرضه برضو في /sign فلا ينفع الالتفاف.
+    if (!sponsorAccepted) {
+      return (
+        <div className="mx-5 my-3 bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center max-w-md mx-auto">
+          <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+            <Clock className="w-6 h-6 text-amber-500" />
+          </div>
+          <p className="text-amber-900 text-sm" style={{ fontWeight: 700 }}>
+            وافق على الشروط أولاً
+          </p>
+          <p className="text-amber-700 text-xs mt-2 leading-relaxed">
+            لا يمكن البدء بالعقد الرقمي والتوقيع قبل أن توافق على الشروط
+            في خطوة "مراجعة الشروط".
+          </p>
+          <button
+            onClick={() => onViewStep(1)}
+            className="mt-4 px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs hover:bg-amber-100"
+            style={{ fontWeight: 600 }}
+          >
+            ← الرجوع لمراجعة الشروط
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="mx-5 my-3 bg-white rounded-2xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
@@ -226,7 +342,10 @@ export function NegotiationStepPanel({
                     الطرف الأول (المنظم)
                   </p>
                   <p className="text-gray-900 text-xs" style={{ fontWeight: 700 }}>
-                    المنظِّم
+                    {contract?.parties.organizerName ?? "—"}
+                  </p>
+                  <p className="text-gray-400 text-[10px] mt-1">
+                    {contract?.parties.hackathonTitle ?? ""}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
@@ -234,38 +353,118 @@ export function NegotiationStepPanel({
                     الطرف الثاني (الراعي)
                   </p>
                   <p className="text-gray-900 text-xs" style={{ fontWeight: 700 }}>
-                    الباقة: {packageName}
+                    {contract?.parties.sponsorName ?? "—"}
+                  </p>
+                  <p className="text-gray-400 text-[10px] mt-1">
+                    باقة {packageName}
                   </p>
                 </div>
               </div>
               <div className="border-t border-dashed border-gray-200 pt-3 space-y-2">
-                {termValues.map((val, i) => (
-                  <div
-                    key={i}
-                    className="flex justify-between items-center py-1.5 border-b border-gray-100"
-                  >
-                    <span className="text-gray-500 text-xs">
-                      {TERM_DEFS[i].label}
-                    </span>
-                    <span className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
-                      {val}
-                    </span>
-                  </div>
-                ))}
+                {TERM_LABELS.map((t) => {
+                  const value = contract?.terms[t.key] ?? null;
+                  if (!value) return null;
+                  return (
+                    <div
+                      key={t.key}
+                      className="flex justify-between items-start py-1.5 border-b border-gray-100 gap-3"
+                    >
+                      <span className="text-gray-500 text-xs">{t.label}</span>
+                      <span className="text-gray-900 text-xs text-left whitespace-pre-line" style={{ fontWeight: 600 }}>
+                        {value}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
+
+              {/* قسم التواقيع */}
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className={`rounded-xl p-3 border ${organizerSigned ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                  <p className="text-gray-500 text-[10px] mb-1">توقيع المنظم</p>
+                  {organizerSigned ? (
+                    <>
+                      <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> موقَّع
+                      </p>
+                      {contract?.signatures.organizerSignedAt && (
+                        <p className="text-gray-400 text-[10px] mt-1">
+                          {new Date(contract.signatures.organizerSignedAt).toLocaleString("ar-SA")}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-gray-400 text-xs">بانتظار التوقيع</p>
+                  )}
+                </div>
+                <div className={`rounded-xl p-3 border ${sponsorSigned ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                  <p className="text-gray-500 text-[10px] mb-1">توقيعك (الراعي)</p>
+                  {sponsorSigned ? (
+                    <>
+                      <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> موقَّع
+                      </p>
+                      {contract?.signatures.sponsorSignedAt && (
+                        <p className="text-gray-400 text-[10px] mt-1">
+                          {new Date(contract.signatures.sponsorSignedAt).toLocaleString("ar-SA")}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-gray-400 text-xs">بانتظار التوقيع</p>
+                  )}
+                </div>
+              </div>
+
+              {/* checkbox + زر التوقيع (بانتظار توقيع المنظم أولاً) */}
+              {!sponsorSigned && (
+                <div className="mt-4">
+                  {!organizerSigned ? (
+                    <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-center">
+                      <p className="text-amber-800 text-xs" style={{ fontWeight: 600 }}>
+                        ⏳ بانتظار توقيع المنظم
+                      </p>
+                      <p className="text-amber-600 text-[10px] mt-1">
+                        ستتمكن من التوقيع بعد توقيع المنظم على العقد.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={agreed}
+                          onChange={(e) => setAgreed(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 accent-[#e35654]"
+                        />
+                        <span className="text-gray-700 text-xs leading-relaxed">
+                          قرأت بنود العقد بالكامل وأوافق عليها بصفتي ممثلاً عن الراعي.
+                        </span>
+                      </label>
+                      <button
+                        onClick={onSign}
+                        disabled={!agreed || signing}
+                        className="mt-3 w-full px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                        style={{ fontWeight: 600 }}
+                      >
+                        {signing && <Loader2 className="w-3 h-3 animate-spin" />}
+                        توقيع العقد رقمياً
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {organizerSigned && sponsorSigned && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-xl text-center">
+                  <CheckCircle2 className="w-6 h-6 text-green-600 mx-auto mb-1" />
+                  <p className="text-green-800 text-xs" style={{ fontWeight: 700 }}>
+                    العقد ساري ومُوقَّع من الطرفين 🎉
+                  </p>
+                </div>
+              )}
             </div>
           </div>
-          <label className="flex items-start gap-3 mt-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-0.5 w-4 h-4 accent-[#e35654]"
-            />
-            <span className="text-gray-600 text-xs">
-              قرأت جميع بنود العقد وأوافق على الشروط والأحكام.
-            </span>
-          </label>
         </div>
         <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
           <button
@@ -275,133 +474,10 @@ export function NegotiationStepPanel({
           >
             <ArrowRight className="w-3.5 h-3.5" /> رجوع للشروط
           </button>
-          {serverStep === 2 ? (
-            <button
-              onClick={onAdvance}
-              disabled={!agreed || advancing}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs transition-all ${
-                agreed && !advancing
-                  ? "bg-[#e35654] hover:bg-[#cc4a48]"
-                  : "bg-gray-200 cursor-not-allowed"
-              }`}
-              style={{ fontWeight: 600 }}
-            >
-              {advancing && <Loader2 className="w-3 h-3 animate-spin" />}
-              التالي: رفع الإيصال
-            </button>
-          ) : (
-            <button
-              onClick={() => onViewStep(3)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
-              style={{ fontWeight: 600 }}
-            >
-              عرض الرفع
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Step 3 — رفع الإيصال
-  if (viewedStep === 3) {
-    const showSuccess = receiptUploaded || serverStep === 4;
-    return (
-      <div className="mx-5 my-3 bg-white rounded-2xl border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-            رفع إيصال الدفع
-          </h3>
-          <p className="text-gray-400 text-xs mt-1">
-            ارفع الفاتورة أو إثبات الدفع لإتمام الإجراء المالي.
-          </p>
-        </div>
-        <div className="px-5 py-5">
-          <button
-            onClick={onUploadClick}
-            disabled={uploading || showSuccess}
-            className={`w-full border-2 border-dashed rounded-2xl p-8 text-center transition-all disabled:cursor-default ${
-              showSuccess
-                ? "border-green-400 bg-green-50"
-                : "border-[#e35654]/30 bg-[#e35654]/5 hover:bg-[#e35654]/10 hover:border-[#e35654]/50"
-            }`}
-          >
-            {showSuccess ? (
-              <div>
-                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
-                  <CheckCircle2 className="w-7 h-7 text-green-500" />
-                </div>
-                <p className="text-green-700 text-sm" style={{ fontWeight: 700 }}>
-                  تم رفع الإيصال بنجاح
-                </p>
-                <p className="text-green-600 text-xs mt-1">
-                  تمّ تسجيل الدفع وإتمام الرعاية.
-                </p>
-              </div>
-            ) : (
-              <div>
-                <div className="w-12 h-12 rounded-2xl bg-[#e35654]/10 flex items-center justify-center mx-auto mb-3">
-                  {uploading ? (
-                    <Loader2 className="w-6 h-6 text-[#e35654] animate-spin" />
-                  ) : (
-                    <Upload className="w-6 h-6 text-[#e35654]" />
-                  )}
-                </div>
-                <p className="text-gray-800 text-sm mb-1" style={{ fontWeight: 700 }}>
-                  {uploading ? "جاري الرفع..." : "ارفع الفاتورة أو إثبات الدفع"}
-                </p>
-                <p className="text-gray-500 text-xs mb-3">
-                  انقر لاختيار الملف
-                </p>
-                <div className="flex flex-wrap justify-center gap-1.5">
-                  {["PDF", "JPG", "PNG"].map((fmt) => (
-                    <span
-                      key={fmt}
-                      className="px-2 py-0.5 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs"
-                      style={{ fontWeight: 600 }}
-                    >
-                      {fmt}
-                    </span>
-                  ))}
-                  <span
-                    className="px-2 py-0.5 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs"
-                    style={{ fontWeight: 600 }}
-                  >
-                    حتى 10MB
-                  </span>
-                </div>
-              </div>
-            )}
-          </button>
-
-          <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-            <span className="text-base flex-shrink-0">⚠️</span>
-            <div>
-              <p className="text-amber-800 text-xs" style={{ fontWeight: 700 }}>
-                تأكد من جودة الملف قبل الرفع
-              </p>
-              <p className="text-amber-700 text-xs mt-0.5 leading-relaxed">
-                يجب أن تكون الفاتورة{" "}
-                <span style={{ fontWeight: 700 }}>
-                  واضحة وتشمل رقم المرجع والمبلغ وتاريخ التحويل
-                </span>
-                .
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-          <button
-            onClick={() => onViewStep(2)}
-            className="flex items-center gap-1.5 text-gray-500 text-xs hover:text-gray-700"
-            style={{ fontWeight: 500 }}
-          >
-            <ArrowRight className="w-3.5 h-3.5" /> رجوع للعقد
-          </button>
-          {showSuccess && (
+          {organizerSigned && sponsorSigned && (
             <button
               onClick={() => onViewStep(4)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48]"
+              className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
               style={{ fontWeight: 600 }}
             >
               عرض التأكيد ✅
@@ -429,7 +505,7 @@ export function NegotiationStepPanel({
       <div className="bg-gray-50 rounded-2xl p-4 max-w-xs mx-auto text-right mb-4 space-y-2">
         {[
           { label: "الباقة", value: packageName },
-          { label: "القيمة", value: "حسب الاتفاق" },
+          { label: "قيمة الرعاية", value: contract?.terms.value ?? "حسب الاتفاق" },
           { label: "الحالة", value: "✅ نشط" },
         ].map((item, i) => (
           <div key={i} className="flex justify-between items-center">

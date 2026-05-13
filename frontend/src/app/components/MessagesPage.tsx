@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   Send,
   Paperclip,
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, ApiError } from "../../lib/api";
-import { NegotiationStepPanel } from "./sponsor-apply/NegotiationStepPanel";
+import { NegotiationStepPanel, type ContractView } from "./sponsor-apply/NegotiationStepPanel";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -98,11 +98,12 @@ function mapConversation(c: ApiConversation, idx: number): DisplayConversation {
   };
 }
 
+// مراحل التفاوض الأربع. الـ step=3 في الـ DB مهجور؛ الباك يقفز من 2 → 4
+// عند توقيع الراعي. ids متطابقة مع SA_NegotiationStep (0,1,2,4).
 const NEGOTIATION_STEPS = [
   { id: 0, label: "التفاوض", icon: MessageCircle },
   { id: 1, label: "مراجعة الشروط", icon: Edit3 },
   { id: 2, label: "العقد الرقمي", icon: FileText },
-  { id: 3, label: "رفع العقد", icon: Upload },
   { id: 4, label: "مكتمل", icon: CheckCircle2 },
 ];
 
@@ -133,14 +134,21 @@ function formatMessageTime(iso: string): string {
 
 export function MessagesPage() {
   const navigate = useNavigate();
+  // ?app=SA_ID — يحدد أي محادثة نفتح بشكل افتراضي. الزر في صفحة الرعايات
+  // والإشعارات يمررنا هنا مع هذا الـ param.
+  const [searchParams] = useSearchParams();
+  const requestedAppId = Number(searchParams.get('app')) || null;
 
   const [conversations, setConversations] = useState<DisplayConversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const [advancing, setAdvancing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // العقد لكل محادثة + حالة التوقيع. يُحمَّل عند اختيار محادثة.
+  const [contractByApp, setContractByApp] = useState<Record<number, ContractView>>({});
+  const [signing, setSigning] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const [viewedStep, setViewedStep] = useState(0);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
   const [msgs, setMsgs] = useState<Record<number, Msg[]>>({});
@@ -149,26 +157,54 @@ export function MessagesPage() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleAdvanceStep = async () => {
-    if (selected === null || !conv) return;
-    if (conv.currentStep >= 4) return;
-    setAdvancing(true);
+  // الراعي يوافق على الشروط المرسلة من المنظم. الباك يرفع المرحلة إلى 2
+  // (يفتح العقد الرقمي للتوقيع) ويقفل تعديل الشروط على المنظم.
+  const handleAccept = async () => {
+    if (selected === null) return;
+    setAccepting(true);
     try {
-      const res = await apiPost<{ id: number; negotiationStep: number }>(
-        `/sponsors/applications/${selected}/advance-step`
+      await apiPost(`/sponsors/applications/${selected}/accept-terms`, {});
+      const c = await apiGet<ContractView & { negotiationStep: number }>(
+        `/sponsors/applications/${selected}/contract`,
       );
+      setContractByApp((prev) => ({ ...prev, [selected]: c }));
       setConversations((prev) =>
-        prev.map((c) =>
-          c.id === selected ? { ...c, currentStep: res.negotiationStep } : c
-        )
+        prev.map((cv) =>
+          cv.id === selected ? { ...cv, currentStep: c.negotiationStep } : cv,
+        ),
       );
-      setViewedStep(res.negotiationStep);
-      toast.success("تم الانتقال للمرحلة التالية");
+      toast.success("تمت الموافقة على الشروط — الآن يمكنك التوقيع على العقد");
     } catch (err: unknown) {
-      const message = err instanceof ApiError ? err.message : "تعذّر التحديث";
+      const message = err instanceof ApiError ? err.message : "تعذّر تسجيل الموافقة";
       toast.error(message);
     } finally {
-      setAdvancing(false);
+      setAccepting(false);
+    }
+  };
+
+  // توقيع الراعي. الباك يرفع المرحلة لـ 4 (مكتمل) بعد توقيع الراعي
+  // — يتطلب أن يكون المنظم قد وقّع أولاً (تحقّق على الباك).
+  const handleSign = async () => {
+    if (selected === null || !conv) return;
+    setSigning(true);
+    try {
+      await apiPost(`/sponsors/applications/${selected}/sign`, {});
+      // أعد جلب العقد لمعرفة الحالة النهائية + ارفع currentStep في القائمة
+      const c = await apiGet<ContractView & { negotiationStep: number }>(
+        `/sponsors/applications/${selected}/contract`,
+      );
+      setContractByApp((prev) => ({ ...prev, [selected]: c }));
+      setConversations((prev) =>
+        prev.map((cv) =>
+          cv.id === selected ? { ...cv, currentStep: c.negotiationStep } : cv,
+        ),
+      );
+      toast.success("تم توقيع العقد رقمياً 🎉");
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : "تعذّر تسجيل التوقيع";
+      toast.error(message);
+    } finally {
+      setSigning(false);
     }
   };
 
@@ -256,7 +292,12 @@ export function MessagesPage() {
         if (cancelled) return;
         const mapped = res.items.map(mapConversation);
         setConversations(mapped);
-        if (mapped.length > 0) setSelected(mapped[0].id);
+        if (mapped.length > 0) {
+          // لو جاي من زر "محادثة" في صفحة الرعايات/العقود (?app=ID)،
+          // نختار المحادثة الصحيحة. وإلا الأولى افتراضياً.
+          const target = requestedAppId && mapped.find((c) => c.id === requestedAppId);
+          setSelected(target ? target.id : mapped[0].id);
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -307,6 +348,25 @@ export function MessagesPage() {
     setViewedStep(conv.currentStep);
     setReceiptUploaded(conv.currentStep >= 4);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // تحميل العقد عند اختيار محادثة (بدون polling — التوقيع نادر نسبياً).
+  // نعيد التحميل لمن المرحلة تتقدّم عشان نلتقط توقيع المنظم.
+  useEffect(() => {
+    if (selected === null) return;
+    let cancelled = false;
+    apiGet<ContractView & { negotiationStep: number }>(
+      `/sponsors/applications/${selected}/contract`,
+    )
+      .then((c) => {
+        if (!cancelled) setContractByApp((prev) => ({ ...prev, [selected]: c }));
+      })
+      .catch(() => {
+        // فشل صامت — الـ NegotiationStepPanel يعرض fallback لو contract = null
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, conv?.currentStep]);
 
   const filteredConvs = conversations.filter(
     (c) => c.name.includes(search) || c.sub.includes(search)
@@ -485,15 +545,16 @@ export function MessagesPage() {
             <div className="flex items-center justify-between gap-2">
               {NEGOTIATION_STEPS.map((step, idx) => {
                 const Icon = step.icon;
-                const isDone = idx < conv.currentStep;
-                const isCurrent = idx === conv.currentStep;
-                const isViewed = idx === viewedStep;
+                // المقارنة بـ step.id لأن ids غير متتالية (0,1,2,4).
+                const isDone = step.id < conv.currentStep;
+                const isCurrent = step.id === conv.currentStep;
+                const isViewed = step.id === viewedStep;
                 const baseColor = isCurrent ? "#e35654" : isDone ? "#10b981" : "#d1d5db";
                 return (
                   <div key={step.id} className="flex items-center flex-1">
                     <button
                       type="button"
-                      onClick={() => setViewedStep(idx)}
+                      onClick={() => setViewedStep(step.id)}
                       className="flex flex-col items-center flex-1 group focus:outline-none"
                     >
                       <div
@@ -523,7 +584,7 @@ export function MessagesPage() {
                     {idx < NEGOTIATION_STEPS.length - 1 && (
                       <div
                         className="h-0.5 flex-1 mb-4"
-                        style={{ background: idx < conv.currentStep ? "#10b981" : "#e5e7eb" }}
+                        style={{ background: step.id < conv.currentStep ? "#10b981" : "#e5e7eb" }}
                       />
                     )}
                   </div>
@@ -704,11 +765,11 @@ export function MessagesPage() {
                 }}
                 viewedStep={viewedStep}
                 serverStep={conv.currentStep}
-                advancing={advancing}
-                uploading={uploading}
-                receiptUploaded={receiptUploaded}
-                onAdvance={handleAdvanceStep}
-                onUploadClick={() => fileInputRef.current?.click()}
+                contract={contractByApp[conv.id] ?? null}
+                signing={signing}
+                accepting={accepting}
+                onAccept={handleAccept}
+                onSign={handleSign}
                 onViewStep={setViewedStep}
               />
             </div>

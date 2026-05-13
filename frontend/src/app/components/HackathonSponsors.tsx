@@ -24,6 +24,8 @@ import {
   Filter,
   Trash2,
   ChevronDown,
+  Loader2,
+  Paperclip,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -43,9 +45,21 @@ interface SponsorRequest {
   status: 'pending' | 'negotiating' | 'contract_review' | 'organizer_signing' | 'sponsor_signing' | 'completed' | 'rejected';
   submittedDate: string;
   negotiationStep?: NegotiationStep;
+  currentStep: number; // SA_NegotiationStep من الباك (0..4) — يحرك شريط المراحل ولوحة الـ NegotiationStepPanel
   lastMessage?: string;
   unreadMessages?: number;
 }
+
+// مراحل التفاوض الأربع بالترتيب. ملاحظة: قيمة step=3 في الـ DB
+// (المهجورة) غير مستخدمة — لمن الراعي يوقّع، الباك يقفز من 2 → 4 مباشرة.
+// نخلي ids متطابقة مع SA_NegotiationStep في الـ DB (0,1,2,4) عشان مقارنات
+// isDone/isCurrent تشتغل بدون mapping إضافي.
+const NEGOTIATION_STEPS = [
+  { id: 0, label: 'التفاوض', icon: MessageCircle },
+  { id: 1, label: 'مراجعة الشروط', icon: Edit3 },
+  { id: 2, label: 'العقد الرقمي', icon: FileText },
+  { id: 4, label: 'مكتمل', icon: CheckCircle2 },
+];
 
 // شكل الرسالة كما يرجّعها endpoint الراعي المشترك (sponsor.controller.ts).
 // نحن في وجهة المنظم، فـ "رسالتي" = التي أرسلها مستخدم نوعه ORGANIZER.
@@ -58,99 +72,60 @@ interface ChatMessage {
   createdAt: string;
 }
 
-const mockRequests: SponsorRequest[] = [
-  {
-    id: 1,
-    companyName: 'مايكروسوفت',
-    companyLogo: 'https://images.unsplash.com/photo-1553877522-43269d4ea984?w=100&h=100&fit=crop',
-    package: 'ذهبي',
-    subCategory: 'رعاية حصرية',
-    sponsorshipType: 'financial',
-    amount: 85000,
-    value: '85,000 ر.س',
-    status: 'pending',
-    submittedDate: '2024-01-15',
-  },
-  {
-    id: 2,
-    companyName: 'شركة stc',
-    companyLogo: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop',
-    package: 'ماسي',
-    subCategory: 'شريك استراتيجي',
-    sponsorshipType: 'logistics',
-    value: 'خدمات نقل ولوجستيات كاملة',
-    status: 'pending',
-    submittedDate: '2024-01-20',
-  },
-  {
-    id: 3,
-    companyName: 'أرامكو السعودية',
-    companyLogo: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=100&h=100&fit=crop',
-    package: 'بلاتيني',
-    subCategory: 'رعاية شاملة',
-    sponsorshipType: 'financial',
-    amount: 200000,
-    value: '200,000 ر.س',
-    status: 'pending',
-    submittedDate: '2024-01-10',
-  },
-  {
-    id: 4,
-    companyName: 'Google',
-    companyLogo: 'https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?w=100&h=100&fit=crop',
-    package: 'ماسي',
-    subCategory: 'رعاية تقنية',
-    sponsorshipType: 'technical',
-    value: 'خوادم سحابية + أدوات تطوير',
-    status: 'pending',
-    submittedDate: '2024-01-05',
-  },
-  {
-    id: 5,
-    companyName: 'فندق ريتز كارلتون',
-    companyLogo: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=100&h=100&fit=crop',
-    package: 'بلاتيني',
-    subCategory: 'رعاية ضيافة',
-    sponsorshipType: 'hospitality',
-    value: 'ضيافة كاملة + إقامة فندقية',
-    status: 'pending',
-    submittedDate: '2024-01-12',
-  },
-  {
-    id: 6,
-    companyName: 'قناة العربية',
-    companyLogo: 'https://images.unsplash.com/photo-1523474253046-8cd2748b5fd2?w=100&h=100&fit=crop',
-    package: 'فضي',
-    subCategory: 'رعاية إعلامية',
-    sponsorshipType: 'media',
-    value: 'تغطية إعلامية شاملة',
-    status: 'pending',
-    submittedDate: '2024-01-18',
-  },
-  {
-    id: 7,
-    companyName: 'AWS',
-    companyLogo: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop',
-    package: 'ذهبي',
-    subCategory: 'رعاية تقنية',
-    sponsorshipType: 'technical',
-    amount: 50000,
-    value: '50,000 ر.س + خدمات سحابية',
-    status: 'pending',
-    submittedDate: '2024-01-22',
-  },
-  {
-    id: 8,
-    companyName: 'سبيماكو للمأكولات',
-    companyLogo: 'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=100&h=100&fit=crop',
-    package: 'فضي',
-    subCategory: 'رعاية ضيافة',
-    sponsorshipType: 'hospitality',
-    value: 'وجبات ومشروبات للمشاركين',
-    status: 'pending',
-    submittedDate: '2024-01-25',
-  },
-];
+// شكل العقد كما يرجّعه GET /sponsors/applications/:id/contract. مشترك بين
+// الجهتين. terms = ما يكتبه المنظم. acceptance = موافقة الراعي على الشروط
+// (خطوة مستقلة عن التوقيع). signatures = التوقيع الرسمي النهائي.
+interface ContractData {
+  applicationId: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  negotiationStep: number;
+  terms: {
+    duration: string | null;
+    value: string | null;
+    logoRights: string | null;
+    displayTime: string | null;
+    dataAccess: string | null;
+    notes: string | null;
+    submittedAt: string | null;
+  };
+  acceptance: {
+    sponsorAccepted: boolean;
+    sponsorAcceptedAt: string | null;
+  };
+  signatures: {
+    organizerSigned: boolean;
+    organizerSignedAt: string | null;
+    sponsorSigned: boolean;
+    sponsorSignedAt: string | null;
+  };
+  parties: {
+    hackathonTitle: string;
+    packageName: string;
+    packagePrice: string | null;
+    sponsorName: string;
+    organizerName: string;
+  };
+}
+
+// شكل الفورم المحلي لتحرير الشروط — كلها strings عشان الـ inputs تتعامل
+// معها مباشرة. نتحول لـ null عند الإرسال إن كانت فاضية.
+interface TermsForm {
+  duration: string;
+  value: string;
+  logoRights: string;
+  displayTime: string;
+  dataAccess: string;
+  notes: string;
+}
+
+const EMPTY_TERMS: TermsForm = {
+  duration: '',
+  value: '',
+  logoRights: '',
+  displayTime: '',
+  dataAccess: '',
+  notes: '',
+};
 
 // Color palette assigned by index — keeps the sidebar visually consistent
 // even after the organizer reorders / adds / removes packages. The 4 first
@@ -195,15 +170,6 @@ function mapApiPackage(p: ApiSponsorPackage, idx: number): UiPackage {
     color: PACKAGE_COLOR_PALETTE[idx % PACKAGE_COLOR_PALETTE.length],
   };
 }
-
-const termDefs = [
-  { label: 'مدة الرعاية', value: '6 أشهر', icon: Clock, editable: true },
-  { label: 'قيمة الرعاية', value: '50,000 ر.س', icon: DollarSign, editable: true },
-  { label: 'حقوق الشعار', value: 'مستوى أول — رقمي وفعلي', icon: Building2, editable: true },
-  { label: 'وقت العرض', value: '10 دقائق', icon: Clock, editable: true },
-  { label: 'وصول لبيانات المشاركين', value: 'نعم، مجهولة الهوية', icon: AlertCircle, editable: false },
-  { label: 'تاريخ بدء الفعالية', value: '15 مارس 2025', icon: Calendar, editable: false },
-];
 
 // Shape returned by GET /hackathons/:id/sponsor-applications. Mapped to the
 // SponsorRequest shape below so the existing UI keeps working without
@@ -317,6 +283,7 @@ function mapApiToRequest(s: ApiSponsorApplication): SponsorRequest {
     status: deriveUiStatus(s),
     submittedDate: s.appliedAt ? new Date(s.appliedAt).toLocaleDateString('ar-SA') : '—',
     negotiationStep: deriveUiStep(s),
+    currentStep: typeof s.negotiationStep === 'number' ? s.negotiationStep : 0,
   };
 }
 
@@ -365,9 +332,23 @@ export function HackathonSponsors() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [termValues, setTermValues] = useState(termDefs.map((t) => t.value));
-  const [editingTerm, setEditingTerm] = useState<number | null>(null);
-  const [agreed, setAgreed] = useState(false);
+  // المرحلة المعروضة في شريط الـ steps (قابلة للنقر بشكل حر زي MessagesPage).
+  // المرحلة الحقيقية على السيرفر تجي من selectedRequest.currentStep.
+  const [viewedStep, setViewedStep] = useState(0);
+  // البحث في قائمة المحادثات
+  const [chatSearch, setChatSearch] = useState('');
+  // بيانات العقد لكل طلب (cached). تُحمَّل عند دخول مرحلة ≥ 1.
+  const [contractByAppId, setContractByAppId] = useState<Record<number, ContractData>>({});
+  const [loadingContract, setLoadingContract] = useState(false);
+  // فورم تحرير الشروط — مشترك لكل المحادثات (نعيد تعبئته عند تبديل
+  // المحادثة المختارة). isEditingTerms = هل المنظم في وضع التعديل حالياً.
+  const [termsForm, setTermsForm] = useState<TermsForm>(EMPTY_TERMS);
+  const [isEditingTerms, setIsEditingTerms] = useState(false);
+  const [savingTerms, setSavingTerms] = useState(false);
+  const [signingContract, setSigningContract] = useState(false);
+  const [agreedToSign, setAgreedToSign] = useState(false);
+  // عرض ملف العقد في modal من تبويب "إدارة العقود". null = ما فيه modal مفتوح.
+  const [viewingContractId, setViewingContractId] = useState<number | null>(null);
 
   // Load real applications on mount + after start-negotiation. Mapped through
   // mapApiToRequest so the existing render branches don't need to change.
@@ -431,6 +412,12 @@ export function HackathonSponsors() {
     ? messagesByAppId[selectedRequest.id] ?? []
     : [];
 
+  // عند تبديل المحادثة، نرجع viewedStep للمرحلة الحقيقية (currentStep) بدل
+  // ما يستلف القيمة من المحادثة السابقة.
+  useEffect(() => {
+    if (selectedRequest) setViewedStep(selectedRequest.currentStep);
+  }, [selectedRequest?.id, selectedRequest?.currentStep]);
+
   // تحميل رسائل الطلب المختار + polling كل 5 ثوانٍ لمتابعة رسائل الراعي
   // الجديدة بدون WebSocket. نوقف الـ polling لمن المستخدم يبدل طلب أو
   // يخرج من تبويب المفاوضات.
@@ -475,16 +462,31 @@ export function HackathonSponsors() {
   });
 
   // Get conversations for negotiations tab
-  const activeConversations = requests.filter(r => 
+  const activeConversations = requests.filter(r =>
     ['negotiating', 'contract_review', 'organizer_signing', 'sponsor_signing', 'completed'].includes(r.status)
   );
 
-  const totalAmount = requests.reduce((sum, r) => sum + (r.amount || 0), 0);
-  const confirmedAmount = requests
-    .filter(r => r.status === 'completed')
-    .reduce((sum, r) => sum + (r.amount || 0), 0);
-  const pendingCount = requests.filter(r => r.status === 'pending').length;
-  const negotiatingCount = activeConversations.length;
+  // فلترة قائمة المحادثات بالبحث (اسم الشركة أو الباقة)
+  const filteredChatList = activeConversations.filter((c) => {
+    const q = chatSearch.trim().toLowerCase();
+    if (!q) return true;
+    return c.companyName.toLowerCase().includes(q) || c.package.toLowerCase().includes(q);
+  });
+
+  // عدادات الداش بورد بحسب مرحلة التفاوض الفعلية (currentStep) — تعطي
+  // المنظم نظرة سريعة على عدد الطلبات في كل مرحلة.
+  // قيد التفاوض = طلب لم يبدأ أو في الشات (status=pending أو currentStep=0)
+  // مراجعة الشروط = الشروط مرسلة بانتظار موافقة الراعي (currentStep=1)
+  // التوقيع = الشروط موافَق عليها والعقد في مرحلة التوقيع (currentStep=2 أو 3)
+  // مكتملة = الطرفان وقّعا (currentStep=4)
+  const negotiatingCount = requests.filter(r =>
+    r.status !== 'rejected' && (r.status === 'pending' || r.currentStep === 0)
+  ).length;
+  const reviewCount = requests.filter(r => r.currentStep === 1).length;
+  const signingCount = requests.filter(r => r.currentStep === 2 || r.currentStep === 3).length;
+  const completedCount = requests.filter(r => r.currentStep === 4).length;
+  // عداد المحادثات في تبويب المفاوضات (نفس النطاق القديم)
+  const chatCount = activeConversations.length;
 
   // Flip SA_Status → 'accepted' via the backend, then move the UI to the
   // negotiations tab. The fake "sponsor auto-replies" are gone — real chat
@@ -507,6 +509,132 @@ export function HackathonSponsors() {
       });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'تعذّر بدء المفاوضات');
+    }
+  };
+
+  // تحميل بيانات العقد لمن يدخل المنظم مرحلة ≥ 1 (الشروط فما فوق). نعمل
+  // refetch خفيف عند العودة لنفس المحادثة كذلك عشان نلتقط آخر توقيع
+  // أرسله الراعي (بدون polling — التوقيع نادر).
+  const currentContract: ContractData | null = selectedRequest
+    ? contractByAppId[selectedRequest.id] ?? null
+    : null;
+
+  // تحميل العقد لمن يفتح modal عرض العقد من تبويب إدارة العقود. لو موجود
+  // في الـ cache (المنظم زاره من قبل في المفاوضات) ما يعيد الجلب.
+  useEffect(() => {
+    if (viewingContractId === null) return;
+    if (contractByAppId[viewingContractId]) return;
+    let cancelled = false;
+    apiGet<ContractData>(`/sponsors/applications/${viewingContractId}/contract`)
+      .then((r) => {
+        if (!cancelled) setContractByAppId((prev) => ({ ...prev, [viewingContractId]: r }));
+      })
+      .catch(() => {
+        // فشل صامت — الـ modal يعرض loading state
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingContractId, contractByAppId]);
+
+  useEffect(() => {
+    if (!selectedRequest || viewedStep === 0) return;
+    const saId = selectedRequest.id;
+    let cancelled = false;
+    setLoadingContract(true);
+    apiGet<ContractData>(`/sponsors/applications/${saId}/contract`)
+      .then((r) => {
+        if (cancelled) return;
+        setContractByAppId((prev) => ({ ...prev, [saId]: r }));
+        // عبّي الفورم بالقيم الموجودة (أو فاضي)
+        setTermsForm({
+          duration: r.terms.duration ?? '',
+          value: r.terms.value ?? '',
+          logoRights: r.terms.logoRights ?? '',
+          displayTime: r.terms.displayTime ?? '',
+          dataAccess: r.terms.dataAccess ?? '',
+          notes: r.terms.notes ?? '',
+        });
+        // إذا الشروط ما اتأرسلت بعد، نفتح وضع التعديل تلقائياً (المنظم
+        // أول داخل، يحتاج يعبي).
+        setIsEditingTerms(!r.terms.submittedAt);
+        setAgreedToSign(false);
+      })
+      .catch(() => {
+        // فشل صامت — placeholder ما يظهر شيء حساس
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingContract(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRequest?.id, viewedStep]);
+
+  // تحقق إن كل حقول الفورم معبّأة قبل الإرسال — المنظم ما يقدر يرسل
+  // شروط ناقصة للراعي.
+  const allTermsFilled = (f: TermsForm) =>
+    f.duration.trim() !== '' &&
+    f.value.trim() !== '' &&
+    f.logoRights.trim() !== '' &&
+    f.displayTime.trim() !== '' &&
+    f.dataAccess.trim() !== '' &&
+    f.notes.trim() !== '';
+
+  // حفظ الشروط (PUT) — يرفع المرحلة على الباك إلى 1 ويسجّل وقت الإرسال.
+  const handleSaveTerms = async () => {
+    if (!selectedRequest) return;
+    if (!allTermsFilled(termsForm)) {
+      toast.error('عبّي جميع الحقول قبل إرسال الشروط للراعي');
+      return;
+    }
+    const saId = selectedRequest.id;
+    setSavingTerms(true);
+    try {
+      await apiPut(`/sponsors/applications/${saId}/contract`, termsForm);
+      // اعمل refetch للتأكد من القيم بعد الحفظ + تحديث currentStep في القائمة
+      const r = await apiGet<ContractData>(`/sponsors/applications/${saId}/contract`);
+      setContractByAppId((prev) => ({ ...prev, [saId]: r }));
+      setRequests((prev) =>
+        prev.map((req) =>
+          req.id === saId ? { ...req, currentStep: r.negotiationStep } : req,
+        ),
+      );
+      setSelectedRequest((prev) =>
+        prev && prev.id === saId ? { ...prev, currentStep: r.negotiationStep } : prev,
+      );
+      setIsEditingTerms(false);
+      toast.success('تم إرسال الشروط للراعي');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'تعذّر حفظ الشروط');
+    } finally {
+      setSavingTerms(false);
+    }
+  };
+
+  // توقيع العقد (المنظم). الباك يرفع المرحلة لـ 2 ويوقّع SA_OrganizerSigned.
+  const handleOrganizerSign = async () => {
+    if (!selectedRequest || !agreedToSign) return;
+    const saId = selectedRequest.id;
+    setSigningContract(true);
+    try {
+      await apiPost(`/sponsors/applications/${saId}/sign`, {});
+      const r = await apiGet<ContractData>(`/sponsors/applications/${saId}/contract`);
+      setContractByAppId((prev) => ({ ...prev, [saId]: r }));
+      setRequests((prev) =>
+        prev.map((req) =>
+          req.id === saId ? { ...req, currentStep: r.negotiationStep } : req,
+        ),
+      );
+      setSelectedRequest((prev) =>
+        prev && prev.id === saId ? { ...prev, currentStep: r.negotiationStep } : prev,
+      );
+      setAgreedToSign(false);
+      toast.success('تم توقيع العقد من جهتك. بانتظار توقيع الراعي.');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'تعذّر تسجيل التوقيع');
+    } finally {
+      setSigningContract(false);
     }
   };
 
@@ -543,65 +671,6 @@ export function HackathonSponsors() {
     } finally {
       setSendingMessage(false);
     }
-  };
-
-  const handleMoveToReview = () => {
-    if (!selectedRequest) return;
-    
-    const updatedRequests = requests.map(r => 
-      r.id === selectedRequest.id 
-        ? { ...r, status: 'contract_review' as const, negotiationStep: 'review' as const }
-        : r
-    );
-    setRequests(updatedRequests);
-    setSelectedRequest({ ...selectedRequest, status: 'contract_review', negotiationStep: 'review' });
-    
-    toast.success('تم الانتقال لمراجعة الشروط', {
-      description: 'يمكنك الآن مراجعة وتعديل شروط العقد',
-      duration: 3000,
-    });
-  };
-
-  const handleMoveToContract = () => {
-    if (!selectedRequest) return;
-    
-    const updatedRequests = requests.map(r => 
-      r.id === selectedRequest.id 
-        ? { ...r, status: 'organizer_signing' as const, negotiationStep: 'organizer_sign' as const }
-        : r
-    );
-    setRequests(updatedRequests);
-    setSelectedRequest({ ...selectedRequest, status: 'organizer_signing', negotiationStep: 'organizer_sign' });
-    
-    toast.success('جاهز لتوقيع العقد', {
-      description: 'راجع العقد ووقع عليه لإرساله للراعي',
-      duration: 3000,
-    });
-  };
-
-  const handleOrganizerSign = () => {
-    if (!selectedRequest) return;
-    
-    toast.success('تم توقيع العقد', {
-      description: 'تم إرسال العقد للراعي للتوقيع...',
-      duration: 3000,
-    });
-
-    // Simulate sponsor signing after 3 seconds
-    setTimeout(() => {
-      const updatedRequests = requests.map(r => 
-        r.id === selectedRequest.id 
-          ? { ...r, status: 'completed' as const, negotiationStep: 'completed' as const }
-          : r
-      );
-      setRequests(updatedRequests);
-      setSelectedRequest({ ...selectedRequest, status: 'completed', negotiationStep: 'completed' });
-      
-      toast.success('🎉 تم إكمال الرعاية!', {
-        description: `${selectedRequest.companyName} وقع على العقد بنجاح`,
-        duration: 4000,
-      });
-    }, 3000);
   };
 
   // Open the unified editor for a brand-new package — `editingIdx = -1`
@@ -734,7 +803,7 @@ export function HackathonSponsors() {
               }`}
               style={{ fontWeight: 600 }}
             >
-              المحادثات ({negotiatingCount})
+              المحادثات ({chatCount})
             </button>
             <button
               onClick={() => setMainTab('contracts')}
@@ -745,7 +814,7 @@ export function HackathonSponsors() {
               }`}
               style={{ fontWeight: 600 }}
             >
-              إدارة العقود ({requests.filter((r) => r.status === 'completed' || r.status === 'organizer_signing').length})
+              إدارة العقود ({requests.filter((r) => r.currentStep === 4).length})
             </button>
           </div>
         </div>
@@ -756,50 +825,53 @@ export function HackathonSponsors() {
           <div className="flex gap-6">
             {/* Main Content - Requests */}
             <div className="flex-1">
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              {/* Stats — 4 كروت تعكس مراحل التفاوض الفعلية */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                      <TrendingUp className="w-5 h-5 text-blue-600" />
+                      <MessageCircle className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500" style={{ fontWeight: 600 }}>إجمالي طلبات الرعاية</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{totalAmount.toLocaleString()} ر.س</p>
+                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>قيد التفاوض</p>
+                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{negotiatingCount}</p>
                     </div>
-                  </div>
-                  <div className="mt-3 h-2 bg-blue-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: '75%' }}></div>
                   </div>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                      <Edit3 className="w-5 h-5 text-purple-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500" style={{ fontWeight: 600 }}>الرعايات المكتملة</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{confirmedAmount.toLocaleString()} ر.س</p>
+                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>مراجعة الشروط</p>
+                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{reviewCount}</p>
                     </div>
-                  </div>
-                  <div className="mt-3 h-2 bg-green-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-green-600 rounded-full" style={{ width: confirmedAmount > 0 ? '85%' : '0%' }}></div>
                   </div>
                 </div>
 
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-amber-600" />
+                      <FileText className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500" style={{ fontWeight: 600 }}>قيد المراجعة</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{pendingCount} طلب</p>
+                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>قيد التوقيع</p>
+                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{signingCount}</p>
                     </div>
                   </div>
-                  <div className="mt-3 h-2 bg-amber-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-600 rounded-full" style={{ width: pendingCount > 0 ? '50%' : '0%' }}></div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>مكتملة</p>
+                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{completedCount}</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1070,382 +1142,933 @@ export function HackathonSponsors() {
             </div>
           </div>
         ) : mainTab === 'negotiations' ? (
-          // Negotiations Tab - WhatsApp Style
-          <div className="flex gap-6">
-            {/* Conversations List */}
-            <div className="w-96">
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <h3 className="text-base text-gray-900" style={{ fontWeight: 700 }}>
-                    المحادثات ({activeConversations.length})
-                  </h3>
+          // المفاوضات — UI مطابقة لـ MessagesPage عند الراعي (sidebar + step
+          // strip + bubbles بنفس الألوان). الفرق الوحيد: المستخدم هنا منظم،
+          // فـ"رسالتي" = senderType === 'ORGANIZER'. مراحل 1-4 placeholder
+          // مؤقتاً حتى نبني إنشاء العقد + التوقيع في المرحلة القادمة.
+          <div className="flex bg-white rounded-2xl border border-gray-100 overflow-hidden" style={{ height: 'calc(100vh - 320px)', minHeight: '600px' }}>
+            {/* Conversations Sidebar */}
+            <div className="w-72 flex-shrink-0 bg-white border-l border-gray-100 flex flex-col">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    value={chatSearch}
+                    onChange={(e) => setChatSearch(e.target.value)}
+                    placeholder="ابحث..."
+                    className="w-full pr-10 pl-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:border-[#e35654] transition-colors"
+                  />
                 </div>
-                <div className="divide-y divide-gray-100">
-                  {activeConversations.map((conv) => {
-                    const convMessages = messagesByAppId[conv.id] ?? [];
-                    const lastMsg = convMessages[convMessages.length - 1];
-                    const isSelected = selectedRequest?.id === conv.id;
-                    
-                    return (
-                      <button
-                        key={conv.id}
-                        onClick={() => setSelectedRequest(conv)}
-                        className={`w-full px-6 py-4 text-right hover:bg-gray-50 transition-colors ${
-                          isSelected ? 'bg-blue-50' : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          {conv.companyLogo ? (
-                            <img
-                              src={conv.companyLogo}
-                              alt={conv.companyName}
-                              className="w-12 h-12 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <div
-                              className={`w-12 h-12 rounded-lg flex items-center justify-center text-white ${getAvatarColor(conv.companyName)}`}
-                              style={{ fontWeight: 700 }}
-                            >
-                              {getInitials(conv.companyName)}
-                            </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                <p className="px-4 pt-3 pb-1 text-gray-400 text-xs" style={{ fontWeight: 600 }}>
+                  المحادثات ({activeConversations.length})
+                </p>
+                {filteredChatList.length === 0 && (
+                  <p className="px-4 py-6 text-center text-xs text-gray-400">
+                    لا توجد محادثات بعد. ابدأ التفاوض من تبويب طلبات الرعاية.
+                  </p>
+                )}
+                {filteredChatList.map((conv) => {
+                  const convMessages = messagesByAppId[conv.id] ?? [];
+                  const lastMsg = convMessages[convMessages.length - 1];
+                  const isSelected = selectedRequest?.id === conv.id;
+                  const initials = getInitials(conv.companyName);
+                  const colorClass = getAvatarColor(conv.companyName);
+                  return (
+                    <button
+                      key={conv.id}
+                      onClick={() => setSelectedRequest(conv)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-right transition-all border-r-2 ${
+                        isSelected
+                          ? 'bg-[#e35654]/5 border-[#e35654]'
+                          : 'border-transparent hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm flex-shrink-0 ${colorClass}`} style={{ fontWeight: 700 }}>
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className={`text-sm truncate ${isSelected ? 'text-[#e35654]' : 'text-gray-900'}`} style={{ fontWeight: 600 }}>
+                            {conv.companyName}
+                          </p>
+                          {lastMsg && (
+                            <span className="text-gray-400 text-xs flex-shrink-0 mr-1">
+                              {new Date(lastMsg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                           )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <p className="text-sm text-gray-900 truncate" style={{ fontWeight: 600 }}>
-                                {conv.companyName}
-                              </p>
-                              {lastMsg && (
-                                <span className="text-xs text-gray-500">
-                                  {new Date(lastMsg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              )}
-                            </div>
-                            {lastMsg && (
-                              <p className="text-xs text-gray-500 truncate">
-                                {lastMsg.senderType === 'ORGANIZER' ? 'أنت: ' : ''}{lastMsg.text}
-                              </p>
-                            )}
-                          </div>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        <p className="text-gray-400 text-xs truncate mt-0.5">
+                          {lastMsg ? `${lastMsg.senderType === 'ORGANIZER' ? 'أنت: ' : ''}${lastMsg.text}` : `باقة ${conv.package}`}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Chat Area */}
-            <div className="flex-1">
-              {selectedRequest ? (
-                <div className="space-y-6">
-                  {/* Negotiation Header */}
-                  <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                    <div className="flex items-center gap-4 mb-6">
-                      {selectedRequest.companyLogo ? (
-                        <img
-                          src={selectedRequest.companyLogo}
-                          alt={selectedRequest.companyName}
-                          className="w-16 h-16 rounded-xl object-cover"
-                        />
-                      ) : (
-                        <div
-                          className={`w-16 h-16 rounded-xl flex items-center justify-center text-white text-xl ${getAvatarColor(selectedRequest.companyName)}`}
-                          style={{ fontWeight: 700 }}
-                        >
-                          {getInitials(selectedRequest.companyName)}
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <h2 className="text-xl text-gray-900 mb-1" style={{ fontWeight: 700 }}>
-                          {selectedRequest.companyName}
-                        </h2>
-                        <p className="text-sm text-gray-500">{selectedRequest.package} • {selectedRequest.subCategory}</p>
+            {/* Chat Window */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {!selectedRequest ? (
+                <div className="flex-1 flex items-center justify-center text-gray-500 text-sm px-6 text-center">
+                  اختر محادثة من القائمة لعرض التفاصيل والمتابعة
+                </div>
+              ) : (
+                <>
+                  {/* Chat Header */}
+                  <div className="bg-white border-b border-gray-100 px-5 py-3.5 flex items-center justify-between flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm ${getAvatarColor(selectedRequest.companyName)}`} style={{ fontWeight: 700 }}>
+                        {getInitials(selectedRequest.companyName)}
                       </div>
-                      {getStatusBadge(selectedRequest.status)}
+                      <div>
+                        <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                          {selectedRequest.companyName}
+                        </p>
+                        <p className="text-gray-400 text-xs">
+                          باقة {selectedRequest.package}
+                        </p>
+                      </div>
                     </div>
+                    {getStatusBadge(selectedRequest.status)}
+                  </div>
 
-                    {/* Progress Steps */}
-                    <div className="flex items-center justify-between">
-                      {[
-                        { id: 'negotiation', label: 'التفاوض', icon: MessageCircle },
-                        { id: 'review', label: 'مراجعة الشروط', icon: Edit3 },
-                        { id: 'organizer_sign', label: 'توقيع المنظم', icon: FileText },
-                        { id: 'sponsor_sign', label: 'توقيع الراعي', icon: Upload },
-                        { id: 'completed', label: 'مكتمل', icon: CheckCircle2 },
-                      ].map((step, index) => {
-                        const stepOrder = ['negotiation', 'review', 'organizer_sign', 'sponsor_sign', 'completed'];
-                        const currentIndex = stepOrder.indexOf(selectedRequest.negotiationStep || 'negotiation');
-                        const isCompleted = index < currentIndex;
-                        const isActive = selectedRequest.negotiationStep === step.id;
-                        
+                  {/* Negotiation Steps Strip — قابل للنقر للتنقّل بحرّية */}
+                  <div className="bg-white border-b border-gray-100 px-5 py-3 flex-shrink-0">
+                    <div className="flex items-center justify-between gap-2">
+                      {NEGOTIATION_STEPS.map((step, idx) => {
+                        const Icon = step.icon;
+                        // المقارنة بـ step.id مش idx — لأن ids 0,1,2,4 وقد
+                        // تكون غير متتالية (تجاوزنا step 3).
+                        const isDone = step.id < selectedRequest.currentStep;
+                        const isCurrent = step.id === selectedRequest.currentStep;
+                        const isViewed = step.id === viewedStep;
+                        const baseColor = isCurrent ? '#e35654' : isDone ? '#10b981' : '#d1d5db';
                         return (
-                          <div key={step.id} className="flex items-center">
-                            <div className="flex flex-col items-center gap-2">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                                isCompleted ? 'bg-green-600 text-white' :
-                                isActive ? 'bg-blue-600 text-white' :
-                                'bg-gray-100 text-gray-400'
-                              }`}>
-                                <step.icon className="w-5 h-5" />
+                          <div key={step.id} className="flex items-center flex-1">
+                            <button
+                              type="button"
+                              onClick={() => setViewedStep(idx)}
+                              className="flex flex-col items-center flex-1 group focus:outline-none"
+                            >
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all group-hover:scale-110 ${
+                                  isViewed ? 'ring-2 ring-offset-2 ring-[#e35654]/40' : ''
+                                }`}
+                                style={{
+                                  borderColor: baseColor,
+                                  background: isCurrent ? baseColor : isDone ? baseColor : 'white',
+                                }}
+                              >
+                                <Icon
+                                  className="w-3.5 h-3.5"
+                                  style={{ color: isCurrent || isDone ? 'white' : baseColor }}
+                                />
                               </div>
-                              <span className={`text-xs ${isActive ? 'text-gray-900' : 'text-gray-500'}`} style={{ fontWeight: isActive ? 600 : 400 }}>
+                              <span
+                                className="text-[10px] mt-1"
+                                style={{
+                                  color: baseColor,
+                                  fontWeight: isViewed ? 700 : isCurrent ? 700 : 500,
+                                }}
+                              >
                                 {step.label}
                               </span>
-                            </div>
-                            {index < 4 && (
-                              <div className={`w-16 h-0.5 mx-2 ${isCompleted ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                            </button>
+                            {idx < NEGOTIATION_STEPS.length - 1 && (
+                              <div
+                                className="h-0.5 flex-1 mb-4"
+                                style={{ background: step.id < selectedRequest.currentStep ? '#10b981' : '#e5e7eb' }}
+                              />
                             )}
                           </div>
                         );
                       })}
                     </div>
+                    {selectedRequest.currentStep === 4 && (
+                      <p className="text-xs text-green-600 text-center mt-2" style={{ fontWeight: 600 }}>
+                        ✓ اكتملت جميع مراحل التفاوض
+                      </p>
+                    )}
                   </div>
 
-                  {/* Negotiation Content */}
-                  {selectedRequest.negotiationStep === 'negotiation' && (
-                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                      <div className="px-6 py-4 border-b border-gray-100">
-                        <h3 className="text-base text-gray-900" style={{ fontWeight: 700 }}>
-                          المحادثات والتفاوض
-                        </h3>
-                      </div>
-                      <div className="p-6">
-                        {/* Messages */}
-                        <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
-                          {loadingMessages && currentMessages.length === 0 && (
-                            <p className="text-center text-sm text-gray-400 py-6">
-                              جاري تحميل المحادثة...
-                            </p>
-                          )}
-                          {!loadingMessages && currentMessages.length === 0 && (
-                            <p className="text-center text-sm text-gray-400 py-6">
-                              لا توجد رسائل بعد. ابدأ المحادثة برسالة ترحيب.
-                            </p>
-                          )}
-                          {currentMessages.map((msg) => {
-                            const mine = msg.senderType === 'ORGANIZER';
-                            return (
-                              <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-md ${mine ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'} rounded-2xl px-4 py-3`}>
-                                  <p className="text-sm whitespace-pre-line">{msg.text}</p>
-                                  <p className={`text-xs mt-1 ${mine ? 'text-blue-100' : 'text-gray-500'}`}>
-                                    {new Date(msg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
-                                  </p>
+                  {/* Step 0 = chat. Steps 1-4 = placeholder حتى المرحلة القادمة. */}
+                  {viewedStep === 0 ? (
+                    <>
+                      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-[#f7f7f6]">
+                        {loadingMessages && currentMessages.length === 0 && (
+                          <p className="text-center text-sm text-gray-400 py-6">
+                            جاري تحميل المحادثة...
+                          </p>
+                        )}
+                        {!loadingMessages && currentMessages.length === 0 && (
+                          <p className="text-center text-sm text-gray-400 py-6">
+                            لا توجد رسائل بعد. ابدأ المحادثة برسالة ترحيب.
+                          </p>
+                        )}
+                        {currentMessages.length > 0 && (
+                          <div className="flex items-center gap-3 my-2">
+                            <div className="flex-1 h-px bg-gray-200" />
+                            <span className="text-gray-400 text-xs px-3 py-1 bg-white rounded-full border border-gray-100">
+                              اليوم
+                            </span>
+                            <div className="flex-1 h-px bg-gray-200" />
+                          </div>
+                        )}
+                        {currentMessages.map((msg) => {
+                          const mine = msg.senderType === 'ORGANIZER';
+                          const colorClass = getAvatarColor(selectedRequest.companyName);
+                          const time = new Date(msg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+                          return (
+                            <div key={msg.id} className={`flex items-end gap-2.5 ${mine ? 'flex-row-reverse' : ''}`}>
+                              {!mine && (
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0 ${colorClass}`} style={{ fontWeight: 700 }}>
+                                  {getInitials(selectedRequest.companyName)}
+                                </div>
+                              )}
+                              <div className={`max-w-[65%] flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
+                                <div
+                                  className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
+                                    mine
+                                      ? 'bg-[#e35654] text-white rounded-tr-sm'
+                                      : 'bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm'
+                                  }`}
+                                >
+                                  {msg.text}
+                                </div>
+                                <div className={`flex items-center gap-1 px-1 ${mine ? 'flex-row-reverse' : ''}`}>
+                                  <span className="text-gray-300 text-xs">{time}</span>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
+                            </div>
+                          );
+                        })}
+                      </div>
 
-                        {/* Message Input */}
-                        <div className="flex items-center gap-3">
+                      {/* Input */}
+                      <div className="bg-white border-t border-gray-100 px-5 py-4 flex-shrink-0">
+                        <div className="flex items-center gap-2.5">
+                          {/* مؤقتاً paperclip معطّل — مرفقات الشات قيد التطوير. */}
+                          <button
+                            type="button"
+                            disabled
+                            className="p-2.5 rounded-xl text-gray-300 cursor-not-allowed"
+                            title="إرفاق ملف (قريباً)"
+                          >
+                            <Paperclip className="w-5 h-5" />
+                          </button>
                           <input
-                            type="text"
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                            placeholder="اكتب رسالتك..."
+                            placeholder="اكتب رسالتك هنا..."
                             disabled={sendingMessage}
-                            className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50"
+                            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-[#e35654] focus:ring-2 focus:ring-[#e35654]/10 transition-all disabled:opacity-50"
                           />
                           <button
                             onClick={handleSendMessage}
-                            disabled={sendingMessage || !newMessage.trim()}
-                            className="px-4 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-50"
+                            disabled={!newMessage.trim() || sendingMessage}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                              newMessage.trim() && !sendingMessage
+                                ? 'bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20'
+                                : 'bg-gray-100 text-gray-300'
+                            }`}
                           >
-                            <Send className="w-5 h-5" />
-                          </button>
-                        </div>
-
-                        <div className="mt-6 pt-6 border-t border-gray-100">
-                          <button
-                            onClick={handleMoveToReview}
-                            className="w-full px-4 py-3 rounded-xl bg-green-600 text-white text-sm hover:bg-green-700 transition-all"
-                            style={{ fontWeight: 600 }}
-                          >
-                            الانتقال لمراجعة الشروط
+                            {sendingMessage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                           </button>
                         </div>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Review Terms */}
-                  {selectedRequest.negotiationStep === 'review' && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                      <h3 className="text-base text-gray-900 mb-6" style={{ fontWeight: 700 }}>
-                        مراجعة شروط الرعاية
-                      </h3>
-                      <div className="space-y-4">
-                        {termDefs.map((term, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-4 rounded-xl border border-gray-100">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                                <term.icon className="w-5 h-5 text-blue-600" />
-                              </div>
-                              <div>
-                                <p className="text-sm text-gray-900" style={{ fontWeight: 600 }}>{term.label}</p>
-                                {editingTerm === idx ? (
+                    </>
+                  ) : (
+                    <div className="flex-1 overflow-y-auto bg-[#f7f7f6] px-5 py-5">
+                      {loadingContract && !currentContract ? (
+                        <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-gray-400 mx-auto mb-2" />
+                          <p className="text-gray-500 text-xs">جاري تحميل بيانات العقد...</p>
+                        </div>
+                      ) : viewedStep === 1 ? (
+                        // ── المرحلة 1: تحرير/مراجعة الشروط ──
+                        <div className="bg-white rounded-2xl border border-gray-200 max-w-2xl mx-auto">
+                          <div className="px-5 py-4 border-b border-gray-100">
+                            <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                              {isEditingTerms ? 'تحرير شروط العقد' : 'شروط العقد المُرسلة'}
+                            </h3>
+                            <p className="text-gray-400 text-xs mt-1">
+                              {isEditingTerms
+                                ? 'اكتب الشروط التي اتفقت عليها مع الراعي في المحادثة، ثم أرسلها له للمراجعة.'
+                                : currentContract?.terms.submittedAt
+                                ? `أُرسلت في ${new Date(currentContract.terms.submittedAt).toLocaleString('ar-SA')}`
+                                : 'لم تُرسل بعد'}
+                            </p>
+                          </div>
+                          <div className="px-5 py-4 space-y-3">
+                            {isEditingTerms ? (
+                              <>
+                                <div>
+                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>مدة الرعاية <span className="text-red-500">*</span></label>
                                   <input
                                     type="text"
-                                    value={termValues[idx]}
-                                    onChange={(e) => {
-                                      const newValues = [...termValues];
-                                      newValues[idx] = e.target.value;
-                                      setTermValues(newValues);
-                                    }}
-                                    onBlur={() => setEditingTerm(null)}
-                                    className="mt-1 px-2 py-1 border border-blue-500 rounded text-sm"
-                                    autoFocus
+                                    value={termsForm.duration}
+                                    onChange={(e) => setTermsForm({ ...termsForm, duration: e.target.value })}
+                                    placeholder="مثال: 6 أشهر"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
                                   />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>قيمة الرعاية <span className="text-red-500">*</span></label>
+                                  <input
+                                    type="text"
+                                    value={termsForm.value}
+                                    onChange={(e) => setTermsForm({ ...termsForm, value: e.target.value })}
+                                    placeholder="مثال: 50,000 ر.س أو خدمات تقنية"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>حقوق الشعار <span className="text-red-500">*</span></label>
+                                  <textarea
+                                    rows={2}
+                                    value={termsForm.logoRights}
+                                    onChange={(e) => setTermsForm({ ...termsForm, logoRights: e.target.value })}
+                                    placeholder="مثال: ظهور الشعار على الموقع والمواد الإعلامية والمنصات الرقمية"
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>وقت العرض <span className="text-red-500">*</span></label>
+                                    <input
+                                      type="text"
+                                      value={termsForm.displayTime}
+                                      onChange={(e) => setTermsForm({ ...termsForm, displayTime: e.target.value })}
+                                      placeholder="مثال: 10 دقائق"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>وصول لبيانات المشاركين <span className="text-red-500">*</span></label>
+                                    <input
+                                      type="text"
+                                      value={termsForm.dataAccess}
+                                      onChange={(e) => setTermsForm({ ...termsForm, dataAccess: e.target.value })}
+                                      placeholder="مثال: نعم، مجهولة الهوية"
+                                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654]"
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>ملاحظات <span className="text-red-500">*</span></label>
+                                  <textarea
+                                    rows={2}
+                                    value={termsForm.notes}
+                                    onChange={(e) => setTermsForm({ ...termsForm, notes: e.target.value })}
+                                    placeholder="أي بنود أخرى متفق عليها..."
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#e35654] resize-none"
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="space-y-2">
+                                  {[
+                                    { label: 'مدة الرعاية', value: currentContract?.terms.duration },
+                                    { label: 'قيمة الرعاية', value: currentContract?.terms.value },
+                                    { label: 'حقوق الشعار', value: currentContract?.terms.logoRights },
+                                    { label: 'وقت العرض', value: currentContract?.terms.displayTime },
+                                    { label: 'وصول لبيانات المشاركين', value: currentContract?.terms.dataAccess },
+                                    { label: 'ملاحظات', value: currentContract?.terms.notes },
+                                  ].map((t, i) => (
+                                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-gray-400 text-xs">{t.label}</p>
+                                        <p className="text-gray-900 text-sm whitespace-pre-line" style={{ fontWeight: 600 }}>
+                                          {t.value || '—'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {/* بانر حالة موافقة الراعي على الشروط — يحدّد
+                                    هل ينفتح العقد الرقمي أو يبقى مقفلاً. */}
+                                {currentContract?.acceptance.sponsorAccepted ? (
+                                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl">
+                                    <p className="text-green-800 text-xs flex items-center gap-1.5" style={{ fontWeight: 700 }}>
+                                      <CheckCircle2 className="w-4 h-4" /> وافق الراعي على الشروط
+                                    </p>
+                                    {currentContract.acceptance.sponsorAcceptedAt && (
+                                      <p className="text-green-700 text-[11px] mt-1">
+                                        في {new Date(currentContract.acceptance.sponsorAcceptedAt).toLocaleString('ar-SA')}
+                                      </p>
+                                    )}
+                                    <p className="text-green-700 text-[11px] mt-1">
+                                      يمكنك الآن الانتقال إلى العقد الرقمي للتوقيع.
+                                    </p>
+                                  </div>
                                 ) : (
-                                  <p className="text-sm text-gray-600">{termValues[idx]}</p>
+                                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                                    <p className="text-amber-800 text-xs flex items-center gap-1.5" style={{ fontWeight: 700 }}>
+                                      <Clock className="w-4 h-4" /> بانتظار موافقة الراعي على الشروط
+                                    </p>
+                                    <p className="text-amber-700 text-[11px] mt-1 leading-relaxed">
+                                      الراعي يراجع البنود. لو طلب تعديلات عبر الشات،
+                                      عدّل الشروط هنا وأعد إرسالها له. لن يُفتح العقد
+                                      الرقمي حتى يوافق الراعي.
+                                    </p>
+                                  </div>
                                 )}
-                              </div>
-                            </div>
-                            {term.editable && (
-                              <button
-                                onClick={() => setEditingTerm(idx)}
-                                className="w-8 h-8 rounded-lg bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-100 transition-colors"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
+                              </>
                             )}
                           </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-6 pt-6 border-t border-gray-100">
-                        <button
-                          onClick={handleMoveToContract}
-                          className="w-full px-4 py-3 rounded-xl bg-green-600 text-white text-sm hover:bg-green-700 transition-all"
-                          style={{ fontWeight: 600 }}
-                        >
-                          الموافقة والانتقال للعقد
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Organizer Signing */}
-                  {selectedRequest.negotiationStep === 'organizer_sign' && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                      <div className="text-center mb-6">
-                        <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-                          <FileText className="w-8 h-8 text-blue-600" />
-                        </div>
-                        <h3 className="text-xl text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                          توقيع العقد
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          قم بمراجعة العقد وتوقيعه لإرساله للراعي
-                        </p>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-xl p-6 mb-6">
-                        <p className="text-sm text-gray-700 mb-4">
-                          نموذج العقد الرقمي سيتم عرضه هنا للمراجعة النهائية قبل التوقيع...
-                        </p>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <FileText className="w-4 h-4" />
-                          <span>عقد_رعاية_{selectedRequest.companyName}.pdf</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3 mb-6 p-4 bg-blue-50 rounded-xl">
-                        <input
-                          type="checkbox"
-                          checked={agreed}
-                          onChange={(e) => setAgreed(e.target.checked)}
-                          className="mt-1"
-                        />
-                        <label className="text-sm text-gray-700">
-                          أوافق على جميع شروط وأحكام الرعاية المذكورة في العقد وأؤكد صحة المعلومات المقدمة
-                        </label>
-                      </div>
-
-                      <button
-                        onClick={handleOrganizerSign}
-                        disabled={!agreed}
-                        className={`w-full px-4 py-3 rounded-xl text-white text-sm transition-all ${
-                          agreed ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'
-                        }`}
-                        style={{ fontWeight: 600 }}
-                      >
-                        توقيع العقد وإرساله للراعي
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Completed */}
-                  {selectedRequest.negotiationStep === 'completed' && (
-                    <div className="bg-white rounded-2xl border border-gray-100 p-6">
-                      <div className="text-center">
-                        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                          <CheckCircle2 className="w-8 h-8 text-green-600" />
-                        </div>
-                        <h3 className="text-xl text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                          تم إكمال الرعاية بنجاح! 🎉
-                        </h3>
-                        <p className="text-sm text-gray-500 mb-6">
-                          تم توقيع العقد من الطرفين وإكمال جميع الإجراءات
-                        </p>
-
-                        <div className="bg-green-50 rounded-xl p-6 text-right">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-xs text-green-700 mb-1">الشركة الراعية</p>
-                              <p className="text-sm text-green-900" style={{ fontWeight: 600 }}>{selectedRequest.companyName}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-green-700 mb-1">قيمة الرعاية</p>
-                              <p className="text-sm text-green-900" style={{ fontWeight: 600 }}>{selectedRequest.amount?.toLocaleString()} ر.س</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-green-700 mb-1">الباقة</p>
-                              <p className="text-sm text-green-900" style={{ fontWeight: 600 }}>{selectedRequest.package}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-green-700 mb-1">الحالة</p>
-                              <p className="text-sm text-green-900" style={{ fontWeight: 600 }}>مكتمل ✓</p>
+                          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                            <button
+                              onClick={() => setViewedStep(0)}
+                              className="flex items-center gap-1.5 text-gray-500 text-xs hover:text-gray-700"
+                              style={{ fontWeight: 500 }}
+                            >
+                              <ArrowRight className="w-3.5 h-3.5" /> رجوع للمحادثة
+                            </button>
+                            <div className="flex items-center gap-2">
+                              {isEditingTerms ? (
+                                <>
+                                  {currentContract?.terms.submittedAt && (
+                                    <button
+                                      onClick={() => setIsEditingTerms(false)}
+                                      className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
+                                      style={{ fontWeight: 600 }}
+                                    >
+                                      إلغاء
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={handleSaveTerms}
+                                    disabled={savingTerms || !allTermsFilled(termsForm) || (currentContract?.acceptance.sponsorAccepted ?? false)}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] disabled:opacity-50 disabled:cursor-not-allowed"
+                                    style={{ fontWeight: 600 }}
+                                    title={!allTermsFilled(termsForm) ? 'يجب تعبئة جميع الحقول قبل الإرسال' : undefined}
+                                  >
+                                    {savingTerms && <Loader2 className="w-3 h-3 animate-spin" />}
+                                    {currentContract?.terms.submittedAt ? 'حفظ التعديلات' : 'إرسال للراعي'}
+                                  </button>
+                                </>
+                              ) : currentContract?.acceptance.sponsorAccepted ? (
+                                // الراعي وافق → ما فيه تعديل، فقط زر الانتقال للعقد الرقمي
+                                <button
+                                  onClick={() => setViewedStep(2)}
+                                  className="px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] inline-flex items-center gap-1.5"
+                                  style={{ fontWeight: 600 }}
+                                >
+                                  <FileText className="w-3.5 h-3.5" /> الانتقال للعقد الرقمي
+                                </button>
+                              ) : (
+                                // الراعي ما وافق بعد → السماح بالتعديل وإعادة الإرسال
+                                <button
+                                  onClick={() => setIsEditingTerms(true)}
+                                  className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200 inline-flex items-center gap-1.5"
+                                  style={{ fontWeight: 600 }}
+                                >
+                                  <Edit className="w-3.5 h-3.5" /> تعديل الشروط
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
-                      </div>
+                      ) : viewedStep === 2 || viewedStep === 3 ? (
+                        // ── المرحلة 2/3: العقد الرقمي ومراحل التوقيع ──
+                        // الباك يرفض التوقيع قبل موافقة الراعي على الشروط؛
+                        // الـ UI يعكس هذا: لا تظهر معاينة العقد أصلاً قبل
+                        // الموافقة، نطلب من المنظم الرجوع لانتظار الراعي.
+                        !currentContract?.terms.submittedAt ? (
+                          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 max-w-md mx-auto text-center">
+                            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+                              <Clock className="w-6 h-6 text-amber-500" />
+                            </div>
+                            <p className="text-amber-900 text-sm" style={{ fontWeight: 700 }}>
+                              أرسل الشروط أولاً
+                            </p>
+                            <p className="text-amber-700 text-xs mt-2 leading-relaxed">
+                              لا يمكن إصدار العقد قبل تحرير وإرسال الشروط للراعي.
+                            </p>
+                            <button
+                              onClick={() => setViewedStep(1)}
+                              className="mt-4 px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs hover:bg-amber-100"
+                              style={{ fontWeight: 600 }}
+                            >
+                              ← الرجوع لتحرير الشروط
+                            </button>
+                          </div>
+                        ) : !currentContract?.acceptance.sponsorAccepted ? (
+                          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 max-w-md mx-auto text-center">
+                            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+                              <Clock className="w-6 h-6 text-amber-500" />
+                            </div>
+                            <p className="text-amber-900 text-sm" style={{ fontWeight: 700 }}>
+                              بانتظار موافقة الراعي على الشروط
+                            </p>
+                            <p className="text-amber-700 text-xs mt-2 leading-relaxed">
+                              لا يمكن البدء بالعقد الرقمي والتوقيع قبل أن يراجع
+                              الراعي الشروط ويوافق عليها رسمياً. لو طلب تعديلات،
+                              عدّلها من مرحلة "مراجعة الشروط" وأعد الإرسال.
+                            </p>
+                            <button
+                              onClick={() => setViewedStep(1)}
+                              className="mt-4 px-4 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs hover:bg-amber-100"
+                              style={{ fontWeight: 600 }}
+                            >
+                              ← الرجوع لمراجعة الشروط
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-white rounded-2xl border border-gray-200 max-w-2xl mx-auto overflow-hidden">
+                            <div className="bg-gradient-to-r from-gray-900 to-gray-700 px-5 py-5 text-center text-white">
+                              <div className="w-10 h-10 rounded-xl bg-[#e35654] flex items-center justify-center mx-auto mb-2">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-sm" style={{ fontWeight: 800 }}>
+                                عقد رعاية رسمي
+                              </h4>
+                              <p className="text-gray-400 text-xs mt-1">
+                                رقم: #SP-{new Date().getFullYear()}-{String(currentContract.applicationId).padStart(4, '0')}
+                              </p>
+                            </div>
+                            <div className="p-5 space-y-3">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="bg-gray-50 rounded-xl p-3">
+                                  <p className="text-gray-400 text-xs mb-0.5">الطرف الأول (المنظم)</p>
+                                  <p className="text-gray-900 text-xs" style={{ fontWeight: 700 }}>
+                                    {currentContract.parties.organizerName}
+                                  </p>
+                                  <p className="text-gray-400 text-[10px] mt-1">
+                                    {currentContract.parties.hackathonTitle}
+                                  </p>
+                                </div>
+                                <div className="bg-gray-50 rounded-xl p-3">
+                                  <p className="text-gray-400 text-xs mb-0.5">الطرف الثاني (الراعي)</p>
+                                  <p className="text-gray-900 text-xs" style={{ fontWeight: 700 }}>
+                                    {currentContract.parties.sponsorName}
+                                  </p>
+                                  <p className="text-gray-400 text-[10px] mt-1">
+                                    باقة {currentContract.parties.packageName}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="border-t border-dashed border-gray-200 pt-3 space-y-2">
+                                {[
+                                  { label: 'مدة الرعاية', value: currentContract.terms.duration },
+                                  { label: 'قيمة الرعاية', value: currentContract.terms.value },
+                                  { label: 'حقوق الشعار', value: currentContract.terms.logoRights },
+                                  { label: 'وقت العرض', value: currentContract.terms.displayTime },
+                                  { label: 'وصول لبيانات المشاركين', value: currentContract.terms.dataAccess },
+                                  { label: 'ملاحظات', value: currentContract.terms.notes },
+                                ].filter((t) => t.value).map((t, i) => (
+                                  <div key={i} className="flex justify-between items-start py-1.5 border-b border-gray-100 gap-3">
+                                    <span className="text-gray-500 text-xs">{t.label}</span>
+                                    <span className="text-gray-900 text-xs text-left whitespace-pre-line" style={{ fontWeight: 600 }}>
+                                      {t.value}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* قسم التواقيع */}
+                              <div className="mt-4 grid grid-cols-2 gap-3">
+                                <div className={`rounded-xl p-3 border ${currentContract.signatures.organizerSigned ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                                  <p className="text-gray-500 text-[10px] mb-1">توقيع المنظم</p>
+                                  {currentContract.signatures.organizerSigned ? (
+                                    <>
+                                      <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> موقَّع
+                                      </p>
+                                      {currentContract.signatures.organizerSignedAt && (
+                                        <p className="text-gray-400 text-[10px] mt-1">
+                                          {new Date(currentContract.signatures.organizerSignedAt).toLocaleString('ar-SA')}
+                                        </p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p className="text-gray-400 text-xs">بانتظار التوقيع</p>
+                                  )}
+                                </div>
+                                <div className={`rounded-xl p-3 border ${currentContract.signatures.sponsorSigned ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                                  <p className="text-gray-500 text-[10px] mb-1">توقيع الراعي</p>
+                                  {currentContract.signatures.sponsorSigned ? (
+                                    <>
+                                      <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> موقَّع
+                                      </p>
+                                      {currentContract.signatures.sponsorSignedAt && (
+                                        <p className="text-gray-400 text-[10px] mt-1">
+                                          {new Date(currentContract.signatures.sponsorSignedAt).toLocaleString('ar-SA')}
+                                        </p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p className="text-gray-400 text-xs">بانتظار التوقيع</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* زر التوقيع للمنظم (إن لم يوقّع بعد) */}
+                              {!currentContract.signatures.organizerSigned && (
+                                <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                                  <label className="flex items-start gap-3 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={agreedToSign}
+                                      onChange={(e) => setAgreedToSign(e.target.checked)}
+                                      className="mt-0.5 w-4 h-4 accent-[#e35654]"
+                                    />
+                                    <span className="text-gray-700 text-xs leading-relaxed">
+                                      قرأت بنود العقد بالكامل وأوافق عليها بصفتي ممثلاً عن المنظم.
+                                    </span>
+                                  </label>
+                                  <button
+                                    onClick={handleOrganizerSign}
+                                    disabled={!agreedToSign || signingContract}
+                                    className="mt-3 w-full px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                                    style={{ fontWeight: 600 }}
+                                  >
+                                    {signingContract && <Loader2 className="w-3 h-3 animate-spin" />}
+                                    توقيع العقد رقمياً
+                                  </button>
+                                </div>
+                              )}
+
+                              {currentContract.signatures.organizerSigned && !currentContract.signatures.sponsorSigned && (
+                                <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-xl text-center">
+                                  <p className="text-amber-800 text-xs" style={{ fontWeight: 600 }}>
+                                    ⏳ بانتظار توقيع الراعي
+                                  </p>
+                                  <p className="text-amber-600 text-[10px] mt-1">
+                                    سيُصبح العقد ساري التنفيذ فور توقيع الراعي.
+                                  </p>
+                                </div>
+                              )}
+
+                              {currentContract.signatures.organizerSigned && currentContract.signatures.sponsorSigned && (
+                                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-xl text-center">
+                                  <CheckCircle2 className="w-6 h-6 text-green-600 mx-auto mb-1" />
+                                  <p className="text-green-800 text-xs" style={{ fontWeight: 700 }}>
+                                    العقد ساري ومُوقَّع من الطرفين 🎉
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+                              <button
+                                onClick={() => setViewedStep(1)}
+                                className="flex items-center gap-1.5 text-gray-500 text-xs hover:text-gray-700"
+                                style={{ fontWeight: 500 }}
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" /> رجوع للشروط
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        // ── المرحلة 4: مكتمل ──
+                        <div className="bg-white rounded-2xl border border-green-200 p-6 max-w-md mx-auto text-center">
+                          <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+                            <CheckCircle2 className="w-7 h-7 text-green-600" />
+                          </div>
+                          <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                            تمّت الرعاية بنجاح
+                          </p>
+                          <p className="text-gray-500 text-xs mt-2 leading-relaxed">
+                            العقد ساري ومُوقَّع من الطرفين. يمكنك مراجعته من تبويب إدارة العقود.
+                          </p>
+                          <button
+                            onClick={() => setMainTab('contracts')}
+                            className="mt-4 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48]"
+                            style={{ fontWeight: 600 }}
+                          >
+                            عرض في إدارة العقود ←
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-                  <MessageCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-                    اختر محادثة لعرضها
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    اضغط على أحد المحادثات من القائمة لعرض التفاصيل والمتابعة
-                  </p>
-                </div>
+                </>
               )}
             </div>
           </div>
         ) : (
-          // Contracts Tab — placeholder for Phase 3. Lists contracts that
-          // reached the signing/completed states (organizer_signing+) and
-          // will surface the signed PDFs/forms once the contract module is
-          // wired up.
-          <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg text-gray-900 mb-2" style={{ fontWeight: 700 }}>
-              إدارة العقود
-            </h3>
-            <p className="text-sm text-gray-500 max-w-md mx-auto">
-              هنا ستظهر العقود الموقعة بينك وبين الرعاة بعد اكتمال التفاوض،
-              مع إمكانية متابعة تنفيذ التزامات الرعاية. يُفعّل هذا القسم في
-              المرحلة القادمة.
-            </p>
-          </div>
+          // ── إدارة العقود ──
+          // يعرض الطلبات اللي وصلت step 4 (موقّعة من الطرفين). الضغط على
+          // أي عقد يفتح المحادثة على المرحلة الرقمية لعرض البنود وحالة
+          // التوقيع.
+          (() => {
+            const signedContracts = requests.filter((r) => r.currentStep === 4);
+            if (signedContracts.length === 0) {
+              return (
+                <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                  <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg text-gray-900 mb-2" style={{ fontWeight: 700 }}>
+                    لا توجد عقود مكتملة بعد
+                  </h3>
+                  <p className="text-sm text-gray-500 max-w-md mx-auto">
+                    ستظهر هنا العقود الموقّعة من الطرفين بعد اكتمال جميع
+                    مراحل التفاوض والتوقيع الرقمي.
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <h3 className="text-base text-gray-900" style={{ fontWeight: 700 }}>
+                    العقود السارية ({signedContracts.length})
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    عقود موقّعة من المنظم والراعي رقمياً.
+                  </p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {signedContracts.map((c) => (
+                    <div key={c.id} className="px-6 py-4 flex items-center gap-4">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white ${getAvatarColor(c.companyName)}`} style={{ fontWeight: 700 }}>
+                        {getInitials(c.companyName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900" style={{ fontWeight: 700 }}>
+                          {c.companyName}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          باقة {c.package} • {c.value}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          رقم العقد: #SP-{new Date().getFullYear()}-{String(c.id).padStart(4, '0')}
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs bg-emerald-100 text-emerald-700" style={{ fontWeight: 600 }}>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> ساري
+                      </span>
+                      <button
+                        onClick={() => setViewingContractId(c.id)}
+                        className="px-3 py-1.5 rounded-lg bg-gray-50 text-gray-700 text-xs hover:bg-gray-100 transition-colors inline-flex items-center gap-1"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <FileText className="w-3.5 h-3.5" /> عرض العقد
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()
         )}
       </div>
+
+      {/* Contract View Modal — يُفتح من تبويب "إدارة العقود". يعرض ملف العقد
+          كاملاً (بنود + تواقيع رقمية + رقم العقد) مع خيار طباعة/تنزيل PDF.
+          نفس بنية الـ modal عند الراعي عشان الطرفان يشوفان نفس الملف. */}
+      {viewingContractId !== null && (() => {
+        const contract = contractByAppId[viewingContractId];
+        const req = requests.find((r) => r.id === viewingContractId);
+        if (!contract) {
+          return (
+            <div
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+              onClick={() => setViewingContractId(null)}
+            >
+              <div className="bg-white rounded-2xl p-8 text-center">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-500 text-xs">جاري تحميل العقد...</p>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 contract-modal-overlay"
+            onClick={() => setViewingContractId(null)}
+          >
+            <style>{`
+              @media print {
+                body * { visibility: hidden !important; }
+                .contract-print, .contract-print * { visibility: visible !important; }
+                .contract-print {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  background: white !important;
+                  padding: 32px !important;
+                  box-shadow: none !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                }
+                .contract-modal-overlay {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  background: white !important;
+                  padding: 0 !important;
+                }
+                .no-print { display: none !important; }
+              }
+            `}</style>
+            <div
+              dir="rtl"
+              className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto contract-print"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-gray-900 to-gray-700 px-8 py-6 text-center text-white rounded-t-2xl">
+                <div className="w-12 h-12 rounded-xl bg-[#e35654] flex items-center justify-center mx-auto mb-3">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <h2 style={{ fontWeight: 800, fontSize: '1.15rem' }}>
+                  عقد رعاية رسمي
+                </h2>
+                <p className="text-gray-300 text-xs mt-1">
+                  رقم: #SP-{new Date().getFullYear()}-{String(contract.applicationId).padStart(4, '0')}
+                </p>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-5">
+                {/* Parties */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-gray-400 text-xs mb-1">الطرف الأول (المنظم)</p>
+                    <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                      {contract.parties.organizerName}
+                    </p>
+                    <p className="text-gray-400 text-[11px] mt-1">
+                      {contract.parties.hackathonTitle}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-gray-400 text-xs mb-1">الطرف الثاني (الراعي)</p>
+                    <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                      {contract.parties.sponsorName}
+                    </p>
+                    <p className="text-gray-400 text-[11px] mt-1">
+                      باقة {contract.parties.packageName}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Terms */}
+                <div className="border-t border-dashed border-gray-200 pt-4">
+                  <h3 className="text-gray-900 text-sm mb-3" style={{ fontWeight: 700 }}>
+                    بنود العقد
+                  </h3>
+                  <div className="space-y-2">
+                    {[
+                      { label: 'مدة الرعاية', value: contract.terms.duration },
+                      { label: 'قيمة الرعاية', value: contract.terms.value },
+                      { label: 'حقوق الشعار', value: contract.terms.logoRights },
+                      { label: 'وقت العرض', value: contract.terms.displayTime },
+                      { label: 'وصول لبيانات المشاركين', value: contract.terms.dataAccess },
+                      { label: 'ملاحظات', value: contract.terms.notes },
+                    ].filter((t) => t.value).map((t) => (
+                      <div
+                        key={t.label}
+                        className="flex justify-between items-start py-2 border-b border-gray-100 gap-3"
+                      >
+                        <span className="text-gray-500 text-xs">{t.label}</span>
+                        <span className="text-gray-900 text-xs text-left whitespace-pre-line" style={{ fontWeight: 600 }}>
+                          {t.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Signatures */}
+                <div className="border-t border-dashed border-gray-200 pt-4">
+                  <h3 className="text-gray-900 text-sm mb-3" style={{ fontWeight: 700 }}>
+                    التواقيع الرقمية
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className={`rounded-xl p-4 border ${contract.signatures.organizerSigned ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <p className="text-gray-500 text-xs mb-1">المنظم</p>
+                      <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
+                        {contract.parties.organizerName}
+                      </p>
+                      {contract.signatures.organizerSigned ? (
+                        <>
+                          <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                            <CheckCircle2 className="w-3.5 h-3.5" /> موقَّع رقمياً
+                          </p>
+                          {contract.signatures.organizerSignedAt && (
+                            <p className="text-gray-400 text-[11px] mt-1">
+                              {new Date(contract.signatures.organizerSignedAt).toLocaleString('ar-SA')}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-gray-400 text-xs">لم يوقّع بعد</p>
+                      )}
+                    </div>
+                    <div className={`rounded-xl p-4 border ${contract.signatures.sponsorSigned ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <p className="text-gray-500 text-xs mb-1">الراعي</p>
+                      <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
+                        {contract.parties.sponsorName}
+                      </p>
+                      {contract.signatures.sponsorSigned ? (
+                        <>
+                          <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                            <CheckCircle2 className="w-3.5 h-3.5" /> موقَّع رقمياً
+                          </p>
+                          {contract.signatures.sponsorSignedAt && (
+                            <p className="text-gray-400 text-[11px] mt-1">
+                              {new Date(contract.signatures.sponsorSignedAt).toLocaleString('ar-SA')}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-gray-400 text-xs">لم يوقّع بعد</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Note */}
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    <p className="text-green-800 text-sm" style={{ fontWeight: 700 }}>
+                      عقد موقّع رقمياً من الطرفين
+                    </p>
+                  </div>
+                  <p className="text-green-700 text-xs">
+                    تمّ توقيع العقد إلكترونياً وحفظه في سجلات المنصة.
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="px-6 pb-6 flex items-center gap-2 no-print">
+                <button
+                  onClick={() => setViewingContractId(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-700 hover:bg-gray-50"
+                  style={{ fontWeight: 600 }}
+                >
+                  إغلاق
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="flex-1 py-2.5 rounded-xl text-sm text-white bg-[#e35654] hover:bg-[#cc4a48] flex items-center justify-center gap-2"
+                  style={{ fontWeight: 600 }}
+                >
+                  <Upload className="w-4 h-4" />
+                  حفظ كـ PDF
+                </button>
+              </div>
+              {/* عرض اسم الشركة للمراجعة لو احتجناه */}
+              {req && (
+                <p className="px-6 pb-4 text-center text-[11px] text-gray-300 no-print">
+                  عقد رعاية {req.companyName}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Unified Package Editor — mirrors the CreateHackathon customization
           step exactly (4 sections: معلومات عامة / القيمة / ما يقدمه الراعي /
@@ -1518,7 +2141,7 @@ export function HackathonSponsors() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>مدة الرعاية</label>
+                  <label className="block text-xs text-gray-700 mb-1" style={{ fontWeight: 600 }}>مدة الرعاية <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     placeholder="3 أشهر"

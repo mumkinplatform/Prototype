@@ -88,6 +88,39 @@ interface ContractsResponse {
   items: ApiContract[];
 }
 
+// شكل العقد الكامل من /sponsors/applications/:id/contract — نفس الشكل
+// المستخدم عند المنظم. يحتوي البنود الستة + الأطراف + التواقيع، فالـ
+// modal يطلع متطابق على الجهتين.
+interface FullContract {
+  applicationId: number;
+  terms: {
+    duration: string | null;
+    value: string | null;
+    logoRights: string | null;
+    displayTime: string | null;
+    dataAccess: string | null;
+    notes: string | null;
+    submittedAt: string | null;
+  };
+  acceptance: {
+    sponsorAccepted: boolean;
+    sponsorAcceptedAt: string | null;
+  };
+  signatures: {
+    organizerSigned: boolean;
+    organizerSignedAt: string | null;
+    sponsorSigned: boolean;
+    sponsorSignedAt: string | null;
+  };
+  parties: {
+    hackathonTitle: string;
+    packageName: string;
+    packagePrice: string | null;
+    sponsorName: string;
+    organizerName: string;
+  };
+}
+
 interface DisplayContract {
   id: number;
   hackathon: string;
@@ -297,6 +330,12 @@ export function SponsorSponsorships() {
   const [contractsLoading, setContractsLoading] = useState(true);
   const [contractsError, setContractsError] = useState<string | null>(null);
   const [viewingContractId, setViewingContractId] = useState<number | null>(null);
+  // العقد الكامل (بنود + تواقيع + أسماء الأطراف) يجي من
+  // /sponsors/applications/:id/contract. نخزنه per-application لمن المستخدم
+  // يفتح ملف العقد، عشان نعرض نفس محتوى المنظم بالضبط (مو نسخة قديمة من
+  // /sponsors/contracts).
+  const [contractDetail, setContractDetail] = useState<FullContract | null>(null);
+  const [contractDetailLoading, setContractDetailLoading] = useState(false);
   const [seenContracts, setSeenContracts] = useState<Set<number>>(() => readSeenContracts());
 
   const unseenContractsCount = useMemo(
@@ -327,6 +366,31 @@ export function SponsorSponsorships() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainView, contractsLoading, contracts.length]);
+
+  // عند فتح ملف العقد، نجلب التفاصيل الكاملة (البنود + التواقيع) من
+  // /sponsors/applications/:id/contract. هذا نفس endpoint اللي يستخدمه
+  // المنظم، فالـ modal على الجهتين يطلع متطابق المحتوى.
+  useEffect(() => {
+    if (viewingContractId === null) {
+      setContractDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setContractDetailLoading(true);
+    apiGet<FullContract>(`/sponsors/applications/${viewingContractId}/contract`)
+      .then((c) => {
+        if (!cancelled) setContractDetail(c);
+      })
+      .catch(() => {
+        if (!cancelled) setContractDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setContractDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingContractId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -731,7 +795,7 @@ export function SponsorSponsorships() {
                     حذف
                   </button>
                   <button
-                    onClick={() => navigate("/sponsor/messages")}
+                    onClick={() => navigate(`/sponsor/messages?app=${sp.id}`)}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-gray-500 text-xs hover:bg-gray-50 hover:border-gray-300 transition-colors"
                     title="التواصل مع المنظم"
                   >
@@ -928,7 +992,7 @@ export function SponsorSponsorships() {
                             عرض العقد
                           </button>
                           <button
-                            onClick={() => navigate("/sponsor/messages")}
+                            onClick={() => navigate(`/sponsor/messages?app=${contract.id}`)}
                             className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs hover:bg-gray-50 transition-colors"
                             style={{ fontWeight: 600 }}
                             title="الرجوع للشات"
@@ -960,10 +1024,10 @@ export function SponsorSponsorships() {
 
       {/* Contract View Modal */}
       {(() => {
-        const viewing = viewingContractId !== null
-          ? contracts.find((c) => c.id === viewingContractId)
-          : null;
-        if (!viewing) return null;
+        if (viewingContractId === null) return null;
+        // الـ modal على وجهة الراعي نفس بنية المنظم تماماً — يقرأ من
+        // /sponsors/applications/:id/contract الذي يرجّع البنود الستة +
+        // أسماء الأطراف (مع اسم المنظمة) + التواقيع الرقمية.
         return (
           <div
             className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 contract-modal-overlay"
@@ -998,128 +1062,161 @@ export function SponsorSponsorships() {
               className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto contract-print"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-gray-900 to-gray-700 px-8 py-6 text-center text-white rounded-t-2xl">
-                <div className="w-12 h-12 rounded-xl bg-[#e35654] flex items-center justify-center mx-auto mb-3">
-                  <FileText className="w-6 h-6" />
+              {contractDetailLoading || !contractDetail ? (
+                <div className="p-12 text-center">
+                  <div className="inline-block w-6 h-6 border-2 border-gray-200 border-t-[#e35654] rounded-full animate-spin mb-2" />
+                  <p className="text-gray-500 text-xs">جاري تحميل ملف العقد...</p>
                 </div>
-                <h2 style={{ fontWeight: 800, fontSize: "1.15rem" }}>
-                  عقد رعاية رسمي
-                </h2>
-                <p className="text-gray-300 text-xs mt-1">
-                  رقم: #SP-{new Date().getFullYear()}-
-                  {String(viewing.id).padStart(4, "0")}
-                </p>
-              </div>
-
-              {/* Body */}
-              <div className="p-6 space-y-5">
-                {/* Parties */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-gray-400 text-xs mb-1">الطرف الأول (المنظم)</p>
-                    <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                      {viewing.organizer}
+              ) : (
+                <>
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-gray-900 to-gray-700 px-8 py-6 text-center text-white rounded-t-2xl">
+                    <div className="w-12 h-12 rounded-xl bg-[#e35654] flex items-center justify-center mx-auto mb-3">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <h2 style={{ fontWeight: 800, fontSize: "1.15rem" }}>
+                      عقد رعاية رسمي
+                    </h2>
+                    <p className="text-gray-300 text-xs mt-1">
+                      رقم: #SP-{new Date().getFullYear()}-
+                      {String(contractDetail.applicationId).padStart(4, "0")}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-gray-400 text-xs mb-1">الطرف الثاني (الراعي)</p>
-                    <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                      الباقة: {viewing.package}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Terms */}
-                <div className="border-t border-dashed border-gray-200 pt-4">
-                  <h3 className="text-gray-900 text-sm mb-3" style={{ fontWeight: 700 }}>
-                    بنود العقد
-                  </h3>
-                  <div className="space-y-2">
-                    {[
-                      { label: "الهاكاثون", value: viewing.hackathon },
-                      { label: "الباقة", value: viewing.package },
-                      { label: "قيمة الرعاية", value: viewing.value },
-                      { label: "تاريخ التوقيع", value: viewing.signDate },
-                      { label: "تاريخ الفعالية", value: viewing.expiryDate },
-                      { label: "الحالة", value: viewing.status },
-                    ].map((item) => (
-                      <div
-                        key={item.label}
-                        className="flex justify-between items-center py-2 border-b border-gray-100"
-                      >
-                        <span className="text-gray-500 text-xs">{item.label}</span>
-                        <span className="text-gray-900 text-xs" style={{ fontWeight: 600 }}>
-                          {item.value}
-                        </span>
+                  {/* Body */}
+                  <div className="p-6 space-y-5">
+                    {/* Parties */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-gray-400 text-xs mb-1">الطرف الأول (المنظم)</p>
+                        <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                          {contractDetail.parties.organizerName}
+                        </p>
+                        <p className="text-gray-400 text-[11px] mt-1">
+                          {contractDetail.parties.hackathonTitle}
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-gray-400 text-xs mb-1">الطرف الثاني (الراعي)</p>
+                        <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
+                          {contractDetail.parties.sponsorName}
+                        </p>
+                        <p className="text-gray-400 text-[11px] mt-1">
+                          باقة {contractDetail.parties.packageName}
+                        </p>
+                      </div>
+                    </div>
 
-                {/* Receipt Section */}
-                {viewing.receiptFile && (
-                  <div className="border border-gray-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-[#f0fdf4] flex items-center justify-center flex-shrink-0">
-                          <FileText className="w-5 h-5 text-[#10b981]" />
+                    {/* Terms */}
+                    <div className="border-t border-dashed border-gray-200 pt-4">
+                      <h3 className="text-gray-900 text-sm mb-3" style={{ fontWeight: 700 }}>
+                        بنود العقد
+                      </h3>
+                      <div className="space-y-2">
+                        {[
+                          { label: "مدة الرعاية", value: contractDetail.terms.duration },
+                          { label: "قيمة الرعاية", value: contractDetail.terms.value },
+                          { label: "حقوق الشعار", value: contractDetail.terms.logoRights },
+                          { label: "وقت العرض", value: contractDetail.terms.displayTime },
+                          { label: "وصول لبيانات المشاركين", value: contractDetail.terms.dataAccess },
+                          { label: "ملاحظات", value: contractDetail.terms.notes },
+                        ].filter((t) => t.value).map((t) => (
+                          <div
+                            key={t.label}
+                            className="flex justify-between items-start py-2 border-b border-gray-100 gap-3"
+                          >
+                            <span className="text-gray-500 text-xs">{t.label}</span>
+                            <span className="text-gray-900 text-xs text-left whitespace-pre-line" style={{ fontWeight: 600 }}>
+                              {t.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Signatures */}
+                    <div className="border-t border-dashed border-gray-200 pt-4">
+                      <h3 className="text-gray-900 text-sm mb-3" style={{ fontWeight: 700 }}>
+                        التواقيع الرقمية
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className={`rounded-xl p-4 border ${contractDetail.signatures.organizerSigned ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                          <p className="text-gray-500 text-xs mb-1">المنظم</p>
+                          <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
+                            {contractDetail.parties.organizerName}
+                          </p>
+                          {contractDetail.signatures.organizerSigned ? (
+                            <>
+                              <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                                <FileSignature className="w-3.5 h-3.5" /> موقَّع رقمياً
+                              </p>
+                              {contractDetail.signatures.organizerSignedAt && (
+                                <p className="text-gray-400 text-[11px] mt-1">
+                                  {new Date(contractDetail.signatures.organizerSignedAt).toLocaleString("ar-SA")}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-gray-400 text-xs">لم يوقّع بعد</p>
+                          )}
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                            إيصال الدفع المرفوع
+                        <div className={`rounded-xl p-4 border ${contractDetail.signatures.sponsorSigned ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+                          <p className="text-gray-500 text-xs mb-1">الراعي</p>
+                          <p className="text-gray-900 text-sm mb-1" style={{ fontWeight: 700 }}>
+                            {contractDetail.parties.sponsorName}
                           </p>
-                          <p className="text-gray-500 text-xs truncate">
-                            {viewing.receiptFile}
-                          </p>
+                          {contractDetail.signatures.sponsorSigned ? (
+                            <>
+                              <p className="text-green-700 text-xs flex items-center gap-1" style={{ fontWeight: 700 }}>
+                                <FileSignature className="w-3.5 h-3.5" /> موقَّع رقمياً
+                              </p>
+                              {contractDetail.signatures.sponsorSignedAt && (
+                                <p className="text-gray-400 text-[11px] mt-1">
+                                  {new Date(contractDetail.signatures.sponsorSignedAt).toLocaleString("ar-SA")}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-gray-400 text-xs">لم يوقّع بعد</p>
+                          )}
                         </div>
                       </div>
-                      <a
-                        href={`${API_URL}/uploads/receipts/${viewing.receiptFile}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#10b981] text-white text-xs hover:bg-[#0ea872] transition-colors no-print flex-shrink-0"
-                        style={{ fontWeight: 600 }}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        تنزيل
-                      </a>
+                    </div>
+
+                    {/* Footer Note */}
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                      <div className="flex items-center justify-center gap-2 mb-1">
+                        <FileSignature className="w-4 h-4 text-green-600" />
+                        <p className="text-green-800 text-sm" style={{ fontWeight: 700 }}>
+                          عقد موقّع رقمياً من الطرفين
+                        </p>
+                      </div>
+                      <p className="text-green-700 text-xs">
+                        تمّ توقيع العقد إلكترونياً وحفظه في سجلات المنصة.
+                      </p>
                     </div>
                   </div>
-                )}
 
-                {/* Footer Note */}
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <FileSignature className="w-4 h-4 text-green-600" />
-                    <p className="text-green-800 text-sm" style={{ fontWeight: 700 }}>
-                      عقد موقّع رقمياً
-                    </p>
+                  {/* Actions */}
+                  <div className="px-6 pb-6 flex items-center gap-2 no-print">
+                    <button
+                      onClick={() => setViewingContractId(null)}
+                      className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      style={{ fontWeight: 600 }}
+                    >
+                      إغلاق
+                    </button>
+                    <button
+                      onClick={() => window.print()}
+                      className="flex-1 py-2.5 rounded-xl text-sm text-white bg-[#e35654] hover:bg-[#cc4a48] flex items-center justify-center gap-2"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <Download className="w-4 h-4" />
+                      حفظ كـ PDF
+                    </button>
                   </div>
-                  <p className="text-green-700 text-xs">
-                    تمّ توقيع العقد إلكترونياً وحفظه في سجلات المنصة.
-                  </p>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="px-6 pb-6 flex items-center gap-2 no-print">
-                <button
-                  onClick={() => setViewingContractId(null)}
-                  className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-700 hover:bg-gray-50"
-                  style={{ fontWeight: 600 }}
-                >
-                  إغلاق
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="flex-1 py-2.5 rounded-xl text-sm text-white bg-[#e35654] hover:bg-[#cc4a48] flex items-center justify-center gap-2"
-                  style={{ fontWeight: 600 }}
-                >
-                  <Download className="w-4 h-4" />
-                  حفظ كـ PDF
-                </button>
-              </div>
+                </>
+              )}
             </div>
           </div>
         );
