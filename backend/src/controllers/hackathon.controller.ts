@@ -2222,6 +2222,7 @@ export const listHackathonSponsorApplications = async (req: Request, res: Respon
          sa.SA_ReceiptFile         AS receiptFile,
          sa.SA_OrganizerSigned     AS organizerSigned,
          sa.SA_OrganizerSignedAt   AS organizerSignedAt,
+         sa.SA_TermValue           AS contractValue,
          sa.SM_ID                  AS sponsorMemberId,
          m.M_FName                 AS sponsorFirstName,
          m.M_LName                 AS sponsorLastName,
@@ -2251,6 +2252,7 @@ export const listHackathonSponsorApplications = async (req: Request, res: Respon
       receiptFile: string | null;
       organizerSigned: number;
       organizerSignedAt: Date | null;
+      contractValue: string | null;
       sponsorMemberId: number;
       sponsorFirstName: string;
       sponsorLastName: string;
@@ -2271,6 +2273,7 @@ export const listHackathonSponsorApplications = async (req: Request, res: Respon
       receiptFile: r.receiptFile,
       organizerSigned: r.organizerSigned === 1,
       organizerSignedAt: r.organizerSignedAt,
+      contractValue: r.contractValue,
       sponsor: {
         memberId: r.sponsorMemberId,
         fullName: `${r.sponsorFirstName} ${r.sponsorLastName}`.trim(),

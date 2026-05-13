@@ -181,6 +181,9 @@ interface ApiSponsorApplication {
   receiptFile: string | null;
   organizerSigned: boolean;
   organizerSignedAt: string | null;
+  // قيمة الرعاية كما كتبها المنظم في فورم العقد (SA_TermValue). null إذا
+  // الشروط لم تُحرَّر بعد. لها أولوية على سعر الباقة لأنها أحدث.
+  contractValue: string | null;
   sponsor: {
     memberId: number;
     fullName: string;
@@ -209,14 +212,13 @@ interface ApiSponsorPackage {
   SP_Benefits: unknown;
 }
 
-// Map "accepted but step < 4" to the UI's "negotiating" state. "Completed"
-// only when step reaches 4 (receipt uploaded). Old in-flight states from the
-// mock data map to the closest real state.
+// Map "accepted but step < 3" to in-progress UI states. "Completed" when
+// step reaches 3 (both parties signed — collapsed numbering من migration ربى 030).
 function deriveUiStatus(s: ApiSponsorApplication): SponsorRequest['status'] {
   if (s.status === 'rejected') return 'rejected';
   if (s.status === 'pending') return 'pending';
   // accepted — pick a phase based on negotiationStep
-  if (s.negotiationStep >= 4) return 'completed';
+  if (s.negotiationStep >= 3) return 'completed';
   if (s.negotiationStep >= 2) return 'organizer_signing';
   if (s.negotiationStep >= 1) return 'contract_review';
   return 'negotiating';
@@ -224,7 +226,7 @@ function deriveUiStatus(s: ApiSponsorApplication): SponsorRequest['status'] {
 
 function deriveUiStep(s: ApiSponsorApplication): NegotiationStep | undefined {
   if (s.status !== 'accepted') return undefined;
-  if (s.negotiationStep >= 4) return 'completed';
+  if (s.negotiationStep >= 3) return 'completed';
   if (s.negotiationStep >= 2) return 'organizer_sign';
   if (s.negotiationStep >= 1) return 'review';
   return 'negotiation';
@@ -269,6 +271,19 @@ function getAvatarColor(name: string): string {
 
 function mapApiToRequest(s: ApiSponsorApplication): SponsorRequest {
   const priceNum = s.package.price ? Number(s.package.price) : 0;
+  // أولوية القيمة المعروضة:
+  //   1. SA_TermValue (ما كتبه المنظم في فورم العقد) — يعكس الاتفاق الفعلي،
+  //      مفيد للباقات غير المالية (مثل "200 وجبة" أو "مطوّرَين لمدة شهر").
+  //   2. سعر الباقة المعلَن (للباقات المالية قبل تحرير الشروط).
+  //   3. شرطة "—" إذا لا قيمة ولا سعر.
+  let displayValue: string;
+  if (s.contractValue && s.contractValue.trim()) {
+    displayValue = s.contractValue;
+  } else if (priceNum > 0) {
+    displayValue = `${priceNum.toLocaleString('ar-SA')} ر.س`;
+  } else {
+    displayValue = '—';
+  }
   return {
     id: s.applicationId,
     companyName: s.sponsor.brand || s.sponsor.fullName,
@@ -277,7 +292,7 @@ function mapApiToRequest(s: ApiSponsorApplication): SponsorRequest {
     subCategory: s.package.type,
     sponsorshipType: (s.package.type as SponsorshipType) || 'other',
     amount: priceNum,
-    value: priceNum > 0 ? `${priceNum.toLocaleString('ar-SA')} ر.س` : '—',
+    value: displayValue,
     status: deriveUiStatus(s),
     submittedDate: s.appliedAt ? new Date(s.appliedAt).toLocaleDateString('ar-SA') : '—',
     negotiationStep: deriveUiStep(s),
@@ -938,9 +953,6 @@ export function HackathonSponsors() {
                           الحالة
                         </th>
                         <th className="text-right px-6 py-3 text-xs text-gray-500" style={{ fontWeight: 600 }}>
-                          القيمة
-                        </th>
-                        <th className="text-right px-6 py-3 text-xs text-gray-500" style={{ fontWeight: 600 }}>
                           الإجراءات
                         </th>
                       </tr>
@@ -994,11 +1006,6 @@ export function HackathonSponsors() {
                             </span>
                           </td>
                           <td className="px-6 py-4">{getStatusBadge(request.status)}</td>
-                          <td className="px-6 py-4">
-                            <span className="text-sm text-gray-900" style={{ fontWeight: 600 }}>
-                              {request.value}
-                            </span>
-                          </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               {request.status === 'pending' ? (
@@ -1766,7 +1773,7 @@ export function HackathonSponsors() {
                           </div>
                         )
                       ) : (
-                        // ── المرحلة 4: مكتمل ──
+                        // ── المرحلة 3: مكتمل ──
                         <div className="bg-white rounded-2xl border border-green-200 p-6 max-w-md mx-auto text-center">
                           <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
                             <CheckCircle2 className="w-7 h-7 text-green-600" />
