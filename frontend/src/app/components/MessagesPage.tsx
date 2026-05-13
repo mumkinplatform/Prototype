@@ -40,6 +40,39 @@ async function uploadReceiptFile(applicationId: number, file: File): Promise<voi
   }
 }
 
+// يرسل رسالة شات (نص و/أو ملف) كـ multipart عشان الـ endpoint موحّد
+// والـ backend يقبل الاثنين بنفس multer.
+async function postChatMessage(
+  applicationId: number,
+  payload: { text?: string; file?: File }
+): Promise<ApiMessage> {
+  const token = localStorage.getItem("mumkin_token");
+  const form = new FormData();
+  if (payload.text) form.append("text", payload.text);
+  if (payload.file) form.append("file", payload.file);
+  const res = await fetch(
+    `${API_URL}/sponsors/applications/${applicationId}/messages`,
+    {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    }
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = (data as { error?: string }).error || `HTTP ${res.status}`;
+    throw new ApiError(res.status, message);
+  }
+  return data as ApiMessage;
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (bytes === null || bytes === undefined) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 interface ApiConversation {
   id: number;
   status: "pending" | "accepted" | "rejected";
@@ -106,14 +139,28 @@ const NEGOTIATION_STEPS = [
   { id: 4, label: "مكتمل", icon: CheckCircle2 },
 ];
 
-type Msg = { from: "me" | "other"; text: string; time: string; read: boolean };
+type Msg = {
+  from: "me" | "other" | "system";
+  text: string;
+  time: string;
+  read: boolean;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+};
 
 interface ApiMessage {
   id: number;
   senderId: number;
-  senderType: "SPONSOR" | "ORGANIZER" | "PARTICIPANT";
-  senderName: string;
-  text: string;
+  senderType?: "SPONSOR" | "ORGANIZER" | "PARTICIPANT";
+  senderName?: string;
+  text: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+  fileSize: number | null;
+  mimeType: string | null;
+  isSystem: number;
   createdAt: string;
 }
 
@@ -181,29 +228,25 @@ export function MessagesPage() {
     if (!file || selected === null) return;
     if (!conv) return;
 
-    // وضع "إرفاق ملف عادي" — يضاف للشات مباشرة بدون رفع للسيرفر
+    // وضع "إرفاق ملف عادي" — يرفع للسيرفر ويُحفظ كرسالة في الـ DB
     if (attachMode === "attach") {
-      const now = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-      const sizeKb = (file.size / 1024).toFixed(1);
-      setMsgs((prev) => ({
-        ...prev,
-        [selected]: [
-          ...(prev[selected] || []),
-          {
-            from: "me",
-            text: `📎 ${file.name} — ${sizeKb} KB`,
-            time: now,
-            read: false,
-          },
-        ],
-      }));
-      toast.success("تم إرفاق الملف في المحادثة");
+      setUploading(true);
+      try {
+        await postChatMessage(selected, { file });
+        toast.success("تم إرفاق الملف في المحادثة");
+        // الـ poll القادم خلال 4 ثواني راح يجلب الرسالة من الـ DB ويعرضها
+      } catch (err: unknown) {
+        const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
+        toast.error(message);
+      } finally {
+        setUploading(false);
+      }
       return;
     }
 
-    // وضع "رفع إيصال الدفع" — يرفع للسيرفر فعلياً
-    if (conv.status !== "accepted") {
-      toast.error("لا يمكنك رفع الإيصال قبل قبول طلب الرعاية");
+    // وضع "رفع إيصال الدفع" — يحتاج رفع العقد (مرحلة 3) أولاً
+    if (conv.currentStep < 3) {
+      toast.error("لا يمكنك رفع الإيصال قبل الوصول لمرحلة رفع العقد");
       return;
     }
     setUploading(true);
@@ -216,14 +259,14 @@ export function MessagesPage() {
       setConversations((prev) =>
         prev.map((c) => (c.id === selected ? { ...c, currentStep: 4 } : c))
       );
-      const now = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-      setMsgs((prev) => ({
-        ...prev,
-        [selected]: [
-          ...(prev[selected] || []),
-          { from: "me", text: `📎 تم رفع إيصال الدفع: ${file.name}`, time: now, read: false },
-        ],
-      }));
+      // ألصق رسالة في الشات تخبر الطرف الثاني بإتمام الدفع
+      try {
+        await postChatMessage(selected, {
+          text: `💳 تم رفع إيصال الدفع: ${file.name}`,
+        });
+      } catch {
+        // إذا فشل لصق الرسالة، الإيصال نفسه نجح فلا داعي لإزعاج المستخدم
+      }
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
       toast.error(message);
@@ -281,10 +324,19 @@ export function MessagesPage() {
         );
         if (cancelled) return;
         const mapped: Msg[] = res.items.map((m) => ({
-          from: m.senderId === currentUser.id ? "me" : "other",
-          text: m.text,
+          from:
+            m.isSystem === 1
+              ? "system"
+              : m.senderId === currentUser.id
+              ? "me"
+              : "other",
+          text: m.text ?? "",
           time: formatMessageTime(m.createdAt),
           read: true,
+          fileName: m.fileName,
+          fileUrl: m.fileUrl,
+          fileSize: m.fileSize,
+          mimeType: m.mimeType,
         }));
         setMsgs((prev) => ({ ...prev, [selected]: mapped }));
       } catch {
@@ -331,7 +383,7 @@ export function MessagesPage() {
     }));
     setNewMsg("");
     try {
-      await apiPost<ApiMessage>(`/sponsors/applications/${selected}/messages`, { text });
+      await postChatMessage(selected, { text });
       // الـ poll القادم خلال 4 ثواني راح يجلب النسخة من السيرفر مع رسائل الطرف الثاني
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.message : "تعذّر إرسال الرسالة";
@@ -563,40 +615,77 @@ export function MessagesPage() {
                   <div className="flex-1 h-px bg-gray-200" />
                 </div>
 
-                {activeMessages.map((m, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}
-                  >
-                    {m.from === "other" && (
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
-                        style={{ background: conv.color, fontWeight: 700 }}
-                      >
-                        {conv.avatar}
+                {activeMessages.map((m, i) => {
+                  // رسائل النظام (تلقائية) — تظهر في المنتصف بتنسيق محايد
+                  if (m.from === "system") {
+                    return (
+                      <div key={i} className="flex justify-center my-1">
+                        <div className="bg-[#fff7ed] border border-[#fed7aa] text-[#9a3412] text-xs px-4 py-2 rounded-full max-w-[85%] text-center leading-relaxed">
+                          {m.text}
+                        </div>
                       </div>
-                    )}
-                    <div className={`max-w-[65%] flex flex-col gap-1 ${m.from === "me" ? "items-end" : "items-start"}`}>
-                      <div
-                        className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                          m.from === "me"
-                            ? "bg-[#e35654] text-white rounded-tr-sm"
-                            : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
-                        }`}
-                      >
-                        {m.text}
-                      </div>
-                      <div className={`flex items-center gap-1 px-1 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
-                        <span className="text-gray-300 text-xs">{m.time}</span>
-                        {m.from === "me" && (
-                          m.read
-                            ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
-                            : <Check className="w-3.5 h-3.5 text-gray-300" />
-                        )}
+                    );
+                  }
+                  const hasFile = Boolean(m.fileUrl);
+                  return (
+                    <div
+                      key={i}
+                      className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}
+                    >
+                      {m.from === "other" && (
+                        <div
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
+                          style={{ background: conv.color, fontWeight: 700 }}
+                        >
+                          {conv.avatar}
+                        </div>
+                      )}
+                      <div className={`max-w-[65%] flex flex-col gap-1 ${m.from === "me" ? "items-end" : "items-start"}`}>
+                        <div
+                          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                            m.from === "me"
+                              ? "bg-[#e35654] text-white rounded-tr-sm"
+                              : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
+                          }`}
+                        >
+                          {m.text && <div className={hasFile ? "mb-2" : ""}>{m.text}</div>}
+                          {hasFile && (
+                            <a
+                              href={`${API_URL}${m.fileUrl}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download={m.fileName ?? undefined}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-colors ${
+                                m.from === "me"
+                                  ? "bg-white/15 hover:bg-white/25"
+                                  : "bg-gray-50 hover:bg-gray-100 border border-gray-100"
+                              }`}
+                              style={{ minWidth: 200 }}
+                            >
+                              <Paperclip className={`w-4 h-4 flex-shrink-0 ${m.from === "me" ? "text-white" : "text-[#6366f1]"}`} />
+                              <div className="flex-1 min-w-0 text-right">
+                                <p className={`truncate ${m.from === "me" ? "text-white" : "text-gray-800"}`} style={{ fontWeight: 600, fontSize: 12 }}>
+                                  {m.fileName ?? "ملف"}
+                                </p>
+                                <p className={m.from === "me" ? "text-white/70" : "text-gray-400"} style={{ fontSize: 10 }}>
+                                  {formatFileSize(m.fileSize ?? null)}
+                                </p>
+                              </div>
+                            </a>
+                          )}
+                        </div>
+                        <div className={`flex items-center gap-1 px-1 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
+                          <span className="text-gray-300 text-xs">{m.time}</span>
+                          {m.from === "me" && (
+                            m.read
+                              ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
+                              : <Check className="w-3.5 h-3.5 text-gray-300" />
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Input */}
@@ -631,14 +720,14 @@ export function MessagesPage() {
                           </p>
                         </div>
                       </button>
-                      {/* رفع إيصال الدفع — متاح بعد القبول */}
+                      {/* رفع إيصال الدفع — متاح بعد رفع العقد (مرحلة 3) */}
                       <button
                         onClick={(e) => {
                           setAttachMode("receipt");
                           (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
                           setTimeout(() => fileInputRef.current?.click(), 0);
                         }}
-                        disabled={uploading || conv.status !== "accepted"}
+                        disabled={uploading || conv.currentStep < 3}
                         className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-right disabled:opacity-50 disabled:cursor-not-allowed mt-1"
                       >
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#fef2f2]">
@@ -653,9 +742,9 @@ export function MessagesPage() {
                           </p>
                         </div>
                       </button>
-                      {conv.status !== "accepted" && (
+                      {conv.currentStep < 3 && (
                         <p className="text-[10px] text-gray-400 px-3 pt-1.5 leading-relaxed">
-                          رفع الإيصال متاح بعد قبول الطلب.
+                          رفع الإيصال متاح بعد الوصول لمرحلة رفع العقد.
                         </p>
                       )}
                     </div>

@@ -10,11 +10,13 @@ const UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'submissions');
 const AVATARS_DIR = path.join(process.cwd(), 'uploads', 'avatars');
 const BANNERS_DIR = path.join(process.cwd(), 'uploads', 'banners');
 const RECEIPTS_DIR = path.join(process.cwd(), 'uploads', 'receipts');
+const CHAT_DIR = path.join(process.cwd(), 'uploads', 'chat');
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
 if (!fs.existsSync(BANNERS_DIR)) fs.mkdirSync(BANNERS_DIR, { recursive: true });
 if (!fs.existsSync(RECEIPTS_DIR)) fs.mkdirSync(RECEIPTS_DIR, { recursive: true });
+if (!fs.existsSync(CHAT_DIR)) fs.mkdirSync(CHAT_DIR, { recursive: true });
 
 function makeStorage(targetDir: string): multer.StorageEngine {
   return multer.diskStorage({
@@ -171,4 +173,20 @@ export const receiptUpload = multer({
   },
 }).single('file');
 
-export { UPLOADS_DIR, AVATARS_DIR, BANNERS_DIR, RECEIPTS_DIR };
+// Chat attachments: any file type (text/image/PDF/etc), up to 10 MB.
+// نفس قائمة الإكستنشنات المحظورة من المهام عشان نمنع توزيع برمجيات
+// خبيثة عبر المحادثات (الملفات تُقدَّم كـ download ولا تُنفَّذ).
+export const chatFileUpload = multer({
+  storage: makeStorage(CHAT_DIR),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (BLOCKED_SUBMISSION_EXTENSIONS.has(ext)) {
+      cb(new Error(`نوع الملف غير مسموح (${ext}). الملفات التنفيذية ممنوعة.`));
+      return;
+    }
+    cb(null, true);
+  },
+}).single('file');
+
+export { UPLOADS_DIR, AVATARS_DIR, BANNERS_DIR, RECEIPTS_DIR, CHAT_DIR };

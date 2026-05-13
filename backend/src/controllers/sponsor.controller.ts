@@ -119,7 +119,12 @@ interface ChatMessageRow extends RowDataPacket {
   senderId: number;
   senderType: 'SPONSOR' | 'ORGANIZER' | 'PARTICIPANT';
   senderName: string;
-  text: string;
+  text: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+  fileSize: number | null;
+  mimeType: string | null;
+  isSystem: number;
   createdAt: Date;
 }
 
@@ -941,6 +946,11 @@ export const listApplicationMessages = async (req: Request, res: Response) => {
          m.M_Type          AS senderType,
          CONCAT_WS(' ', m.M_FName, m.M_LName) AS senderName,
          msg.SAM_Text      AS text,
+         msg.SAM_FileName  AS fileName,
+         msg.SAM_FileUrl   AS fileUrl,
+         msg.SAM_FileSize  AS fileSize,
+         msg.SAM_MimeType  AS mimeType,
+         msg.SAM_IsSystem  AS isSystem,
          msg.SAM_CreatedAt AS createdAt
          FROM sponsor_application_message msg
          JOIN member m ON m.M_ID = msg.M_ID
@@ -960,26 +970,40 @@ export const sendApplicationMessage = async (req: Request, res: Response) => {
   if (!Number.isInteger(applicationId) || applicationId <= 0) {
     return res.status(400).json({ error: 'رقم التقديم غير صالح' });
   }
-  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
-  if (!text) {
-    return res.status(400).json({ error: 'نص الرسالة مطلوب' });
+  const rawText = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  const text = rawText.length > 0 ? rawText : null;
+  const file = req.file;
+
+  if (!text && !file) {
+    return res.status(400).json({ error: 'يجب إرفاق نص أو ملف' });
   }
-  if (text.length > 2000) {
+  if (text && text.length > 2000) {
     return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 2000 حرف)' });
   }
   const guard = await ensureChatParticipant(req, res, applicationId);
   if (!guard.allowed) return;
 
+  const fileName = file?.originalname ?? null;
+  const fileUrl = file ? `/uploads/chat/${file.filename}` : null;
+  const fileSize = file?.size ?? null;
+  const mimeType = file?.mimetype ?? null;
+
   try {
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO sponsor_application_message (SA_ID, M_ID, SAM_Text)
-       VALUES (?, ?, ?)`,
-      [applicationId, req.user!.memberId, text],
+      `INSERT INTO sponsor_application_message
+         (SA_ID, M_ID, SAM_Text, SAM_FileName, SAM_FileUrl, SAM_FileSize, SAM_MimeType, SAM_IsSystem)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [applicationId, req.user!.memberId, text, fileName, fileUrl, fileSize, mimeType],
     );
     return res.status(201).json({
       id: result.insertId,
       senderId: req.user!.memberId,
       text,
+      fileName,
+      fileUrl,
+      fileSize,
+      mimeType,
+      isSystem: 0,
       createdAt: new Date(),
     });
   } catch (err) {
@@ -1075,6 +1099,21 @@ export const advanceNegotiationStep = async (req: Request, res: Response) => {
       'UPDATE sponsor_application SET SA_NegotiationStep = ? WHERE SA_ID = ?',
       [nextStep, applicationId]
     );
+
+    // لما يدخل الراعي مرحلة 3 (رفع العقد) نلصق رسالة نظام في الشات
+    // تخبره بإمكانية رفع إيصال الدفع — تظهر للطرفين.
+    if (nextStep === 3) {
+      await pool.execute(
+        `INSERT INTO sponsor_application_message
+           (SA_ID, M_ID, SAM_Text, SAM_IsSystem)
+         VALUES (?, ?, ?, 1)`,
+        [
+          applicationId,
+          sponsorId,
+          'تم الوصول لمرحلة رفع العقد ✓ يمكنك الآن رفع إيصال الدفع من خلال زر المرفقات في هذه المحادثة 💳',
+        ]
+      );
+    }
 
     return res.json({ id: applicationId, negotiationStep: nextStep });
   } catch (err) {

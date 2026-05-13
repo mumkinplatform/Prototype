@@ -19,7 +19,7 @@ import {
   listApplicationMessages,
   sendApplicationMessage,
 } from '../controllers/sponsor.controller';
-import { avatarUpload, bannerUpload, receiptUpload } from '../middleware/upload.middleware';
+import { avatarUpload, bannerUpload, receiptUpload, chatFileUpload } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -39,6 +39,6 @@ router.get('/conversations', requireAuth, listMyConversations);
 router.post('/applications/:id/advance-step', requireAuth, advanceNegotiationStep);
 router.post('/applications/:id/upload-receipt', requireAuth, receiptUpload, uploadReceipt);
 router.get('/applications/:id/messages', requireAuth, listApplicationMessages);
-router.post('/applications/:id/messages', requireAuth, sendApplicationMessage);
+router.post('/applications/:id/messages', requireAuth, chatFileUpload, sendApplicationMessage);
 
 export default router;
