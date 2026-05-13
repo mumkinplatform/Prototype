@@ -106,15 +106,29 @@ const NEGOTIATION_STEPS = [
   { id: 4, label: "مكتمل", icon: CheckCircle2 },
 ];
 
-// شكل الرسالة من الباك (نفس الشكل عند المنظم — جدول sponsor_message).
-// `isMine` يحدد محاذاة الفقاعة من منظور المستخدم الحالي (الراعي هنا).
-interface ChatMessage {
+type Msg = { from: "me" | "other"; text: string; time: string; read: boolean };
+
+interface ApiMessage {
   id: number;
   senderId: number;
+  senderType: "SPONSOR" | "ORGANIZER" | "PARTICIPANT";
   senderName: string;
   text: string;
   createdAt: string;
-  isMine: boolean;
+}
+
+interface MessagesResponse {
+  items: ApiMessage[];
+}
+
+interface CurrentUser {
+  id: number;
+}
+
+function formatMessageTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
 }
 
 export function MessagesPage() {
@@ -129,12 +143,10 @@ export function MessagesPage() {
   const [uploading, setUploading] = useState(false);
   const [viewedStep, setViewedStep] = useState(0);
   const [receiptUploaded, setReceiptUploaded] = useState(false);
-  // الرسائل الحقيقية لكل SA_ID. تُحمَّل عند اختيار محادثة + polling كل 5
-  // ثوانٍ لمتابعة الرسائل من المنظم. الرسائل تشترك في نفس جدول sponsor_message
-  // الذي يقرأ ويكتب منه الطرفان.
-  const [msgs, setMsgs] = useState<Record<number, ChatMessage[]>>({});
-  const [sendingMsg, setSendingMsg] = useState(false);
+  const [msgs, setMsgs] = useState<Record<number, Msg[]>>({});
   const [newMsg, setNewMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdvanceStep = async () => {
@@ -220,6 +232,23 @@ export function MessagesPage() {
     }
   };
 
+  // اجلب المستخدم الحالي مرة وحدة
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ id: number }>("/sponsors/me")
+      .then((me) => {
+        if (cancelled) return;
+        setCurrentUser({ id: me.id });
+      })
+      .catch(() => {
+        // إذا فشل، تظل الرسائل تظهر لكن "من" قد يكون غير صحيح
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // اجلب قائمة المحادثات
   useEffect(() => {
     let cancelled = false;
     apiGet<ConversationsResponse>("/sponsors/conversations")
@@ -228,7 +257,6 @@ export function MessagesPage() {
         const mapped = res.items.map(mapConversation);
         setConversations(mapped);
         if (mapped.length > 0) setSelected(mapped[0].id);
-        // الرسائل الفعلية ستُحمَّل من الباك في effect منفصل عند اختيار محادثة.
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -241,6 +269,35 @@ export function MessagesPage() {
       cancelled = true;
     };
   }, []);
+
+  // اجلب رسائل المحادثة المختارة + Poll كل 4 ثواني للتحديث
+  useEffect(() => {
+    if (selected === null || currentUser === null) return;
+    let cancelled = false;
+    const fetchMessages = async () => {
+      try {
+        const res = await apiGet<MessagesResponse>(
+          `/sponsors/applications/${selected}/messages`
+        );
+        if (cancelled) return;
+        const mapped: Msg[] = res.items.map((m) => ({
+          from: m.senderId === currentUser.id ? "me" : "other",
+          text: m.text,
+          time: formatMessageTime(m.createdAt),
+          read: true,
+        }));
+        setMsgs((prev) => ({ ...prev, [selected]: mapped }));
+      } catch {
+        // تجاهل أخطاء الـ poll الخلفية
+      }
+    };
+    fetchMessages();
+    const intervalId = setInterval(fetchMessages, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [selected, currentUser]);
 
   const conv = conversations.find((c) => c.id === selected) ?? null;
 
@@ -255,51 +312,38 @@ export function MessagesPage() {
     (c) => c.name.includes(search) || c.sub.includes(search)
   );
 
-  const activeMessages: ChatMessage[] = selected !== null ? msgs[selected] || [] : [];
-
-  // تحميل رسائل المحادثة المختارة + polling كل 5 ثوانٍ. نوقفه عند تبديل
-  // المحادثة أو إلغاء الـ mount عشان نمنع تسريب timers.
-  useEffect(() => {
-    if (selected === null) return;
-    const saId = selected;
-    let cancelled = false;
-
-    const fetchMessages = async () => {
-      try {
-        const r = await apiGet<{ items: ChatMessage[] }>(
-          `/sponsors/applications/${saId}/messages`,
-        );
-        if (!cancelled) setMsgs((prev) => ({ ...prev, [saId]: r.items }));
-      } catch {
-        // فشل صامت داخل الـ polling
-      }
-    };
-
-    fetchMessages();
-    const interval = setInterval(fetchMessages, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [selected]);
+  const activeMessages = selected !== null ? msgs[selected] || [] : [];
 
   const send = async () => {
-    if (!newMsg.trim() || selected === null || sendingMsg) return;
+    if (!newMsg.trim() || selected === null || sending) return;
     const text = newMsg.trim();
-    const saId = selected;
+    setSending(true);
+    // أضفها بشكل تفاؤلي للواجهة مباشرة قبل ما يرد السيرفر
+    const optimistic: Msg = {
+      from: "me",
+      text,
+      time: new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" }),
+      read: false,
+    };
+    setMsgs((prev) => ({
+      ...prev,
+      [selected]: [...(prev[selected] || []), optimistic],
+    }));
     setNewMsg("");
-    setSendingMsg(true);
     try {
-      const sent = await apiPost<ChatMessage>(
-        `/sponsors/applications/${saId}/messages`,
-        { text },
-      );
-      setMsgs((prev) => ({ ...prev, [saId]: [...(prev[saId] || []), sent] }));
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "تعذّر إرسال الرسالة");
+      await apiPost<ApiMessage>(`/sponsors/applications/${selected}/messages`, { text });
+      // الـ poll القادم خلال 4 ثواني راح يجلب النسخة من السيرفر مع رسائل الطرف الثاني
+    } catch (err: unknown) {
+      const message = err instanceof ApiError ? err.message : "تعذّر إرسال الرسالة";
+      toast.error(message);
+      // ارجع الرسالة في حقل الإدخال + شيلها من الواجهة
+      setMsgs((prev) => ({
+        ...prev,
+        [selected]: (prev[selected] || []).filter((m) => m !== optimistic),
+      }));
       setNewMsg(text);
     } finally {
-      setSendingMsg(false);
+      setSending(false);
     }
   };
 
@@ -367,9 +411,6 @@ export function MessagesPage() {
                   >
                     {c.avatar}
                   </div>
-                  {c.online && (
-                    <div className="absolute -bottom-0.5 -left-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-                  )}
                 </div>
 
                 {/* Info */}
@@ -427,16 +468,13 @@ export function MessagesPage() {
                 >
                   {conv.avatar}
                 </div>
-                {conv.online && (
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />
-                )}
               </div>
               <div>
                 <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
                   {conv.name}
                 </p>
                 <p className="text-gray-400 text-xs">
-                  {conv.online ? "● متصل الآن" : "○ غير متصل"} · {conv.sub}
+                  {conv.sub}
                 </p>
               </div>
             </div>
@@ -525,48 +563,40 @@ export function MessagesPage() {
                   <div className="flex-1 h-px bg-gray-200" />
                 </div>
 
-                {activeMessages.length === 0 && (
-                  <p className="text-center text-sm text-gray-400 py-6">
-                    لا توجد رسائل بعد. ابدأ المحادثة برسالة للمنظم.
-                  </p>
-                )}
-                {activeMessages.map((m) => {
-                  const time = new Date(m.createdAt).toLocaleTimeString("ar-SA", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-                  return (
-                    <div
-                      key={m.id}
-                      className={`flex items-end gap-2.5 ${m.isMine ? "flex-row-reverse" : ""}`}
-                    >
-                      {!m.isMine && (
-                        <div
-                          className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
-                          style={{ background: conv.color, fontWeight: 700 }}
-                        >
-                          {conv.avatar}
-                        </div>
-                      )}
-                      <div className={`max-w-[65%] flex flex-col gap-1 ${m.isMine ? "items-end" : "items-start"}`}>
-                        <div
-                          className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
-                            m.isMine
-                              ? "bg-[#e35654] text-white rounded-tr-sm"
-                              : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
-                          }`}
-                        >
-                          {m.text}
-                        </div>
-                        <div className={`flex items-center gap-1 px-1 ${m.isMine ? "flex-row-reverse" : ""}`}>
-                          <span className="text-gray-300 text-xs">{time}</span>
-                          {/* علامتي الـ ✓ القديمة (read receipts) محذوفتين — لا
-                              يوجد في الباك عمود لتسجيل القراءة بعد. */}
-                        </div>
+                {activeMessages.map((m, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-end gap-2.5 ${m.from === "me" ? "flex-row-reverse" : ""}`}
+                  >
+                    {m.from === "other" && (
+                      <div
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs flex-shrink-0"
+                        style={{ background: conv.color, fontWeight: 700 }}
+                      >
+                        {conv.avatar}
+                      </div>
+                    )}
+                    <div className={`max-w-[65%] flex flex-col gap-1 ${m.from === "me" ? "items-end" : "items-start"}`}>
+                      <div
+                        className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                          m.from === "me"
+                            ? "bg-[#e35654] text-white rounded-tr-sm"
+                            : "bg-white border border-gray-100 text-gray-700 rounded-tl-sm shadow-sm"
+                        }`}
+                      >
+                        {m.text}
+                      </div>
+                      <div className={`flex items-center gap-1 px-1 ${m.from === "me" ? "flex-row-reverse" : ""}`}>
+                        <span className="text-gray-300 text-xs">{m.time}</span>
+                        {m.from === "me" && (
+                          m.read
+                            ? <CheckCheck className="w-3.5 h-3.5 text-[#e35654]" />
+                            : <Check className="w-3.5 h-3.5 text-gray-300" />
+                        )}
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
 
               {/* Input */}
@@ -639,14 +669,14 @@ export function MessagesPage() {
                   />
                   <button
                     onClick={send}
-                    disabled={!newMsg.trim()}
+                    disabled={!newMsg.trim() || sending}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                      newMsg.trim()
+                      newMsg.trim() && !sending
                         ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-md shadow-[#e35654]/20"
                         : "bg-gray-100 text-gray-300"
                     }`}
                   >
-                    <Send className="w-4 h-4" />
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
                 {conv.status === "accepted" && (

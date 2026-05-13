@@ -16,8 +16,8 @@ import {
   listMyConversations,
   advanceNegotiationStep,
   uploadReceipt,
-  listMyApplicationMessages,
-  sendMyApplicationMessage,
+  listApplicationMessages,
+  sendApplicationMessage,
 } from '../controllers/sponsor.controller';
 import { avatarUpload, bannerUpload, receiptUpload } from '../middleware/upload.middleware';
 
@@ -38,7 +38,7 @@ router.get('/payments', requireAuth, listMyPayments);
 router.get('/conversations', requireAuth, listMyConversations);
 router.post('/applications/:id/advance-step', requireAuth, advanceNegotiationStep);
 router.post('/applications/:id/upload-receipt', requireAuth, receiptUpload, uploadReceipt);
-router.get('/applications/:id/messages', requireAuth, listMyApplicationMessages);
-router.post('/applications/:id/messages', requireAuth, sendMyApplicationMessage);
+router.get('/applications/:id/messages', requireAuth, listApplicationMessages);
+router.post('/applications/:id/messages', requireAuth, sendApplicationMessage);
 
 export default router;

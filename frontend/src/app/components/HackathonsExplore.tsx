@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { apiGet } from "../../lib/api";
 import { HackathonCover, BrandingPayload } from "./HackathonCover";
+import { LogoPattern } from "./LogoPatterns";
 
 type OpportunityResponse = {
   items: Array<{
@@ -31,6 +32,7 @@ type OpportunityResponse = {
     prizeTotal: number;
     tags: string[];
     packagesCount: number;
+    teamsCount: number;
     branding: BrandingPayload | null;
     views: number;
   }>;
@@ -110,7 +112,7 @@ export function HackathonsExplore() {
           prize: `${it.prizeTotal.toLocaleString("ar-SA")} ر.س`,
           prizeValue: it.prizeTotal,
           viewers: it.views,
-          teams: 0,
+          teams: it.teamsCount,
           branding: it.branding,
           featured: false,
           packagesCount: it.packagesCount,
@@ -257,6 +259,26 @@ export function HackathonsExplore() {
                 {/* Cover — uses organizer-uploaded image/pattern/palette from branding */}
                 <div className="h-44 relative overflow-hidden flex items-end p-4">
                   <HackathonCover branding={h.branding} id={h.id} />
+                  {/* Hackathon logo — small brand mark anchored to the bottom-right
+                      of the cover so it reads like an avatar over the banner. */}
+                  {(() => {
+                    const b = h.branding;
+                    if (b?.logoMode === "upload" && b.logoUploadDataUrl) {
+                      return (
+                        <div className="absolute bottom-3 left-3 w-12 h-12 rounded-xl bg-white p-1 shadow-md z-10 overflow-hidden">
+                          <img src={b.logoUploadDataUrl} alt="" className="w-full h-full object-cover rounded-lg" />
+                        </div>
+                      );
+                    }
+                    if (b?.logoMode === "pattern" && b.logoPattern) {
+                      return (
+                        <div className="absolute bottom-3 left-3 w-12 h-12 rounded-xl bg-white p-0.5 shadow-md z-10 overflow-hidden">
+                          <LogoPattern pattern={b.logoPattern} colorPalette={b.colorPalette || "red"} />
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {/* Applied badge (highest priority) */}
                   {h.hasApplied && (
                     <div className="absolute top-3 right-3 z-10">

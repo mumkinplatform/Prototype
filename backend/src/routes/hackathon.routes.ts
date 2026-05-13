@@ -37,8 +37,6 @@ import {
   exportParticipantsCsv,
   listHackathonSponsorApplications,
   startSponsorNegotiation,
-  listOrgSponsorMessages,
-  sendOrgSponsorMessage,
 } from '../controllers/hackathon.controller';
 
 const router = Router();
@@ -93,7 +91,7 @@ router.get('/:id/export-participants', requireAuth, exportParticipantsCsv);
 // Sponsor applications — organizer's view of who's applied to sponsor their hackathon.
 router.get('/:id/sponsor-applications', requireAuth, listHackathonSponsorApplications);
 router.post('/:id/sponsor-applications/:saId/start-negotiation', requireAuth, startSponsorNegotiation);
-router.get('/:id/sponsor-applications/:saId/messages', requireAuth, listOrgSponsorMessages);
-router.post('/:id/sponsor-applications/:saId/messages', requireAuth, sendOrgSponsorMessage);
+// شات الراعي/المنظم متمركز في sponsor.routes.ts الآن (endpoint مشترك للجهتين
+// مع guard ذكي). راجعي ensureChatParticipant في sponsor.controller.ts.
 
 export default router;

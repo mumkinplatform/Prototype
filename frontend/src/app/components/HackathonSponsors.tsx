@@ -47,15 +47,15 @@ interface SponsorRequest {
   unreadMessages?: number;
 }
 
-// شكل الرسالة كما يرجّعها الباك — نفس الشكل عند الراعي عشان نشارك الكود
-// لاحقاً. `isMine` يحدّد محاذاة الفقاعة (يمين/يسار) من منظور المستخدم الحالي.
+// شكل الرسالة كما يرجّعها endpoint الراعي المشترك (sponsor.controller.ts).
+// نحن في وجهة المنظم، فـ "رسالتي" = التي أرسلها مستخدم نوعه ORGANIZER.
 interface ChatMessage {
   id: number;
   senderId: number;
+  senderType: 'SPONSOR' | 'ORGANIZER' | 'PARTICIPANT';
   senderName: string;
   text: string;
   createdAt: string;
-  isMine: boolean;
 }
 
 const mockRequests: SponsorRequest[] = [
@@ -442,8 +442,10 @@ export function HackathonSponsors() {
     const fetchMessages = async (showSpinner: boolean) => {
       if (showSpinner) setLoadingMessages(true);
       try {
+        // ننادي endpoint الراعي المشترك — guard فيه يقبل المنظم تلقائياً
+        // لأنه يفحص ملكية الـ hackathon عبر join لـ sponsor_application.
         const r = await apiGet<{ items: ChatMessage[] }>(
-          `/hackathons/${hackathonId}/sponsor-applications/${saId}/messages`,
+          `/sponsors/applications/${saId}/messages`,
         );
         if (!cancelled) {
           setMessagesByAppId((prev) => ({ ...prev, [saId]: r.items }));
@@ -517,13 +519,23 @@ export function HackathonSponsors() {
     setNewMessage('');
     setSendingMessage(true);
     try {
-      const sent = await apiPost<ChatMessage>(
-        `/hackathons/${hackathonId}/sponsor-applications/${saId}/messages`,
+      // الباك يرجع الرسالة بدون senderType/senderName، فنبنيهم محلياً للعرض
+      // الفوري — مع polling القادم تنرجع بشكلها الكامل من الباك.
+      const sent = await apiPost<{ id: number; senderId: number; text: string; createdAt: string }>(
+        `/sponsors/applications/${saId}/messages`,
         { text },
       );
+      const optimistic: ChatMessage = {
+        id: sent.id,
+        senderId: sent.senderId,
+        senderType: 'ORGANIZER',
+        senderName: '',
+        text: sent.text,
+        createdAt: sent.createdAt,
+      };
       setMessagesByAppId((prev) => ({
         ...prev,
-        [saId]: [...(prev[saId] ?? []), sent],
+        [saId]: [...(prev[saId] ?? []), optimistic],
       }));
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'تعذّر إرسال الرسالة');
@@ -1110,7 +1122,7 @@ export function HackathonSponsors() {
                             </div>
                             {lastMsg && (
                               <p className="text-xs text-gray-500 truncate">
-                                {lastMsg.isMine ? 'أنت: ' : ''}{lastMsg.text}
+                                {lastMsg.senderType === 'ORGANIZER' ? 'أنت: ' : ''}{lastMsg.text}
                               </p>
                             )}
                           </div>
@@ -1210,16 +1222,19 @@ export function HackathonSponsors() {
                               لا توجد رسائل بعد. ابدأ المحادثة برسالة ترحيب.
                             </p>
                           )}
-                          {currentMessages.map((msg) => (
-                            <div key={msg.id} className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-md ${msg.isMine ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'} rounded-2xl px-4 py-3`}>
-                                <p className="text-sm whitespace-pre-line">{msg.text}</p>
-                                <p className={`text-xs mt-1 ${msg.isMine ? 'text-blue-100' : 'text-gray-500'}`}>
-                                  {new Date(msg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
+                          {currentMessages.map((msg) => {
+                            const mine = msg.senderType === 'ORGANIZER';
+                            return (
+                              <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-md ${mine ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'} rounded-2xl px-4 py-3`}>
+                                  <p className="text-sm whitespace-pre-line">{msg.text}</p>
+                                  <p className={`text-xs mt-1 ${mine ? 'text-blue-100' : 'text-gray-500'}`}>
+                                    {new Date(msg.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {/* Message Input */}

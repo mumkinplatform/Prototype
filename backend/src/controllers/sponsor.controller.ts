@@ -31,6 +31,7 @@ interface OpportunityRow extends RowDataPacket {
   prizeTotal: string | null;
   tagsRaw: string | null;
   packagesCount: number;
+  teamsCount: number;
   brandingRaw: string | null;
   views: number;
 }
@@ -113,6 +114,20 @@ interface MyContractRow extends RowDataPacket {
   organizerSigned: number;
   organizerSignedAt: Date | null;
   receiptFile: string | null;
+}
+
+interface ChatMessageRow extends RowDataPacket {
+  id: number;
+  senderId: number;
+  senderType: 'SPONSOR' | 'ORGANIZER' | 'PARTICIPANT';
+  senderName: string;
+  text: string;
+  createdAt: Date;
+}
+
+interface ApplicationOwnersRow extends RowDataPacket {
+  SM_ID: number;
+  HAM_ID: number;
 }
 
 interface MyConversationRow extends RowDataPacket {
@@ -239,6 +254,7 @@ export const listOpportunities = async (req: Request, res: Response) => {
        (SELECT GROUP_CONCAT(HT_Name SEPARATOR '|||')
           FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw,
        (SELECT COUNT(*) FROM sponsor_package WHERE hackathon_ID = h.hackathon_ID) AS packagesCount,
+       (SELECT COUNT(*) FROM team WHERE hackathon_ID = h.hackathon_ID) AS teamsCount,
        h.H_views AS views
        FROM hackathon h
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
@@ -270,6 +286,7 @@ export const listOpportunities = async (req: Request, res: Response) => {
     prizeTotal: r.prizeTotal ? Number(r.prizeTotal) : 0,
     tags: r.tagsRaw ? r.tagsRaw.split('|||') : [],
     packagesCount: r.packagesCount,
+    teamsCount: r.teamsCount,
     branding: extractBranding(brandingById.get(r.id) ?? null),
     views: r.views,
   }));
@@ -878,6 +895,103 @@ export const uploadBanner = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * يتأكد إن المستخدم الحالي طرف في التقديم (الراعي صاحبه أو المنظم المالك للهاكاثون).
+ * يرجع true لو مسموح، يرسل خطأ ويرجع false لو غير مسموح.
+ */
+async function ensureChatParticipant(
+  req: Request,
+  res: Response,
+  applicationId: number,
+): Promise<{ allowed: boolean; sponsorId?: number }> {
+  if (!req.user) {
+    res.status(401).json({ error: 'unauthenticated' });
+    return { allowed: false };
+  }
+  const [rows] = await pool.query<ApplicationOwnersRow[]>(
+    `SELECT sa.SM_ID, h.HAM_ID
+       FROM sponsor_application sa
+       JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+       JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
+      WHERE sa.SA_ID = ?`,
+    [applicationId],
+  );
+  if (rows.length === 0) {
+    res.status(404).json({ error: 'التقديم غير موجود' });
+    return { allowed: false };
+  }
+  const { SM_ID, HAM_ID } = rows[0];
+  const me = req.user.memberId;
+  if (me !== SM_ID && me !== HAM_ID) {
+    res.status(403).json({ error: 'لا تملك صلاحية الوصول لهذه المحادثة' });
+    return { allowed: false };
+  }
+  return { allowed: true, sponsorId: SM_ID };
+}
+
+export const listApplicationMessages = async (req: Request, res: Response) => {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
+  }
+  const guard = await ensureChatParticipant(req, res, applicationId);
+  if (!guard.allowed) return;
+
+  try {
+    const [rows] = await pool.query<ChatMessageRow[]>(
+      `SELECT
+         msg.SAM_ID        AS id,
+         msg.M_ID          AS senderId,
+         m.M_Type          AS senderType,
+         CONCAT_WS(' ', m.M_FName, m.M_LName) AS senderName,
+         msg.SAM_Text      AS text,
+         msg.SAM_CreatedAt AS createdAt
+         FROM sponsor_application_message msg
+         JOIN member m ON m.M_ID = msg.M_ID
+        WHERE msg.SA_ID = ?
+        ORDER BY msg.SAM_CreatedAt ASC, msg.SAM_ID ASC`,
+      [applicationId],
+    );
+    return res.json({ items: rows });
+  } catch (err) {
+    console.error('[listApplicationMessages] error:', err);
+    return res.status(500).json({ error: 'تعذّر جلب الرسائل' });
+  }
+};
+
+export const sendApplicationMessage = async (req: Request, res: Response) => {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
+  }
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    return res.status(400).json({ error: 'نص الرسالة مطلوب' });
+  }
+  if (text.length > 2000) {
+    return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 2000 حرف)' });
+  }
+  const guard = await ensureChatParticipant(req, res, applicationId);
+  if (!guard.allowed) return;
+
+  try {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO sponsor_application_message (SA_ID, M_ID, SAM_Text)
+       VALUES (?, ?, ?)`,
+      [applicationId, req.user!.memberId, text],
+    );
+    return res.status(201).json({
+      id: result.insertId,
+      senderId: req.user!.memberId,
+      text,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.error('[sendApplicationMessage] error:', err);
+    return res.status(500).json({ error: 'تعذّر إرسال الرسالة' });
+  }
+};
+
 export const uploadReceipt = async (req: Request, res: Response) => {
   if (!ensureSponsor(req, res)) return;
 
@@ -1070,112 +1184,3 @@ export const applyToPackage = async (req: Request, res: Response) => {
   }
 };
 
-// ─── Chat between sponsor and organizer ──────────────────────────────────────
-// Each conversation is scoped to a single sponsor_application (SA_ID). Both
-// sides (organizer + sponsor) read/write the same `sponsor_message` rows;
-// auth differs by route — the sponsor pair below checks ownership of the
-// application, and the organizer pair on the hackathon controller checks
-// ownership of the hackathon.
-
-interface SponsorMessageRow extends RowDataPacket {
-  id: number;
-  senderId: number;
-  senderFirst: string | null;
-  senderLast: string | null;
-  text: string;
-  createdAt: Date;
-}
-
-// Resolve and verify that the requesting sponsor owns the application. We
-// return SA_ID + the sponsor's own member id (SM_ID) so the caller can decide
-// what to do next without an extra round-trip.
-async function requireMySponsorApplication(
-  req: Request,
-  res: Response,
-  saId: number,
-): Promise<{ saId: number; sponsorMemberId: number } | null> {
-  if (!Number.isInteger(saId) || saId <= 0) {
-    res.status(400).json({ error: 'invalid application id' });
-    return null;
-  }
-  const [rows] = await pool.query<ApplicationOwnerRow[]>(
-    'SELECT SM_ID, SA_Status FROM sponsor_application WHERE SA_ID = ?',
-    [saId],
-  );
-  if (rows.length === 0) {
-    res.status(404).json({ error: 'not_found', message: 'الطلب غير موجود' });
-    return null;
-  }
-  if (rows[0].SM_ID !== req.user!.memberId) {
-    res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لهذا الطلب' });
-    return null;
-  }
-  return { saId, sponsorMemberId: rows[0].SM_ID };
-}
-
-/**
- * GET /sponsors/applications/:id/messages
- * Sponsor reads the chat thread for one of their applications.
- */
-export const listMyApplicationMessages = async (req: Request, res: Response) => {
-  if (!ensureSponsor(req, res)) return;
-  const saId = Number(req.params.id);
-  const ctx = await requireMySponsorApplication(req, res, saId);
-  if (!ctx) return;
-
-  const [rows] = await pool.query<SponsorMessageRow[]>(
-    `SELECT
-       sm.SM_MsgID    AS id,
-       sm.M_ID        AS senderId,
-       m.M_FName      AS senderFirst,
-       m.M_LName      AS senderLast,
-       sm.SM_Text     AS text,
-       sm.SM_CreatedAt AS createdAt
-       FROM sponsor_message sm
-       JOIN member m ON m.M_ID = sm.M_ID
-      WHERE sm.SA_ID = ?
-      ORDER BY sm.SM_CreatedAt ASC`,
-    [saId],
-  );
-
-  const myId = req.user!.memberId;
-  return res.json({
-    items: rows.map((r) => ({
-      id: r.id,
-      senderId: r.senderId,
-      senderName: `${r.senderFirst ?? ''} ${r.senderLast ?? ''}`.trim() || '—',
-      text: r.text,
-      createdAt: r.createdAt,
-      isMine: r.senderId === myId,
-    })),
-  });
-};
-
-/**
- * POST /sponsors/applications/:id/messages   Body: { text: string }
- * Sponsor sends a message to the organizer for one of their applications.
- */
-export const sendMyApplicationMessage = async (req: Request, res: Response) => {
-  if (!ensureSponsor(req, res)) return;
-  const saId = Number(req.params.id);
-  const ctx = await requireMySponsorApplication(req, res, saId);
-  if (!ctx) return;
-
-  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
-  if (text.length === 0) return res.status(400).json({ error: 'الرسالة فارغة' });
-  if (text.length > 5000) return res.status(400).json({ error: 'الرسالة طويلة جداً (الحد 5000 حرف)' });
-
-  const memberId = req.user!.memberId;
-  const [result] = await pool.query<ResultSetHeader>(
-    'INSERT INTO sponsor_message (SA_ID, M_ID, SM_Text) VALUES (?, ?, ?)',
-    [saId, memberId, text],
-  );
-
-  return res.json({
-    id: result.insertId,
-    senderId: memberId,
-    text,
-    createdAt: new Date(),
-    isMine: true,
-  });
-};

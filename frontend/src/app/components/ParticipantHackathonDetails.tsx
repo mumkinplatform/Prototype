@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { apiGet, apiPost, ApiError } from "../../lib/api";
 import { HackathonCover, type BrandingPayload } from "./HackathonCover";
+import { LogoPattern } from "./LogoPatterns";
 
 interface ApiPrize {
   rank: string;
@@ -737,10 +738,31 @@ export function ParticipantHackathonDetails() {
             ))}
           </div>
  
+          {/* Hackathon logo (organizer-chosen pattern or uploaded image). Sits
+              above the title so it reads like a brand mark on the hero. */}
+          {(() => {
+            const b = hackathon.branding;
+            if (b?.logoMode === "upload" && b.logoUploadDataUrl) {
+              return (
+                <div className="w-16 h-16 rounded-2xl bg-white p-1.5 mb-3 overflow-hidden shadow-md">
+                  <img src={b.logoUploadDataUrl} alt="" className="w-full h-full object-cover rounded-xl" />
+                </div>
+              );
+            }
+            if (b?.logoMode === "pattern" && b.logoPattern) {
+              return (
+                <div className="w-16 h-16 rounded-2xl bg-white p-1 mb-3 overflow-hidden shadow-md">
+                  <LogoPattern pattern={b.logoPattern} colorPalette={b.colorPalette || "red"} />
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           <h1 className="text-white mb-2" style={{ fontWeight: 800, fontSize: "2rem", lineHeight: 1.2 }}>
             {hackathon.title}
           </h1>
- 
+
           <div className="flex items-center gap-2 mb-5">
             <div
               className="w-7 h-7 rounded-lg flex items-center justify-center text-white flex-shrink-0"
