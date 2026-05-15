@@ -483,21 +483,6 @@ CREATE TABLE `sponsor_package` (
   CONSTRAINT `sponsor_package_ibfk_1` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=83 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `submission`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `submission` (
-  `Submission_ID` int NOT NULL AUTO_INCREMENT,
-  `FileData` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `EM_ID` int DEFAULT NULL,
-  `T_ID` int DEFAULT NULL,
-  PRIMARY KEY (`Submission_ID`),
-  KEY `EM_ID` (`EM_ID`),
-  KEY `T_ID` (`T_ID`),
-  CONSTRAINT `submission_ibfk_1` FOREIGN KEY (`EM_ID`) REFERENCES `evaluator` (`EM_ID`),
-  CONSTRAINT `submission_ibfk_2` FOREIGN KEY (`T_ID`) REFERENCES `team` (`T_ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `submission_file`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -514,21 +499,8 @@ CREATE TABLE `submission_file` (
   KEY `idx_submission_file_ts` (`TS_ID`),
   KEY `fk_submission_file_member` (`SF_UploadedBy`),
   CONSTRAINT `fk_submission_file_member` FOREIGN KEY (`SF_UploadedBy`) REFERENCES `member` (`M_ID`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_submission_file_ts` FOREIGN KEY (`TS_ID`) REFERENCES `team_submission` (`TS_ID`) ON DELETE CASCADE
+  CONSTRAINT `fk_submission_file_ts` FOREIGN KEY (`TS_ID`) REFERENCES `submission` (`TS_ID`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `submits`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `submits` (
-  `Submission_ID` int NOT NULL,
-  `T_ID` int NOT NULL,
-  `sub_date` date DEFAULT NULL,
-  PRIMARY KEY (`Submission_ID`,`T_ID`),
-  KEY `T_ID` (`T_ID`),
-  CONSTRAINT `submits_ibfk_1` FOREIGN KEY (`Submission_ID`) REFERENCES `submission` (`Submission_ID`) ON DELETE CASCADE,
-  CONSTRAINT `submits_ibfk_2` FOREIGN KEY (`T_ID`) REFERENCES `team` (`T_ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `team`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -584,10 +556,10 @@ CREATE TABLE `team_message` (
   CONSTRAINT `fk_team_message_team` FOREIGN KEY (`T_ID`) REFERENCES `team` (`T_ID`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `team_submission`;
+DROP TABLE IF EXISTS `submission`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `team_submission` (
+CREATE TABLE `submission` (
   `TS_ID` int NOT NULL AUTO_INCREMENT,
   `T_ID` int DEFAULT NULL,
   `PM_ID` int DEFAULT NULL,
@@ -603,12 +575,12 @@ CREATE TABLE `team_submission` (
   PRIMARY KEY (`TS_ID`),
   UNIQUE KEY `uniq_team_hackathon` (`T_ID`,`hackathon_ID`),
   UNIQUE KEY `uniq_pm_hackathon` (`PM_ID`,`hackathon_ID`),
-  KEY `idx_team_submission_hack` (`hackathon_ID`),
-  KEY `fk_team_submission_judge` (`assigned_judge_id`),
-  CONSTRAINT `fk_team_submission_hack` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE,
-  CONSTRAINT `fk_team_submission_judge` FOREIGN KEY (`assigned_judge_id`) REFERENCES `hackathon_judge` (`HJ_ID`) ON DELETE SET NULL,
-  CONSTRAINT `fk_team_submission_pm` FOREIGN KEY (`PM_ID`) REFERENCES `participant` (`PM_ID`) ON DELETE CASCADE,
-  CONSTRAINT `fk_team_submission_team` FOREIGN KEY (`T_ID`) REFERENCES `team` (`T_ID`) ON DELETE CASCADE,
+  KEY `idx_submission_hack` (`hackathon_ID`),
+  KEY `fk_submission_judge` (`assigned_judge_id`),
+  CONSTRAINT `fk_submission_hack` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_submission_judge` FOREIGN KEY (`assigned_judge_id`) REFERENCES `hackathon_judge` (`HJ_ID`) ON DELETE SET NULL,
+  CONSTRAINT `fk_submission_pm` FOREIGN KEY (`PM_ID`) REFERENCES `participant` (`PM_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_submission_team` FOREIGN KEY (`T_ID`) REFERENCES `team` (`T_ID`) ON DELETE CASCADE,
   CONSTRAINT `chk_submission_owner` CHECK ((((`T_ID` is not null) and (`PM_ID` is null)) or ((`T_ID` is null) and (`PM_ID` is not null))))
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

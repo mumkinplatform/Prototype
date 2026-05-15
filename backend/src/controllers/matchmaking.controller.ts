@@ -52,6 +52,7 @@ export const listPublishedHackathons = async (_req: Request, res: Response) => {
   }
 };
 
+// Two-step query — H_Branding can hold multi-MB base64 banners and combining it with ORDER BY blows MySQL's sort_buffer.
 export const browseHackathons = async (_req: Request, res: Response) => {
   try {
     const [rows] = await pool.query<BrowseHackathonRow[]>(
@@ -68,14 +69,28 @@ export const browseHackathons = async (_req: Request, res: Response) => {
          h.H_Team_Max,
          h.H_Target_Participants,
          h.H_status,
-         h.H_Branding,
          op.ORG_Name AS organizer_name
        FROM hackathon h
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
        WHERE h.H_status IN ('published', 'ongoing')
        ORDER BY h.hackathon_ID DESC`
     );
-    return res.json({ hackathons: rows });
+
+    const brandingById = new Map<number, string | null>();
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.hackathon_ID);
+      const placeholders = ids.map(() => '?').join(',');
+      const [brandingRows] = await pool.query<RowDataPacket[]>(
+        `SELECT hackathon_ID, H_Branding FROM hackathon WHERE hackathon_ID IN (${placeholders})`,
+        ids,
+      );
+      for (const b of brandingRows as Array<{ hackathon_ID: number; H_Branding: string | null }>) {
+        brandingById.set(b.hackathon_ID, b.H_Branding ?? null);
+      }
+    }
+
+    const hackathons = rows.map((r) => ({ ...r, H_Branding: brandingById.get(r.hackathon_ID) ?? null }));
+    return res.json({ hackathons });
   } catch (err) {
     console.error('browseHackathons error:', err);
     return res.status(500).json({

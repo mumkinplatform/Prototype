@@ -5,7 +5,7 @@
 -- الغرض:
 --   تجهيز قسم "إدارة المشاريع والتحكيم" بهيكل بيانات منظم:
 --     1) جدول معايير تقييم بالأوزان (بدلاً من النص الحر في H_JudgingCriteria)
---     2) ربط كل مشروع (team_submission) بحكم واحد عند توزيع المشاريع
+--     2) ربط كل مشروع (submission) بحكم واحد عند توزيع المشاريع
 --     3) إعدادات للمنظم تتحكم بظهور التقييم للمشارك + تاريخ التوزيع
 --
 -- ملاحظات:
@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS `hackathon_evaluation_criteria` (
 
 -- 2) Project → judge assignment (one judge per project per the chosen
 --    distribution model — Option B from the spec)
-ALTER TABLE `team_submission`
+ALTER TABLE `submission`
   ADD COLUMN `assigned_judge_id` INT NULL AFTER `hackathon_ID`,
-  ADD CONSTRAINT `fk_team_submission_judge`
+  ADD CONSTRAINT `fk_submission_judge`
     FOREIGN KEY (`assigned_judge_id`)
     REFERENCES `hackathon_judge` (`HJ_ID`) ON DELETE SET NULL;
 

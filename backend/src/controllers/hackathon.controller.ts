@@ -2175,7 +2175,7 @@ export const deleteHackathon = async (req: Request, res: Response) => {
       await conn.execute('DELETE FROM applies_hackathon WHERE hackathon_ID = ?', [id]);
       await conn.execute('DELETE FROM hackathon_organizer_team WHERE hackathon_ID = ?', [id]);
       // The rest (track, prize, co_manager, judge, skill, sponsor_package, team,
-      // session, evaluation, certificate, team_submission) cascade automatically.
+      // session, evaluation, certificate, submission) cascade automatically.
       await conn.execute('DELETE FROM hackathon WHERE hackathon_ID = ?', [id]);
       await conn.commit();
     } catch (err) {
@@ -2979,7 +2979,7 @@ export const exportParticipantsCsv = async (req: Request, res: Response) => {
        FROM applies_hackathon ah
        JOIN member m       ON m.M_ID = ah.PM_ID
        LEFT JOIN team t    ON t.T_ID = ah.T_ID
-       LEFT JOIN team_submission ts
+       LEFT JOIN submission ts
          ON ts.hackathon_ID = ah.hackathon_ID
          AND ((ah.T_ID IS NOT NULL AND ts.T_ID = ah.T_ID)
            OR (ah.T_ID IS NULL AND ts.PM_ID = ah.PM_ID))
@@ -3260,7 +3260,7 @@ export const removeHackathonJudge = async (req: Request, res: Response) => {
 
   try {
     await pool.execute(
-      'UPDATE team_submission SET assigned_judge_id = NULL WHERE assigned_judge_id = ?',
+      'UPDATE submission SET assigned_judge_id = NULL WHERE assigned_judge_id = ?',
       [hjId],
     );
     await pool.execute('DELETE FROM hackathon_judge WHERE HJ_ID = ?', [hjId]);
@@ -3443,7 +3443,7 @@ export const listHackathonProjects = async (req: Request, res: Response) => {
             WHERE (e.T_ID = ts.T_ID OR e.PM_ID = ts.PM_ID)
               AND e.hackathon_ID = ts.hackathon_ID) AS evaluationCount,
          hj.HJ_FullName          AS judgeName
-         FROM team_submission ts
+         FROM submission ts
          LEFT JOIN team t   ON t.T_ID  = ts.T_ID
          LEFT JOIN participant p ON p.PM_ID = ts.PM_ID
          LEFT JOIN member pm     ON pm.M_ID = p.PM_ID
@@ -3611,7 +3611,7 @@ export const distributeJudging = async (req: Request, res: Response) => {
     // First: are there any submitted projects AT ALL? Distinguishing this case
     // from "all already distributed" gives the user a clearer error message.
     const [submittedCount] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS c FROM team_submission
+      `SELECT COUNT(*) AS c FROM submission
         WHERE hackathon_ID = ? AND TS_SubmittedAt IS NOT NULL`,
       [id],
     );
@@ -3637,7 +3637,7 @@ export const distributeJudging = async (req: Request, res: Response) => {
     }
 
     const [unassigned] = await pool.query<RowDataPacket[]>(
-      `SELECT TS_ID FROM team_submission
+      `SELECT TS_ID FROM submission
         WHERE hackathon_ID = ?
           AND TS_SubmittedAt IS NOT NULL
           AND assigned_judge_id IS NULL
@@ -3695,7 +3695,7 @@ export const distributeJudging = async (req: Request, res: Response) => {
     for (let i = 0; i < projectIds.length; i++) {
       const judgeId = judgeIds[i % judgeIds.length];
       await pool.execute(
-        'UPDATE team_submission SET assigned_judge_id = ? WHERE TS_ID = ?',
+        'UPDATE submission SET assigned_judge_id = ? WHERE TS_ID = ?',
         [judgeId, projectIds[i]],
       );
       tally.set(judgeId, (tally.get(judgeId) ?? 0) + 1);
@@ -3779,7 +3779,7 @@ export const listProjectEvaluations = async (req: Request, res: Response) => {
 
   try {
     const [subRows] = await pool.query<RowDataPacket[]>(
-      'SELECT T_ID, PM_ID FROM team_submission WHERE TS_ID = ? AND hackathon_ID = ?',
+      'SELECT T_ID, PM_ID FROM submission WHERE TS_ID = ? AND hackathon_ID = ?',
       [tsId, id],
     );
     if (subRows.length === 0) return res.status(404).json({ error: 'المشروع غير موجود' });
@@ -3892,7 +3892,7 @@ export const listMyJudgeAssignments = async (req: Request, res: Response) => {
               AND ((ts.T_ID IS NOT NULL AND T_ID = ts.T_ID)
                 OR (ts.PM_ID IS NOT NULL AND PM_ID = ts.PM_ID))
             LIMIT 1) AS myEvaluationId
-         FROM team_submission ts
+         FROM submission ts
          LEFT JOIN team t   ON t.T_ID  = ts.T_ID
          LEFT JOIN participant p ON p.PM_ID = ts.PM_ID
          LEFT JOIN member pm     ON pm.M_ID = p.PM_ID
@@ -4058,7 +4058,7 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
 
   const [subRows] = await pool.query<RowDataPacket[]>(
     `SELECT T_ID, PM_ID, assigned_judge_id, TS_SubmittedAt
-       FROM team_submission WHERE TS_ID = ? AND hackathon_ID = ?`,
+       FROM submission WHERE TS_ID = ? AND hackathon_ID = ?`,
     [tsId, hackathonId],
   );
   if (subRows.length === 0) return res.status(404).json({ error: 'المشروع غير موجود' });

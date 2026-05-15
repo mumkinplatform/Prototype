@@ -1,11 +1,18 @@
--- Migration 011: team_submission + submission_file
--- One submission per (team, hackathon), with multiple uploaded files.
--- TS_SubmittedAt is set when the team confirms the final submission.
--- SF_StoredName is the random on-disk filename; SF_Name is the original.
+-- Migration 011: submission + submission_file
+-- One submission per (team OR solo participant, hackathon), with multiple
+-- uploaded files. TS_SubmittedAt is set when the owner confirms the final
+-- submission. SF_StoredName is the random on-disk filename; SF_Name is the
+-- original.
+--
+-- Owner is either a team (T_ID) OR a solo participant (PM_ID), enforced by
+-- chk_submission_owner. Filename kept as 011_team_submission.sql for git
+-- history; the table is `submission` (renamed from `team_submission`).
+-- Column prefix `TS_` stays as-is for compatibility with existing rows.
 
-CREATE TABLE IF NOT EXISTS `team_submission` (
+CREATE TABLE IF NOT EXISTS `submission` (
   `TS_ID`                 INT NOT NULL AUTO_INCREMENT,
-  `T_ID`                  INT NOT NULL,
+  `T_ID`                  INT NULL,
+  `PM_ID`                 INT NULL,
   `hackathon_ID`          INT NOT NULL,
   `TS_ProjectName`        VARCHAR(255) NULL,
   `TS_ProjectDescription` TEXT NULL,
@@ -18,13 +25,21 @@ CREATE TABLE IF NOT EXISTS `team_submission` (
                           ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`TS_ID`),
   UNIQUE KEY `uniq_team_hackathon` (`T_ID`, `hackathon_ID`),
-  KEY `idx_team_submission_hack` (`hackathon_ID`),
-  CONSTRAINT `fk_team_submission_team`
+  UNIQUE KEY `uniq_pm_hackathon`   (`PM_ID`, `hackathon_ID`),
+  KEY `idx_submission_hack` (`hackathon_ID`),
+  CONSTRAINT `fk_submission_team`
     FOREIGN KEY (`T_ID`) REFERENCES `team` (`T_ID`)
     ON DELETE CASCADE,
-  CONSTRAINT `fk_team_submission_hack`
+  CONSTRAINT `fk_submission_pm`
+    FOREIGN KEY (`PM_ID`) REFERENCES `participant` (`PM_ID`)
+    ON DELETE CASCADE,
+  CONSTRAINT `fk_submission_hack`
     FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`)
-    ON DELETE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT `chk_submission_owner` CHECK (
+    (`T_ID` IS NOT NULL AND `PM_ID` IS NULL) OR
+    (`T_ID` IS NULL AND `PM_ID` IS NOT NULL)
+  )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `submission_file` (
@@ -39,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `submission_file` (
   PRIMARY KEY (`SF_ID`),
   KEY `idx_submission_file_ts` (`TS_ID`),
   CONSTRAINT `fk_submission_file_ts`
-    FOREIGN KEY (`TS_ID`) REFERENCES `team_submission` (`TS_ID`)
+    FOREIGN KEY (`TS_ID`) REFERENCES `submission` (`TS_ID`)
     ON DELETE CASCADE,
   CONSTRAINT `fk_submission_file_member`
     FOREIGN KEY (`SF_UploadedBy`) REFERENCES `member` (`M_ID`)

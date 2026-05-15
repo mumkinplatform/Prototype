@@ -1,5 +1,5 @@
 // Remove participant 5's registration in hackathon 3 (جواهر تجربة) plus all
-// related rows (team_submission, evaluation, evaluation_score, submission_file)
+// related rows (submission, evaluation, evaluation_score, submission_file)
 // so the user can re-test the registration flow from scratch.
 import { pool } from '../src/db/pool';
 
@@ -9,10 +9,10 @@ const HACK_ID = 3;
 async function main() {
   // 1. List dependents first so we can see what'll be removed
   const [subs] = await pool.query(
-    `SELECT TS_ID FROM team_submission WHERE hackathon_ID = ? AND PM_ID = ?`,
+    `SELECT TS_ID FROM submission WHERE hackathon_ID = ? AND PM_ID = ?`,
     [HACK_ID, PM_ID],
   );
-  console.log(`team_submission rows to remove:`, subs);
+  console.log(`submission rows to remove:`, subs);
 
   const tsIds = (subs as Array<{ TS_ID: number }>).map((r) => r.TS_ID);
 
@@ -35,7 +35,7 @@ async function main() {
       tsIds,
     );
     await pool.execute(
-      `DELETE FROM team_submission WHERE TS_ID IN (${ph})`,
+      `DELETE FROM submission WHERE TS_ID IN (${ph})`,
       tsIds,
     );
   }

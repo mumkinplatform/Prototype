@@ -11,7 +11,7 @@ const hackathonId = Number(process.argv[2]) || 3;
 
 async function main() {
   const [tsRows] = await pool.execute(
-    `UPDATE team_submission SET assigned_judge_id = NULL WHERE hackathon_ID = ?`,
+    `UPDATE submission SET assigned_judge_id = NULL WHERE hackathon_ID = ?`,
     [hackathonId],
   );
   const [hackRows] = await pool.execute(
@@ -19,7 +19,7 @@ async function main() {
     [hackathonId],
   );
   console.log(`Reset distribution for hackathon ${hackathonId}.`);
-  console.log('team_submission result:', tsRows);
+  console.log('submission result:', tsRows);
   console.log('hackathon result:', hackRows);
   process.exit(0);
 }

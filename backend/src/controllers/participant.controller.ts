@@ -1571,12 +1571,21 @@ export const getStats = async (req: Request, res: Response) => {
     [memberId]
   );
 
+  // Count finalized submissions (TS_SubmittedAt IS NOT NULL) where this
+  // participant is either the solo submitter (s.PM_ID) or a member of the
+  // submitting team (via applies_hackathon.T_ID).
   const [submissionsRows] = await pool.query<CountRow[]>(
-    `SELECT COUNT(DISTINCT s.Submission_ID) AS count
+    `SELECT COUNT(*) AS count
        FROM submission s
-       JOIN participant p ON p.T_ID = s.T_ID
-      WHERE p.PM_ID = ?`,
-    [memberId]
+      WHERE s.TS_SubmittedAt IS NOT NULL
+        AND (
+          s.PM_ID = ?
+          OR s.T_ID IN (
+            SELECT T_ID FROM applies_hackathon
+             WHERE PM_ID = ? AND T_ID IS NOT NULL
+          )
+        )`,
+    [memberId, memberId]
   );
 
   const [skillsRows] = await pool.query<CountRow[]>(
@@ -1906,7 +1915,7 @@ export const sendTeamMessage = async (req: Request, res: Response) => {
 };
 
 // ─── Submission ──────────────────────────────────────────────
-interface TeamSubmissionRow extends RowDataPacket {
+interface SubmissionRow extends RowDataPacket {
   TS_ID: number;
   T_ID: number | null;
   PM_ID: number | null;
@@ -2037,29 +2046,29 @@ async function requireSubmissionTarget(
 }
 
 /**
- * Fetches or creates a team_submission row for the given target (team OR solo participant).
+ * Fetches or creates a submission row for the given target (team OR solo participant).
  * Each registered owner (team or solo) gets exactly one submission per hackathon.
  */
 async function getOrCreateSubmission(
   target: SubmissionTarget,
   hackathonId: number
-): Promise<TeamSubmissionRow> {
+): Promise<SubmissionRow> {
   const isTeam = target.teamId !== null;
   const ownerCol = isTeam ? 'T_ID' : 'PM_ID';
   const ownerId = isTeam ? target.teamId! : target.participantId!;
 
   const selectSql = `SELECT TS_ID, T_ID, PM_ID, TS_ProjectName, TS_ProjectDescription, TS_RepoUrl, TS_DemoUrl, TS_SubmittedAt
-       FROM team_submission
+       FROM submission
       WHERE ${ownerCol} = ? AND hackathon_ID = ?`;
 
-  const [rows] = await pool.query<TeamSubmissionRow[]>(selectSql, [ownerId, hackathonId]);
+  const [rows] = await pool.query<SubmissionRow[]>(selectSql, [ownerId, hackathonId]);
   if (rows.length > 0) return rows[0];
 
   await pool.query<ResultSetHeader>(
-    `INSERT INTO team_submission (${ownerCol}, hackathon_ID) VALUES (?, ?)`,
+    `INSERT INTO submission (${ownerCol}, hackathon_ID) VALUES (?, ?)`,
     [ownerId, hackathonId]
   );
-  const [created] = await pool.query<TeamSubmissionRow[]>(selectSql, [ownerId, hackathonId]);
+  const [created] = await pool.query<SubmissionRow[]>(selectSql, [ownerId, hackathonId]);
   return created[0];
 }
 
@@ -2203,7 +2212,7 @@ export const updateMySubmission = async (req: Request, res: Response) => {
   }
 
   await pool.query(
-    `UPDATE team_submission SET ${updates.join(', ')} WHERE TS_ID = ?`,
+    `UPDATE submission SET ${updates.join(', ')} WHERE TS_ID = ?`,
     [...values, sub.TS_ID]
   );
 
@@ -2305,7 +2314,7 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
   const [rows] = await pool.query<FileOwnerRow[]>(
     `SELECT f.SF_StoredName AS storedName, ts.TS_SubmittedAt
        FROM submission_file f
-       JOIN team_submission ts ON ts.TS_ID = f.TS_ID
+       JOIN submission ts ON ts.TS_ID = f.TS_ID
       WHERE f.SF_ID = ? AND ts.${ownerCol} = ? AND ts.hackathon_ID = ?`,
     [fileId, ownerId, hackathonId]
   );
@@ -2335,7 +2344,7 @@ export const deleteSubmissionFile = async (req: Request, res: Response) => {
 // the TS column (for text/URL fields) used by the confirm-time validation.
 const SUBMISSION_FIELD_TO_COLUMN: Record<
   string,
-  { column: keyof TeamSubmissionRow; label: string }
+  { column: keyof SubmissionRow; label: string }
 > = {
   title:  { column: 'TS_ProjectName',        label: 'عنوان المشروع' },
   desc:   { column: 'TS_ProjectDescription', label: 'وصف المشروع' },
@@ -2434,7 +2443,7 @@ export const confirmSubmission = async (req: Request, res: Response) => {
   }
 
   await pool.query(
-    'UPDATE team_submission SET TS_SubmittedAt = CURRENT_TIMESTAMP WHERE TS_ID = ?',
+    'UPDATE submission SET TS_SubmittedAt = CURRENT_TIMESTAMP WHERE TS_ID = ?',
     [sub.TS_ID]
   );
 
