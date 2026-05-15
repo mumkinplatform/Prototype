@@ -31,11 +31,37 @@ interface ApiHackathon {
   title: string;
   slug: string | null;
   type: string | null;
+  city: string | null;
   description: string | null;
   startDate: string | null;
   registrationDeadline: string | null;
   org: string | null;
   branding: BrandingPayload | null;
+}
+
+// What we render next to the MapPin icon. Logic:
+//   • Online (canonical DB value "عبر الإنترنت" or any common alias) → "عن بُعد"
+//   • Anything else with a city                                       → the city name
+//   • Fallback                                                         → "—"
+// The previous build was setting location = hackathon.type, which made the pin
+// icon misleadingly say "حضوري" / "هجين" instead of the actual place.
+function deriveLocation(hk: { type: string | null; city: string | null }): string {
+  const raw = (hk.type ?? "").trim();
+  const lower = raw.toLowerCase();
+  // The hackathon.controller stores online hackathons as "عبر الإنترنت" exactly
+  // (see hackathon.controller.ts:1917). Other values seen in seed data / future
+  // edits are matched via substring so we don't regress when the wording shifts.
+  const isRemote =
+    raw === "عبر الإنترنت" ||
+    raw.includes("عبر الإنترنت") ||
+    raw.includes("عبر الانترنت") ||
+    raw.includes("عن بعد") ||
+    raw.includes("اونلاين") ||
+    raw.includes("افتراضي") ||
+    lower === "online" || lower === "virtual" || lower === "remote";
+  if (isRemote) return "عن بُعد";
+  const city = (hk.city ?? "").trim();
+  return city.length > 0 ? city : "—";
 }
 
 interface ApiTrack {
@@ -324,11 +350,8 @@ export function HackathonDetails() {
     date: formatTimelineDate(apiHackathon.startDate),
     deadline: formatTimelineDate(apiHackathon.registrationDeadline),
     prize: totalPrizes(data.prizes),
-    teams: 0,
-    location: apiHackathon.type ?? "—",
-    duration: "حسب الإعلان",
-    participants: 0,
-    viewers: 0,
+    // Location is derived from the hackathon's type/city — see deriveLocation() below.
+    location: deriveLocation(apiHackathon),
     desc: apiHackathon.description ?? "",
     timeline: buildTimeline(apiHackathon),
     branding: apiHackathon.branding,

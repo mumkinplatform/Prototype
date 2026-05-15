@@ -12,17 +12,19 @@ import {
   listMyApplications,
   cancelApplication,
   listMyContracts,
-  listMyPayments,
   listMyConversations,
-  uploadReceipt,
   listApplicationMessages,
   sendApplicationMessage,
   getApplicationContract,
   saveContractTerms,
   acceptContractTerms,
   signContract,
+  listNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
 } from '../controllers/sponsor.controller';
-import { avatarUpload, bannerUpload, receiptUpload, chatFileUpload } from '../middleware/upload.middleware';
+import { avatarUpload, bannerUpload, chatFileUpload } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -37,9 +39,7 @@ router.get('/applications', requireAuth, listMyApplications);
 router.post('/applications', requireAuth, applyToPackage);
 router.delete('/applications/:id', requireAuth, cancelApplication);
 router.get('/contracts', requireAuth, listMyContracts);
-router.get('/payments', requireAuth, listMyPayments);
 router.get('/conversations', requireAuth, listMyConversations);
-router.post('/applications/:id/upload-receipt', requireAuth, receiptUpload, uploadReceipt);
 router.get('/applications/:id/messages', requireAuth, listApplicationMessages);
 // رسائل الشات تقبل text و/أو ملف (multipart) — chatFileUpload middleware من ربى.
 router.post('/applications/:id/messages', requireAuth, chatFileUpload, sendApplicationMessage);
@@ -48,5 +48,12 @@ router.get('/applications/:id/contract', requireAuth, getApplicationContract);
 router.put('/applications/:id/contract', requireAuth, saveContractTerms);
 router.post('/applications/:id/accept-terms', requireAuth, acceptContractTerms);
 router.post('/applications/:id/sign', requireAuth, signContract);
+
+// In-platform notifications for the sponsor — reads the real `notification` table
+// (the same table the organizer reads from). Filter to the current sponsor by M_ID.
+router.get('/notifications', requireAuth, listNotifications);
+router.put('/notifications/read-all', requireAuth, markAllNotificationsRead);
+router.put('/notifications/:id/read', requireAuth, markNotificationRead);
+router.delete('/notifications/:id', requireAuth, deleteNotification);
 
 export default router;

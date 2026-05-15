@@ -117,10 +117,6 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
             }}
           >
             م
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
-              style={{ background: '#10b981' }}
-            />
           </Link>
 
           {/* Logout */}
