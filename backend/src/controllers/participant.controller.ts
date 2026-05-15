@@ -9,6 +9,7 @@ import { extractBranding } from '../lib/branding';
 import { sendTeamInviteEmail } from '../lib/mail';
 import { env } from '../config/env';
 import { UPLOADS_DIR, AVATARS_DIR } from '../middleware/upload.middleware';
+import { notifyHackathonOrganizer } from '../lib/notifyOrganizer';
 
 interface ParticipantProfileRow extends RowDataPacket {
   M_ID: number;
@@ -955,6 +956,14 @@ export const registerForHackathon = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'فشل تسجيل الاشتراك' });
     }
 
+    void notifyHackathonOrganizer(id, {
+      type: 'team',
+      title: `طلب تسجيل جديد في "${h.H_title}"`,
+      message: `قُدّمت فكرة جديدة: ${ideaTitle}`,
+      actionLabel: 'مراجعة الطلبات',
+      actionRoute: `/admin/hackathon/${id}/registrations#applicant=${memberId}`,
+    });
+
     return res.status(201).json({
       hackathonId: id,
       ideaTitle,
@@ -1070,6 +1079,14 @@ export const registerForHackathon = async (req: Request, res: Response) => {
       console.error(`sendTeamInviteEmail failed to=${inv.email}`, mailErr);
     });
   }
+
+  void notifyHackathonOrganizer(id, {
+    type: 'team',
+    title: `طلب تسجيل جديد في "${h.H_title}"`,
+    message: `فريق "${teamName}" قدّم فكرة "${ideaTitle}"`,
+    actionLabel: 'مراجعة الطلبات',
+    actionRoute: `/admin/hackathon/${id}/registrations#applicant=${memberId}`,
+  });
 
   return res.status(201).json({
     hackathonId: id,
@@ -2464,6 +2481,15 @@ export const confirmSubmission = async (req: Request, res: Response) => {
     console.error('confirmSubmission: notification insert failed', notifErr);
   }
 
+  // Notify the hackathon's organizer that a team/individual finalised a submission.
+  void notifyHackathonOrganizer(hackathonId, {
+    type: 'submission',
+    title: `تسليم جديد في الهاكاثون`,
+    message: `تم استلام مشروع "${sub.TS_ProjectName ?? 'بدون عنوان'}" نهائياً.`,
+    actionLabel: 'عرض المشاريع',
+    actionRoute: `/admin/hackathon/${hackathonId}/projects`,
+  });
+
   return res.json({ ok: true, submittedAt: new Date() });
 };
 
@@ -3210,6 +3236,13 @@ export const withdrawFromHackathon = async (req: Request, res: Response) => {
       'DELETE FROM applies_hackathon WHERE PM_ID = ? AND hackathon_ID = ?',
       [memberId, hackathonId],
     );
+    void notifyHackathonOrganizer(hackathonId, {
+      type: 'team',
+      title: `انسحاب من الهاكاثون`,
+      message: `قام أحد المتقدمين بسحب طلب التسجيل.`,
+      actionLabel: 'عرض المتقدمين',
+      actionRoute: `/admin/hackathon/${hackathonId}/registrations`,
+    });
     return res.json({ ok: true });
   }
 
@@ -3247,6 +3280,14 @@ export const withdrawFromHackathon = async (req: Request, res: Response) => {
   } finally {
     conn.release();
   }
+
+  void notifyHackathonOrganizer(hackathonId, {
+    type: 'team',
+    title: `انسحاب فريق كامل من الهاكاثون`,
+    message: `قائد فريق انسحب وأُلغي الفريق (لم يكن لديه أعضاء آخرون).`,
+    actionLabel: 'عرض المتقدمين',
+    actionRoute: `/admin/hackathon/${hackathonId}/registrations`,
+  });
 
   return res.json({ ok: true, teamDeleted: true });
 };

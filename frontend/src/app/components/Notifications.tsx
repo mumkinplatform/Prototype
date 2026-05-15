@@ -69,8 +69,17 @@ export function Notifications() {
     let cancelled = false;
     setLoading(true);
     apiGet<{ items: ApiNotification[] }>('/organizers/notifications')
-      .then((data) => {
-        if (!cancelled) setNotifications(data.items);
+      .then(async (data) => {
+        if (cancelled) return;
+        setNotifications(data.items);
+        // Auto-mark everything as read in the backend the moment the page opens,
+        // so the navbar's unread badge clears without forcing the user to click each row.
+        // The visual "unread" highlight remains for this view (state stays as-loaded);
+        // a refresh will then show them as read.
+        if (data.items.some((n) => !n.read)) {
+          try { await apiPut('/organizers/notifications/read-all'); }
+          catch { /* tolerate failure — next visit will retry */ }
+        }
       })
       .catch((err) => {
         if (cancelled) return;

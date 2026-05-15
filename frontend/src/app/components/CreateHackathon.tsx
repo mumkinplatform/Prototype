@@ -536,12 +536,11 @@ export function CreateHackathon() {
         form.endDate !== '',
         form.publicName.trim() !== '',
         form.contactEmail.trim() !== '',
-        form.visibility !== '',
         form.announcementDate !== '',
         form.hackathonStartDate !== '',
         form.winnersDate !== '',
         tracks.length > 0 && tracks.every((t) => t.name.trim() !== ''),
-      ].filter(Boolean).length) / 14,
+      ].filter(Boolean).length) / 13,
     organizers: isOrganizersComplete ? 1 : 0,
     registration:
       ([
@@ -586,6 +585,10 @@ export function CreateHackathon() {
     activeSections.reduce((sum, s) => sum + sectionRatios[s.id] * sectionWeight, 0)
   );
 
+  // hasAnyContent = true ONLY if the user typed/selected at least one real input.
+  // Defaults that the form initialises with (visibility='public', all visibleSections=true)
+  // are excluded — otherwise a brand-new empty form would still be considered "has content"
+  // and clicking "Save Draft" would create a phantom row in the DB.
   const hasAnyContent =
     form.title.trim() !== '' ||
     form.slug.trim() !== '' ||
@@ -597,7 +600,6 @@ export function CreateHackathon() {
     form.endDate !== '' ||
     form.publicName.trim() !== '' ||
     form.contactEmail.trim() !== '' ||
-    form.visibility !== '' ||
     form.registrationStart !== '' ||
     form.registrationEnd !== '' ||
     form.minAge.trim() !== '' ||
@@ -627,8 +629,7 @@ export function CreateHackathon() {
     submissionFields.length > 0 ||
     branding.logoMode !== '' ||
     branding.bannerMode !== '' ||
-    branding.colorPalette !== '' ||
-    Object.values(branding.visibleSections).some(Boolean);
+    branding.colorPalette !== '';
 
   // Load draft data if in edit mode
   useEffect(() => {
@@ -1046,6 +1047,10 @@ export function CreateHackathon() {
   };
  
   const handleSaveDraft = async () => {
+    if (!hasAnyContent && !hackathonId) {
+      toast.error('عبّي حقلاً واحداً على الأقل قبل الحفظ');
+      return;
+    }
     const ok = await saveDraft();
     if (!ok) return;
     if (isPublishedEdit) {
@@ -3306,7 +3311,10 @@ export function CreateHackathon() {
  
       <PublishSuccessModal
         isOpen={showPublishSuccessModal}
-        onClose={() => setShowPublishSuccessModal(false)}
+        onClose={() => {
+          setShowPublishSuccessModal(false);
+          navigate('/admin/my-hackathons');
+        }}
         onViewHackathon={() => {
           if (form.slug.trim()) window.open(`/Prototype/hackathon/${form.slug.trim()}`, '_blank');
         }}

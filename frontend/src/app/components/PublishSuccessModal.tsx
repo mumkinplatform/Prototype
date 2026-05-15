@@ -102,7 +102,7 @@ export default function PublishSuccessModal({
               className="flex-1 px-6 py-3.5 rounded-xl bg-gray-100 text-gray-800 hover:bg-gray-200 transition-all text-sm"
               style={{ fontWeight: 600 }}
             >
-              العودة للإحصائيات
+              العودة لهاكاثوناتي
             </button>
           </div>
           <button

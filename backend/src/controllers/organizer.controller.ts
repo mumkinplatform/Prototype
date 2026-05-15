@@ -252,81 +252,98 @@ interface NotificationRow extends RowDataPacket {
   N_CreatedAt: Date | string;
 }
 
-// Synthesise notifications for new pending applications and registration deadlines on the organizer's hackathons.
+// Synthesise notifications for time-based events that have no real trigger
+// (deadlines approaching). Discrete event notifications (new registration,
+// new sponsor application, judge evaluation, contract steps, etc.) are now
+// inserted at the moment the event happens by their respective controllers
+// via lib/notifyOrganizer.ts and lib/sponsor.controller's notifySponsorEvent.
 async function backfillOrganizerNotifications(memberId: number): Promise<void> {
-  interface PendingRow extends RowDataPacket {
-    hackathon_ID: number;
-    H_title: string;
-    PM_ID: number;
-    fname: string;
-    lname: string;
-    applied_at: Date | string;
-  }
-  const [pending] = await pool.query<PendingRow[]>(
-    `SELECT a.hackathon_ID, h.H_title, a.PM_ID, m.M_FName AS fname, m.M_LName AS lname, a.applied_at
-       FROM applies_hackathon a
-       JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
-       JOIN member m ON m.M_ID = a.PM_ID
-      WHERE h.HAM_ID = ?
-        AND a.application_status = 'pending'
-        AND NOT EXISTS (
-          SELECT 1 FROM notification n
-           WHERE n.M_ID = ?
-             AND n.N_Type = 'team'
-             AND n.N_ActionRoute = CONCAT('/admin/hackathon/', a.hackathon_ID, '/registrations#applicant=', a.PM_ID)
-        )`,
-    [memberId, memberId],
-  );
-  for (const r of pending) {
-    const name = `${r.fname} ${r.lname}`.trim() || 'مشارك';
-    await pool.execute(
-      `INSERT INTO notification (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute, N_CreatedAt)
-       VALUES (?, 'team', ?, ?, ?, ?, ?)`,
-      [
-        memberId,
-        `طلب تسجيل جديد في "${r.H_title}"`,
-        `قدّم ${name} طلب مشاركة.`,
-        'مراجعة الطلبات',
-        `/admin/hackathon/${r.hackathon_ID}/registrations#applicant=${r.PM_ID}`,
-        r.applied_at,
-      ],
-    );
-  }
-
   interface DeadlineRow extends RowDataPacket {
     hackathon_ID: number;
     H_title: string;
     hours_left: number;
+    deadline_kind: 'registration' | 'submission' | 'judging' | 'announcement';
   }
+
+  // One pass picks up every kind of approaching deadline in a single query.
+  // Each kind gets a distinct N_ActionRoute suffix so dedupe per-kind works.
   const [deadlines] = await pool.query<DeadlineRow[]>(
-    `SELECT h.hackathon_ID, h.H_title,
-            TIMESTAMPDIFF(HOUR, NOW(), h.H_Registration_EndDate) AS hours_left
-       FROM hackathon h
-      WHERE h.HAM_ID = ?
-        AND h.H_status = 'published'
-        AND h.H_Registration_EndDate IS NOT NULL
-        AND h.H_Registration_EndDate > NOW()
-        AND h.H_Registration_EndDate <= DATE_ADD(NOW(), INTERVAL 48 HOUR)
-        AND NOT EXISTS (
-          SELECT 1 FROM notification n
-           WHERE n.M_ID = ?
-             AND n.N_Type = 'deadline'
-             AND n.N_ActionRoute = CONCAT('/admin/hackathon/', h.hackathon_ID)
-        )`,
-    [memberId, memberId],
+    `(
+       SELECT h.hackathon_ID, h.H_title,
+              TIMESTAMPDIFF(HOUR, NOW(), h.H_Registration_EndDate) AS hours_left,
+              'registration' AS deadline_kind
+         FROM hackathon h
+        WHERE h.HAM_ID = ?
+          AND h.H_status = 'published'
+          AND h.H_Registration_EndDate IS NOT NULL
+          AND h.H_Registration_EndDate > NOW()
+          AND h.H_Registration_EndDate <= DATE_ADD(NOW(), INTERVAL 48 HOUR)
+     ) UNION ALL (
+       SELECT h.hackathon_ID, h.H_title,
+              TIMESTAMPDIFF(HOUR, NOW(), h.H_Submission_Deadline) AS hours_left,
+              'submission' AS deadline_kind
+         FROM hackathon h
+        WHERE h.HAM_ID = ?
+          AND h.H_status = 'published'
+          AND h.H_Submission_Deadline IS NOT NULL
+          AND h.H_Submission_Deadline > NOW()
+          AND h.H_Submission_Deadline <= DATE_ADD(NOW(), INTERVAL 48 HOUR)
+     ) UNION ALL (
+       SELECT h.hackathon_ID, h.H_title,
+              TIMESTAMPDIFF(HOUR, NOW(), h.H_Judging_EndDate) AS hours_left,
+              'judging' AS deadline_kind
+         FROM hackathon h
+        WHERE h.HAM_ID = ?
+          AND h.H_status = 'published'
+          AND h.H_Judging_EndDate IS NOT NULL
+          AND h.H_Judging_EndDate > NOW()
+          AND h.H_Judging_EndDate <= DATE_ADD(NOW(), INTERVAL 48 HOUR)
+     ) UNION ALL (
+       SELECT h.hackathon_ID, h.H_title,
+              TIMESTAMPDIFF(HOUR, NOW(), h.H_Announcement_Date) AS hours_left,
+              'announcement' AS deadline_kind
+         FROM hackathon h
+        WHERE h.HAM_ID = ?
+          AND h.H_status = 'published'
+          AND h.H_Announcement_Date IS NOT NULL
+          AND h.H_Announcement_Date > NOW()
+          AND h.H_Announcement_Date <= DATE_ADD(NOW(), INTERVAL 48 HOUR)
+     )`,
+    [memberId, memberId, memberId, memberId],
   );
+
+  const KIND_TITLE: Record<DeadlineRow['deadline_kind'], string> = {
+    registration: 'موعد إغلاق التسجيل قريب',
+    submission: 'موعد التسليم النهائي قريب',
+    judging: 'موعد إغلاق التحكيم قريب',
+    announcement: 'موعد إعلان النتائج قريب',
+  };
+  const KIND_MSG_VERB: Record<DeadlineRow['deadline_kind'], string> = {
+    registration: 'يغلق التسجيل في',
+    submission: 'يغلق التسليم في',
+    judging: 'يغلق التحكيم في',
+    announcement: 'تُعلن نتائج',
+  };
+
   for (const r of deadlines) {
     const hours = Math.max(1, Number(r.hours_left));
     const when = hours >= 24 ? `${Math.round(hours / 24)} يوم` : `${hours} ساعة`;
+    const actionRoute = `/admin/hackathon/${r.hackathon_ID}#deadline=${r.deadline_kind}`;
+    // Per-kind dedupe so we don't insert the same deadline twice.
+    const [dupe] = await pool.query<RowDataPacket[]>(
+      'SELECT 1 FROM notification WHERE M_ID = ? AND N_ActionRoute = ? LIMIT 1',
+      [memberId, actionRoute],
+    );
+    if (dupe.length > 0) continue;
     await pool.execute(
       `INSERT INTO notification (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
        VALUES (?, 'deadline', ?, ?, ?, ?)`,
       [
         memberId,
-        `موعد إغلاق التسجيل قريب`,
-        `يغلق التسجيل في "${r.H_title}" خلال ${when}.`,
+        KIND_TITLE[r.deadline_kind],
+        `${KIND_MSG_VERB[r.deadline_kind]} "${r.H_title}" خلال ${when}.`,
         'عرض الهاكاثون',
-        `/admin/hackathon/${r.hackathon_ID}`,
+        actionRoute,
       ],
     );
   }

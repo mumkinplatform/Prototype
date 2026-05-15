@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Plus, Calendar, MapPin, ChevronLeft, FileText, ArrowRight, Trash2, AlertTriangle, Pencil, Link2, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import PublishConfirmModal from './PublishConfirmModal';
-import PublishSuccessModal from './PublishSuccessModal';
 import { apiGet, apiDelete, ApiError } from '../../lib/api';
 import { SECTION_LABELS, type Section } from '../../lib/permissions';
 import { HackathonCover, parseBranding, type BrandingPayload } from './HackathonCover';
@@ -53,9 +51,6 @@ export default function MyHackathons() {
   const navigate = useNavigate();
   const [filterStatus, setFilterStatus] = useState<'all' | Status>('all');
   const [filterRole, setFilterRole] = useState<'all' | 'owner' | 'manager' | 'staff' | 'judge'>('all');
-  const [showPublishConfirmModal, setShowPublishConfirmModal] = useState(false);
-  const [showPublishSuccessModal, setShowPublishSuccessModal] = useState(false);
-  const [selectedHackathonId, setSelectedHackathonId] = useState<number | null>(null);
   const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteCandidate, setDeleteCandidate] = useState<Hackathon | null>(null);
@@ -155,15 +150,6 @@ export default function MyHackathons() {
         {config.text}
       </span>
     );
-  };
-
-  const confirmPublish = () => {
-    if (selectedHackathonId) {
-      // الربط بـ /hackathons/:id/publish يأتي في مرحلة لاحقة
-      console.log('Publishing hackathon:', selectedHackathonId);
-      setShowPublishConfirmModal(false);
-      setShowPublishSuccessModal(true);
-    }
   };
 
   return (
@@ -457,24 +443,6 @@ export default function MyHackathons() {
           </div>
         )}
       </div>
-
-      {/* Confirm Modal */}
-      <PublishConfirmModal
-        isOpen={showPublishConfirmModal}
-        onClose={() => setShowPublishConfirmModal(false)}
-        onConfirm={confirmPublish}
-      />
-
-      {/* Success Modal */}
-      <PublishSuccessModal
-        isOpen={showPublishSuccessModal}
-        onClose={() => setShowPublishSuccessModal(false)}
-        onViewHackathon={() => navigate(`/admin/hackathon/${selectedHackathonId}`)}
-        onViewDashboard={() => {
-          setShowPublishSuccessModal(false);
-          navigate('/admin/my-hackathons');
-        }}
-      />
 
       {/* Delete Confirmation Modal */}
       {deleteCandidate && (

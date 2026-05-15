@@ -1024,6 +1024,57 @@ export const sendApplicationMessage = async (req: Request, res: Response) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
       [applicationId, req.user!.memberId, text, fileName, fileUrl, fileSize, mimeType],
     );
+
+    // Notify the OTHER party that a new chat message arrived. To avoid spamming
+    // the organizer with one notification per typed line, we dedupe: skip insert
+    // if an unread chat notification already exists for this conversation.
+    try {
+      const senderIsSponsor = req.user!.memberId === guard.sponsorId;
+      interface ChatNotifInfoRow extends RowDataPacket {
+        HAM_ID: number;
+        SM_ID: number;
+        H_title: string;
+        hackathonId: number;
+        sponsorName: string;
+      }
+      const [infoRows] = await pool.query<ChatNotifInfoRow[]>(
+        `SELECT h.HAM_ID, sa.SM_ID, h.H_title, h.hackathon_ID AS hackathonId,
+                COALESCE(s.S_Brand, CONCAT_WS(' ', m.M_FName, m.M_LName)) AS sponsorName
+           FROM sponsor_application sa
+           JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+           JOIN hackathon h        ON h.hackathon_ID = sp.hackathon_ID
+           JOIN member m           ON m.M_ID = sa.SM_ID
+           LEFT JOIN sponsor s     ON s.SM_ID = m.M_ID
+          WHERE sa.SA_ID = ?`,
+        [applicationId],
+      );
+      if (infoRows.length > 0) {
+        const info = infoRows[0];
+        const recipientId = senderIsSponsor ? info.HAM_ID : info.SM_ID;
+        const actionRoute = senderIsSponsor
+          ? `/admin/hackathon/${info.hackathonId}/sponsors?app=${applicationId}`
+          : `/sponsor/messages?app=${applicationId}`;
+        const [dupe] = await pool.query<RowDataPacket[]>(
+          `SELECT 1 FROM notification
+            WHERE M_ID = ? AND N_ActionRoute = ? AND N_Read = 0 LIMIT 1`,
+          [recipientId, actionRoute],
+        );
+        if (dupe.length === 0) {
+          await notifySponsorEvent(
+            recipientId,
+            senderIsSponsor ? `رسالة جديدة من ${info.sponsorName}` : `رسالة جديدة من المنظم`,
+            senderIsSponsor
+              ? `رسالة جديدة بخصوص رعاية هاكاثون "${info.H_title}".`
+              : `رسالة جديدة بخصوص هاكاثون "${info.H_title}".`,
+            'فتح المحادثة',
+            actionRoute,
+          );
+        }
+      }
+    } catch (notifErr) {
+      console.error('[sendApplicationMessage] notification failed:', notifErr);
+    }
+
     return res.status(201).json({
       id: result.insertId,
       senderId: req.user!.memberId,
@@ -1452,6 +1503,39 @@ export const uploadReceipt = async (req: Request, res: Response) => {
         WHERE SA_ID = ?`,
       [req.file.filename, applicationId]
     );
+
+    // Notify the organizer that the sponsor just paid + uploaded a receipt.
+    try {
+      interface ReceiptInfoRow extends RowDataPacket {
+        HAM_ID: number;
+        H_title: string;
+        hackathonId: number;
+        sponsorName: string;
+      }
+      const [infoRows] = await pool.query<ReceiptInfoRow[]>(
+        `SELECT h.HAM_ID, h.H_title, h.hackathon_ID AS hackathonId,
+                COALESCE(s.S_Brand, CONCAT_WS(' ', m.M_FName, m.M_LName)) AS sponsorName
+           FROM sponsor_application sa
+           JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+           JOIN hackathon h        ON h.hackathon_ID = sp.hackathon_ID
+           JOIN member m           ON m.M_ID = sa.SM_ID
+           LEFT JOIN sponsor s     ON s.SM_ID = m.M_ID
+          WHERE sa.SA_ID = ?`,
+        [applicationId],
+      );
+      if (infoRows.length > 0) {
+        const info = infoRows[0];
+        await notifySponsorEvent(
+          info.HAM_ID,
+          `استلام إيصال دفع رعاية`,
+          `قام ${info.sponsorName} برفع إيصال الدفع في هاكاثون "${info.H_title}".`,
+          'عرض العقود',
+          `/admin/hackathon/${info.hackathonId}/sponsors`,
+        );
+      }
+    } catch (notifErr) {
+      console.error('[uploadReceipt] notification failed:', notifErr);
+    }
 
     return res.json({
       id: applicationId,
