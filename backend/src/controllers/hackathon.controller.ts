@@ -4238,7 +4238,7 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
       // but only the first time (dedupe against an existing same-route row).
       const [pendingCnt] = await pool.query<RowDataPacket[]>(
         `SELECT
-            (SELECT COUNT(*) FROM team_submission ts
+            (SELECT COUNT(*) FROM submission ts
                JOIN hackathon_judge hj
                  ON hj.HJ_ID = ts.assigned_judge_id
               WHERE ts.hackathon_ID = ?
