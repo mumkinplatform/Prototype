@@ -2258,7 +2258,10 @@ export const listHackathonSponsorApplications = async (req: Request, res: Respon
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) {
+  // Section-level access: owner OR a co-manager whose HCM_Section is 'sponsors'.
+  // The other section endpoints (registrations, projects) already follow this
+  // pattern; sponsors had been incorrectly locked to ensureOwner.
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'sponsors'))) {
     return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
@@ -2362,7 +2365,7 @@ export const startSponsorNegotiation = async (req: Request, res: Response) => {
   const saId = Number(req.params.saId);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(saId) || saId <= 0) return res.status(400).json({ error: 'invalid saId' });
-  if (!(await ensureOwner(id, req.user.memberId))) {
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'sponsors'))) {
     return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
@@ -2431,7 +2434,9 @@ export const replaceSponsorPackages = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'sponsors'))) {
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+  }
 
   const items = Array.isArray(req.body?.sponsorPackages) ? req.body.sponsorPackages : null;
   if (!items) return res.status(400).json({ error: 'sponsorPackages must be an array' });
@@ -4177,28 +4182,27 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
     const targetCol = sub.T_ID !== null ? 'T_ID' : 'PM_ID';
     const targetVal = sub.T_ID !== null ? sub.T_ID : sub.PM_ID;
 
+    // Per the product spec: a judge's evaluation is FINAL the moment they
+    // submit. There is no edit-after-submit UI, and we don't want one — so
+    // we reject re-submission outright instead of silently updating the row.
     const [existing] = await conn.query<RowDataPacket[]>(
       `SELECT E_ID FROM evaluation
         WHERE HJ_ID = ? AND hackathon_ID = ? AND ${targetCol} = ? LIMIT 1`,
       [hjId, hackathonId, targetVal],
     );
-
-    let evaluationId: number;
     if (existing.length > 0) {
-      evaluationId = (existing[0] as { E_ID: number }).E_ID;
-      await conn.execute(
-        `UPDATE evaluation SET E_Comment = ?, E_EvaluatedAt = NOW() WHERE E_ID = ?`,
-        [comment || null, evaluationId],
-      );
-      await conn.execute('DELETE FROM evaluation_score WHERE E_ID = ?', [evaluationId]);
-    } else {
-      const [result] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO evaluation (HJ_ID, ${targetCol}, hackathon_ID, E_Comment)
-         VALUES (?, ?, ?, ?)`,
-        [hjId, targetVal, hackathonId, comment || null],
-      );
-      evaluationId = result.insertId;
+      await conn.rollback();
+      return res.status(409).json({
+        error: 'سبق تقييم هذا المشروع، لا يمكن تعديل التقييم بعد إرساله.',
+      });
     }
+
+    const [result] = await conn.execute<ResultSetHeader>(
+      `INSERT INTO evaluation (HJ_ID, ${targetCol}, hackathon_ID, E_Comment)
+       VALUES (?, ?, ?, ?)`,
+      [hjId, targetVal, hackathonId, comment || null],
+    );
+    const evaluationId = result.insertId;
 
     for (const s of normalizedScores) {
       await conn.execute(
@@ -4270,7 +4274,7 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
       console.error('submitJudgeEvaluation notification failed:', notifErr);
     }
 
-    return res.json({ evaluationId, updated: existing.length > 0 });
+    return res.json({ evaluationId });
   } catch (err) {
     await conn.rollback();
     console.error('submitJudgeEvaluation error:', err);

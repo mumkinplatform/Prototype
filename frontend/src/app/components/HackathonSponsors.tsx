@@ -50,13 +50,14 @@ interface SponsorRequest {
   unreadMessages?: number;
 }
 
-// مراحل التفاوض الأربع بالترتيب. بعد دمج migration ربى 030، الـ DB تخزن
-// step=3 للمكتمل (مش 4). الـ ids متسلسلة 0,1,2,3.
+// Three negotiation steps shown in the strip. Step 3 (completed) is reached
+// only when both parties have signed — at that point the strip is replaced by
+// the green "العقد ساري" banner with a "عرض العقد" button, so the strip
+// itself doesn't need a separate "مكتمل" entry. Same shape as the sponsor side.
 const NEGOTIATION_STEPS = [
   { id: 0, label: 'التفاوض', icon: MessageCircle },
   { id: 1, label: 'مراجعة الشروط', icon: Edit3 },
   { id: 2, label: 'العقد الرقمي', icon: FileText },
-  { id: 3, label: 'مكتمل', icon: CheckCircle2 },
 ];
 
 // شكل الرسالة كما يرجّعها endpoint الراعي المشترك (sponsor.controller.ts).
@@ -296,7 +297,13 @@ function mapApiToRequest(s: ApiSponsorApplication): SponsorRequest {
     status: deriveUiStatus(s),
     submittedDate: s.appliedAt ? new Date(s.appliedAt).toLocaleDateString('ar-SA') : '—',
     negotiationStep: deriveUiStep(s),
-    currentStep: typeof s.negotiationStep === 'number' ? s.negotiationStep : 0,
+    // Coerce via Number() instead of `typeof === 'number'` — when the API
+    // returns SA_NegotiationStep as a numeric string (some DB drivers do this
+    // for BIGINT / when the column hits the JSON layer with quotes), the
+    // typeof check silently fell through to 0, which made every dashboard
+    // counter read zero even though the status badge below derived correctly
+    // via >= coercion.
+    currentStep: Number(s.negotiationStep ?? 0) || 0,
   };
 }
 
@@ -425,10 +432,12 @@ export function HackathonSponsors() {
     ? messagesByAppId[selectedRequest.id] ?? []
     : [];
 
-  // عند تبديل المحادثة، نرجع viewedStep للمرحلة الحقيقية (currentStep) بدل
-  // ما يستلف القيمة من المحادثة السابقة.
+  // عند تبديل المحادثة، نرجع viewedStep للمرحلة الحقيقية (currentStep). بعد
+  // اكتمال العقد (step 3) نعرض المحادثة الحرّة (viewedStep=0) بشكل افتراضي،
+  // ويفتح المنظم العقد فقط لو ضغط "عرض العقد" في الهيدر — نفس سلوك الراعي.
   useEffect(() => {
-    if (selectedRequest) setViewedStep(selectedRequest.currentStep);
+    if (!selectedRequest) return;
+    setViewedStep(selectedRequest.currentStep >= 3 ? 0 : selectedRequest.currentStep);
   }, [selectedRequest?.id, selectedRequest?.currentStep]);
 
   // تحميل رسائل الطلب المختار + polling كل 5 ثوانٍ لمتابعة رسائل الراعي
@@ -497,7 +506,9 @@ export function HackathonSponsors() {
   ).length;
   const reviewCount = requests.filter(r => r.currentStep === 1).length;
   const signingCount = requests.filter(r => r.currentStep === 2).length;
-  const completedCount = requests.filter(r => r.currentStep === 3).length;
+  // Use >= 3 (not === 3) so legacy rows that still carry the old step=4 from
+  // the removed receipt-upload flow are still counted as completed.
+  const completedCount = requests.filter(r => r.currentStep >= 3).length;
   // عداد المحادثات في تبويب المفاوضات (نفس النطاق القديم)
   const chatCount = activeConversations.length;
 
@@ -827,7 +838,7 @@ export function HackathonSponsors() {
               }`}
               style={{ fontWeight: 600 }}
             >
-              إدارة العقود ({requests.filter((r) => r.currentStep === 3).length})
+              إدارة العقود ({requests.filter((r) => r.currentStep >= 3).length})
             </button>
           </div>
         </div>
@@ -838,55 +849,32 @@ export function HackathonSponsors() {
           <div className="flex gap-6">
             {/* Main Content - Requests */}
             <div className="flex-1">
-              {/* Stats — 4 كروت تعكس مراحل التفاوض الفعلية */}
+              {/* Stats — 4 كروت بـ hover خفيف فقط (لا فلترة، لا ضغط). */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                      <MessageCircle className="w-5 h-5 text-blue-600" />
+                {([
+                  { label: 'قيد التفاوض', count: negotiatingCount, icon: MessageCircle, bg: 'bg-blue-100', text: 'text-blue-600' },
+                  { label: 'مراجعة الشروط', count: reviewCount, icon: Edit3, bg: 'bg-purple-100', text: 'text-purple-600' },
+                  { label: 'قيد التوقيع', count: signingCount, icon: FileText, bg: 'bg-amber-100', text: 'text-amber-600' },
+                  { label: 'مكتملة', count: completedCount, icon: CheckCircle2, bg: 'bg-emerald-100', text: 'text-emerald-600' },
+                ]).map((card, i) => {
+                  const Icon = card.icon;
+                  return (
+                    <div
+                      key={i}
+                      className="group bg-white rounded-2xl border border-gray-100 p-5 transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-gray-200"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className={`w-10 h-10 rounded-xl ${card.bg} flex items-center justify-center transition-transform group-hover:scale-110`}>
+                          <Icon className={`w-5 h-5 ${card.text}`} />
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>{card.label}</p>
+                          <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{card.count}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>قيد التفاوض</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{negotiatingCount}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                      <Edit3 className="w-5 h-5 text-purple-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>مراجعة الشروط</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{reviewCount}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>قيد التوقيع</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{signingCount}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 whitespace-nowrap" style={{ fontWeight: 600 }}>مكتملة</p>
-                      <p className="text-2xl text-gray-900" style={{ fontWeight: 700 }}>{completedCount}</p>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
 
               {/* Filters */}
@@ -1241,64 +1229,78 @@ export function HackathonSponsors() {
                     {getStatusBadge(selectedRequest.status)}
                   </div>
 
-                  {/* Negotiation Steps Strip — قابل للنقر للتنقّل بحرّية */}
-                  <div className="bg-white border-b border-gray-100 px-5 py-3 flex-shrink-0">
-                    <div className="flex items-center justify-between gap-2">
-                      {NEGOTIATION_STEPS.map((step, idx) => {
-                        const Icon = step.icon;
-                        // المقارنة بـ step.id مش idx — لأن ids 0,1,2,4 وقد
-                        // تكون غير متتالية (تجاوزنا step 3).
-                        const isDone = step.id < selectedRequest.currentStep;
-                        const isCurrent = step.id === selectedRequest.currentStep;
-                        const isViewed = step.id === viewedStep;
-                        const baseColor = isCurrent ? '#e35654' : isDone ? '#10b981' : '#d1d5db';
-                        return (
-                          <div key={step.id} className="flex items-center flex-1">
-                            <button
-                              type="button"
-                              onClick={() => setViewedStep(idx)}
-                              className="flex flex-col items-center flex-1 group focus:outline-none"
-                            >
-                              <div
-                                className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all group-hover:scale-110 ${
-                                  isViewed ? 'ring-2 ring-offset-2 ring-[#e35654]/40' : ''
-                                }`}
-                                style={{
-                                  borderColor: baseColor,
-                                  background: isCurrent ? baseColor : isDone ? baseColor : 'white',
-                                }}
+                  {/* Pre-completion: clickable step strip. Post-completion
+                      (step 3): the strip is replaced by a compact "View
+                      Contract" header — the chat below stays open as a free
+                      thread for any post-signing follow-up. Same pattern as
+                      the sponsor side in MessagesPage.tsx. */}
+                  {selectedRequest.currentStep < 3 ? (
+                    <div className="bg-white border-b border-gray-100 px-5 py-3 flex-shrink-0">
+                      <div className="flex items-center justify-between gap-2">
+                        {NEGOTIATION_STEPS.map((step, idx) => {
+                          const Icon = step.icon;
+                          const isDone = step.id < selectedRequest.currentStep;
+                          const isCurrent = step.id === selectedRequest.currentStep;
+                          const isViewed = step.id === viewedStep;
+                          const baseColor = isCurrent ? '#e35654' : isDone ? '#10b981' : '#d1d5db';
+                          return (
+                            <div key={step.id} className="flex items-center flex-1">
+                              <button
+                                type="button"
+                                onClick={() => setViewedStep(idx)}
+                                className="flex flex-col items-center flex-1 group focus:outline-none"
                               >
-                                <Icon
-                                  className="w-3.5 h-3.5"
-                                  style={{ color: isCurrent || isDone ? 'white' : baseColor }}
+                                <div
+                                  className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all group-hover:scale-110 ${
+                                    isViewed ? 'ring-2 ring-offset-2 ring-[#e35654]/40' : ''
+                                  }`}
+                                  style={{
+                                    borderColor: baseColor,
+                                    background: isCurrent ? baseColor : isDone ? baseColor : 'white',
+                                  }}
+                                >
+                                  <Icon
+                                    className="w-3.5 h-3.5"
+                                    style={{ color: isCurrent || isDone ? 'white' : baseColor }}
+                                  />
+                                </div>
+                                <span
+                                  className="text-[10px] mt-1"
+                                  style={{
+                                    color: baseColor,
+                                    fontWeight: isViewed ? 700 : isCurrent ? 700 : 500,
+                                  }}
+                                >
+                                  {step.label}
+                                </span>
+                              </button>
+                              {idx < NEGOTIATION_STEPS.length - 1 && (
+                                <div
+                                  className="h-0.5 flex-1 mb-4"
+                                  style={{ background: step.id < selectedRequest.currentStep ? '#10b981' : '#e5e7eb' }}
                                 />
-                              </div>
-                              <span
-                                className="text-[10px] mt-1"
-                                style={{
-                                  color: baseColor,
-                                  fontWeight: isViewed ? 700 : isCurrent ? 700 : 500,
-                                }}
-                              >
-                                {step.label}
-                              </span>
-                            </button>
-                            {idx < NEGOTIATION_STEPS.length - 1 && (
-                              <div
-                                className="h-0.5 flex-1 mb-4"
-                                style={{ background: step.id < selectedRequest.currentStep ? '#10b981' : '#e5e7eb' }}
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    {selectedRequest.currentStep === 3 && (
-                      <p className="text-xs text-green-600 text-center mt-2" style={{ fontWeight: 600 }}>
-                        ✓ اكتملت جميع مراحل التفاوض
-                      </p>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="bg-green-50 border-b border-green-100 px-5 py-3 flex-shrink-0 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-green-700 text-sm" style={{ fontWeight: 600 }}>
+                        <CheckCircle2 className="w-4 h-4" />
+                        العقد ساري — موقّع من الطرفين
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewedStep(2)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-white border border-green-200 text-green-700 hover:bg-green-100 transition-colors"
+                        style={{ fontWeight: 600 }}
+                      >
+                        عرض العقد
+                      </button>
+                    </div>
+                  )}
 
                   {/* Step 0 = chat. Steps 1-4 = placeholder حتى المرحلة القادمة. */}
                   {viewedStep === 0 ? (
@@ -1627,6 +1629,20 @@ export function HackathonSponsors() {
                           </div>
                         ) : (
                           <div className="bg-white rounded-2xl border border-gray-200 max-w-2xl mx-auto overflow-hidden">
+                            {/* Close button — returns the organizer to the free
+                                chat thread, mirroring the X on the sponsor side
+                                in NegotiationStepPanel. */}
+                            <div className="flex items-center justify-end px-3 py-2 border-b border-gray-100 bg-white">
+                              <button
+                                type="button"
+                                onClick={() => setViewedStep(0)}
+                                title="إغلاق والعودة للمحادثة"
+                                aria-label="إغلاق"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
                             <div className="bg-gradient-to-r from-gray-900 to-gray-700 px-5 py-5 text-center text-white">
                               <div className="w-10 h-10 rounded-xl bg-[#e35654] flex items-center justify-center mx-auto mb-2">
                                 <FileText className="w-5 h-5" />
@@ -1772,27 +1788,7 @@ export function HackathonSponsors() {
                             </div>
                           </div>
                         )
-                      ) : (
-                        // ── المرحلة 3: مكتمل ──
-                        <div className="bg-white rounded-2xl border border-green-200 p-6 max-w-md mx-auto text-center">
-                          <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
-                            <CheckCircle2 className="w-7 h-7 text-green-600" />
-                          </div>
-                          <p className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
-                            تمّت الرعاية بنجاح
-                          </p>
-                          <p className="text-gray-500 text-xs mt-2 leading-relaxed">
-                            العقد ساري ومُوقَّع من الطرفين. يمكنك مراجعته من تبويب إدارة العقود.
-                          </p>
-                          <button
-                            onClick={() => setMainTab('contracts')}
-                            className="mt-4 px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48]"
-                            style={{ fontWeight: 600 }}
-                          >
-                            عرض في إدارة العقود ←
-                          </button>
-                        </div>
-                      )}
+                      ) : null}
                     </div>
                   )}
                 </>
@@ -1805,7 +1801,7 @@ export function HackathonSponsors() {
           // migration ربى 030). الضغط على أي عقد يفتح المحادثة على
           // المرحلة الرقمية لعرض البنود وحالة التوقيع.
           (() => {
-            const signedContracts = requests.filter((r) => r.currentStep === 3);
+            const signedContracts = requests.filter((r) => r.currentStep >= 3);
             if (signedContracts.length === 0) {
               return (
                 <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">

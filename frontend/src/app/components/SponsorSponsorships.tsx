@@ -68,7 +68,7 @@ function formatLongDate(iso: string | null): string {
 
 interface ApiContract {
   id: number;
-  status: "ساري" | "في انتظار التوقيع";
+  status: "ساري" | "في انتظار التوقيع" | "قيد المراجعة";
   signed: boolean;
   sponsorSigned: boolean;
   organizerSigned: boolean;
@@ -312,7 +312,7 @@ function mapApplicationToDisplay(app: ApiApplication): DisplaySponsorship {
 const tabs = ["الكل", "قيد المراجعة", "قيد التفاوض", "قيد التنفيذ", "مكتمل"];
 
 // Contracts tabs match the unified status labels in displayStatus above.
-const contractTabs = ["الكل", "ساري", "في انتظار التوقيع"];
+const contractTabs = ["الكل", "ساري", "في انتظار التوقيع", "قيد المراجعة"];
 
 type SortKey = "الأحدث أولاً" | "الأقدم أولاً" | "الأعلى قيمةً";
 

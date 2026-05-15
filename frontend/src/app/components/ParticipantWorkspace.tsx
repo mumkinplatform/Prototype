@@ -2360,8 +2360,38 @@ function computeSubmissionFieldStates(
       const val = form[textField.apiField];
       return { id: fId, label, isFilled: !!(val && val.trim() !== '') };
     }
-    return { id: fId, label, isFilled: data.files.length > 0 };
+    // File-type fields (video / presentation / images) — match by MIME prefix
+    // so each required type is verified independently. The previous version
+    // treated any single uploaded file as satisfying every file requirement,
+    // which let the user submit half-empty when the organizer asked for
+    // multiple file types.
+    const isFilled = data.files.some((f) => fileMatchesField(fId, f.mimeType, f.name));
+    return { id: fId, label, isFilled };
   });
+}
+
+// Heuristic: decide whether an uploaded file qualifies for a specific
+// submission field. MIME type is the primary signal; the filename extension
+// is a fallback for older browsers that don't send a useful MIME.
+function fileMatchesField(fieldId: string, mime: string | null, name: string): boolean {
+  const m = (mime ?? "").toLowerCase();
+  const n = name.toLowerCase();
+  if (fieldId === "video") {
+    return m.startsWith("video/") || /\.(mp4|mov|webm|mkv|avi)$/.test(n);
+  }
+  if (fieldId === "images") {
+    return m.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|bmp)$/.test(n);
+  }
+  if (fieldId === "presentation") {
+    return (
+      m === "application/pdf" ||
+      m.includes("presentation") ||
+      m.includes("powerpoint") ||
+      /\.(pdf|pptx?|key)$/.test(n)
+    );
+  }
+  // Unknown file field — any file counts (graceful fallback).
+  return true;
 }
 
 function SubmissionTab({ hackathonId }: { hackathonId: number }) {

@@ -851,9 +851,10 @@ export const listMyContracts = async (req: Request, res: Response) => {
   // مراجعة الشروط (step 1) لا تُعتبر عقوداً بعد — تظل في قائمة الرعايات
   // الجارية فقط، حتى لا يربك الراعي بـ"عقود قيد التوقيع" لطلبات لم تتم
   // المفاوضة عليها فعلاً.
-  // الحالة المشتقّة:
-  //  - "ساري"             : وقّع الطرفان (step >= 3)
+  // الحالة المشتقّة (3 مراحل):
+  //  - "ساري"              : وقّع الطرفان (step >= 3)
   //  - "في انتظار التوقيع" : step 2 (الراعي وافق على الشروط وفتحت مرحلة التوقيع)
+  //  - "قيد المراجعة"      : step 1 (المنظم أرسل الشروط، الراعي ما وافق بعد)
   // اللغة موحّدة مع SponsorSponsorships.tsx والـ stats card عشان نفس المسمّى يظهر في كل مكان.
   const [rows] = await pool.query<MyContractRow[]>(
     `SELECT
@@ -877,14 +878,19 @@ export const listMyContracts = async (req: Request, res: Response) => {
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE sa.SM_ID = ? AND sa.SA_Status = 'accepted'
-        AND sa.SA_NegotiationStep >= 2
+        AND sa.SA_NegotiationStep >= 1
       ORDER BY sa.SA_AppliedAt DESC`,
     [sponsorId]
   );
 
   const items = rows.map((r) => {
     const sponsorSigned = r.negotiationStep >= 3;
-    const status: 'ساري' | 'في انتظار التوقيع' = sponsorSigned ? 'ساري' : 'في انتظار التوقيع';
+    const status: 'ساري' | 'في انتظار التوقيع' | 'قيد المراجعة' =
+      r.negotiationStep >= 3
+        ? 'ساري'
+        : r.negotiationStep >= 2
+          ? 'في انتظار التوقيع'
+          : 'قيد المراجعة';
 
     return {
       id: r.contractId,
@@ -956,13 +962,18 @@ async function ensureChatParticipant(
   req: Request,
   res: Response,
   applicationId: number,
-): Promise<{ allowed: boolean; sponsorId?: number }> {
+): Promise<{ allowed: boolean; sponsorId?: number; isOrganizerSide?: boolean }> {
   if (!req.user) {
     res.status(401).json({ error: 'unauthenticated' });
     return { allowed: false };
   }
-  const [rows] = await pool.query<ApplicationOwnersRow[]>(
-    `SELECT sa.SM_ID, h.HAM_ID
+  interface ChatGuardRow extends RowDataPacket {
+    SM_ID: number;
+    HAM_ID: number;
+    hackathon_ID: number;
+  }
+  const [rows] = await pool.query<ChatGuardRow[]>(
+    `SELECT sa.SM_ID, h.HAM_ID, h.hackathon_ID
        FROM sponsor_application sa
        JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
@@ -973,13 +984,35 @@ async function ensureChatParticipant(
     res.status(404).json({ error: 'التقديم غير موجود' });
     return { allowed: false };
   }
-  const { SM_ID, HAM_ID } = rows[0];
+  const { SM_ID, HAM_ID, hackathon_ID } = rows[0];
   const me = req.user.memberId;
-  if (me !== SM_ID && me !== HAM_ID) {
-    res.status(403).json({ error: 'لا تملك صلاحية الوصول لهذه المحادثة' });
-    return { allowed: false };
+
+  // The sponsor on the application is always allowed.
+  if (me === SM_ID) {
+    return { allowed: true, sponsorId: SM_ID, isOrganizerSide: false };
   }
-  return { allowed: true, sponsorId: SM_ID };
+  // Owner is always allowed and counts as the organizer side.
+  if (me === HAM_ID) {
+    return { allowed: true, sponsorId: SM_ID, isOrganizerSide: true };
+  }
+  // Co-manager assigned to the 'sponsors' section of this hackathon also counts
+  // as the organizer side. Mirrors the registrations/projects section pattern
+  // in hackathon.controller.ts.
+  const [hcmRows] = await pool.query<RowDataPacket[]>(
+    `SELECT 1 FROM hackathon_co_manager
+      WHERE hackathon_ID = ?
+        AND M_ID = ?
+        AND HCM_InviteStatus = 'accepted'
+        AND HCM_Section = 'sponsors'
+      LIMIT 1`,
+    [hackathon_ID, me],
+  );
+  if (hcmRows.length > 0) {
+    return { allowed: true, sponsorId: SM_ID, isOrganizerSide: true };
+  }
+
+  res.status(403).json({ error: 'لا تملك صلاحية الوصول لهذه المحادثة' });
+  return { allowed: false };
 }
 
 export const listApplicationMessages = async (req: Request, res: Response) => {
@@ -1289,8 +1322,9 @@ export const saveContractTerms = async (req: Request, res: Response) => {
   const c = await loadContract(applicationId);
   if (!c) return res.status(404).json({ error: 'التقديم غير موجود' });
 
-  // كتابة الشروط من اختصاص المنظم فقط
-  if (req.user!.memberId !== c.hamId) {
+  // كتابة الشروط من اختصاص المنظم — يشمل المالك ومدير قسم الرعاة
+  // (guard.isOrganizerSide مضبوط من ensureChatParticipant).
+  if (!guard.isOrganizerSide) {
     return res.status(403).json({ error: 'كتابة الشروط من اختصاص المنظم فقط' });
   }
   if (c.status !== 'accepted') {
@@ -1422,7 +1456,9 @@ export const signContract = async (req: Request, res: Response) => {
   }
 
   const me = req.user!.memberId;
-  const isOrganizer = me === c.hamId;
+  // Organizer side = the hackathon owner OR a co-manager assigned to the
+  // 'sponsors' section. ensureChatParticipant already validated this.
+  const isOrganizer = guard.isOrganizerSide === true;
   const isSponsor = me === c.smId;
 
   try {
