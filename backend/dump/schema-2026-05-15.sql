@@ -168,7 +168,7 @@ CREATE TABLE `hackathon` (
   UNIQUE KEY `H_slug` (`H_slug`),
   KEY `HAM_ID` (`HAM_ID`),
   CONSTRAINT `hackathon_ibfk_1` FOREIGN KEY (`HAM_ID`) REFERENCES `hackathon_admin` (`HAM_ID`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `hackathon_admin`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -206,7 +206,7 @@ CREATE TABLE `hackathon_co_manager` (
   CONSTRAINT `fk_hcm_member` FOREIGN KEY (`M_ID`) REFERENCES `member` (`M_ID`) ON DELETE SET NULL,
   CONSTRAINT `fk_hcm_parent` FOREIGN KEY (`HCM_ParentID`) REFERENCES `hackathon_co_manager` (`HCM_ID`) ON DELETE SET NULL,
   CONSTRAINT `hackathon_co_manager_ibfk_1` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=134 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=137 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `hackathon_evaluation_criteria`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -221,7 +221,7 @@ CREATE TABLE `hackathon_evaluation_criteria` (
   PRIMARY KEY (`HEC_ID`),
   KEY `idx_hec_hackathon` (`hackathon_ID`),
   CONSTRAINT `fk_hec_hackathon` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=66 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=72 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `hackathon_judge`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -275,7 +275,7 @@ CREATE TABLE `hackathon_prize` (
   PRIMARY KEY (`HP_ID`),
   KEY `hackathon_ID` (`hackathon_ID`),
   CONSTRAINT `hackathon_prize_ibfk_1` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=180 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=183 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `hackathon_skill`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -311,7 +311,7 @@ CREATE TABLE `hackathon_track` (
   PRIMARY KEY (`HT_ID`),
   KEY `hackathon_ID` (`hackathon_ID`),
   CONSTRAINT `hackathon_track_ibfk_1` FOREIGN KEY (`hackathon_ID`) REFERENCES `hackathon` (`hackathon_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=163 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=166 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `member`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -334,7 +334,7 @@ CREATE TABLE `member` (
   `password_reset_expires_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`M_ID`),
   UNIQUE KEY `unique_email_type` (`M_Email`,`M_Type`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `notification`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -353,7 +353,7 @@ CREATE TABLE `notification` (
   KEY `idx_notification_member` (`M_ID`),
   KEY `idx_notification_member_read` (`M_ID`,`N_Read`),
   CONSTRAINT `fk_notification_member` FOREIGN KEY (`M_ID`) REFERENCES `member` (`M_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `organizer_profile`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -368,7 +368,7 @@ CREATE TABLE `organizer_profile` (
   PRIMARY KEY (`OP_ID`),
   KEY `M_ID` (`M_ID`),
   CONSTRAINT `organizer_profile_ibfk_1` FOREIGN KEY (`M_ID`) REFERENCES `member` (`M_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `participant`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -441,7 +441,7 @@ CREATE TABLE `sponsor_application` (
   KEY `idx_sa_package` (`SP_ID`),
   CONSTRAINT `fk_sa_package` FOREIGN KEY (`SP_ID`) REFERENCES `sponsor_package` (`SP_ID`) ON DELETE CASCADE,
   CONSTRAINT `fk_sa_sponsor` FOREIGN KEY (`SM_ID`) REFERENCES `sponsor` (`SM_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `sponsor_application_message`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -462,7 +462,7 @@ CREATE TABLE `sponsor_application_message` (
   KEY `fk_sam_member` (`M_ID`),
   CONSTRAINT `fk_sam_app` FOREIGN KEY (`SA_ID`) REFERENCES `sponsor_application` (`SA_ID`) ON DELETE CASCADE,
   CONSTRAINT `fk_sam_member` FOREIGN KEY (`M_ID`) REFERENCES `member` (`M_ID`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `sponsor_package`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
