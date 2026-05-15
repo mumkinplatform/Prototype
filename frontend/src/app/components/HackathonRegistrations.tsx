@@ -481,18 +481,9 @@ export function HackathonRegistrations() {
     }
     // Persist all selected in parallel; tolerate partial failures.
     await Promise.all(selectedIds.map((rid) => setStatus(rid, 'تم القبول')));
-    
-    // Open email modal for acceptance
-    setEmailType('accept');
-    setEmailSubject('تهانينا! تم قبولك في الهاكاثون');
-    setEmailMessage(`عزيزي/عزيزتي [الاسم],
 
-نحن سعداء بإبلاغك بأنه تم قبول طلبك للمشاركة في الهاكاثون.
-
-نتطلع لرؤيتك قريباً!
-
-مع أطيب التحيات،
-فريق مُمكّن`);
+    // Open the notify modal in "accepted" mode — template is rendered from notifyDecision.
+    setNotifyDecision('accepted');
     setShowEmailModal(true);
   };
 
@@ -505,18 +496,9 @@ export function HackathonRegistrations() {
       return;
     }
     await Promise.all(selectedIds.map((rid) => setStatus(rid, 'تم الرفض')));
-    
-    // Open email modal for rejection
-    setEmailType('reject');
-    setEmailSubject('بخصوص طلبك للمشاركة في الهاكاثون');
-    setEmailMessage(`عزيزي/عزيزتي [الاسم],
 
-نشكرك على اهتمامك بالمشاركة في الهاكاثون.
-
-للأسف، لم نتمكن من قبول طلبك في هذه المرة، ولكن نشجعك على التقديم في الفرص القادمة.
-
-مع أطيب التحيات،
-فريق مُمكّن`);
+    // Open the notify modal in "rejected" mode — template is rendered from notifyDecision.
+    setNotifyDecision('rejected');
     setShowEmailModal(true);
   };
 
@@ -980,7 +962,7 @@ export function HackathonRegistrations() {
               style={{ fontWeight: 600 }}
             >
               <Check className="w-4 h-4" />
-              قبول المحدد
+              إشعار بالقبول
             </button>
 
             <button
@@ -989,7 +971,7 @@ export function HackathonRegistrations() {
               style={{ fontWeight: 600 }}
             >
               <X className="w-4 h-4" />
-              رفض المحدد
+              إشعار بالرفض
             </button>
 
             <button

@@ -9,7 +9,6 @@ import {
   CheckCheck,
   Check,
   CheckCircle2,
-  CreditCard,
   FileText,
   Loader2,
   Edit3,
@@ -20,25 +19,6 @@ import { apiGet, apiPost, ApiError } from "../../lib/api";
 import { NegotiationStepPanel, type ContractView } from "./sponsor-apply/NegotiationStepPanel";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-
-async function uploadReceiptFile(applicationId: number, file: File): Promise<void> {
-  const token = localStorage.getItem("mumkin_token");
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(
-    `${API_URL}/sponsors/applications/${applicationId}/upload-receipt`,
-    {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    }
-  );
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message = (data as { error?: string }).error || `HTTP ${res.status}`;
-    throw new ApiError(res.status, message);
-  }
-}
 
 // يرسل رسالة شات (نص و/أو ملف) كـ multipart عشان الـ endpoint موحّد
 // والـ backend يقبل الاثنين بنفس multer.
@@ -79,6 +59,10 @@ interface ApiConversation {
   appliedAt: string;
   currentStep: number;
   sponsorSignedAt: string | null;
+  lastMessageText: string | null;
+  lastMessageFileName: string | null;
+  lastMessageIsSystem: boolean;
+  lastMessageAt: string | null;
   hackathon: { id: number; title: string; startDate: string | null };
   package: { id: number; name: string; type: string; price: number | null };
   organizer: { name: string };
@@ -113,21 +97,60 @@ interface DisplayConversation {
 
 const PALETTE = ["#6366f1", "#10b981", "#f59e0b", "#e35654", "#8b5cf6", "#06b6d4"];
 
+// Sidebar timestamp helper — today shows "HH:MM", yesterday "أمس", earlier this
+// week shows the day name, older shows a date. Mirrors common chat-app patterns
+// so the sidebar feels alive instead of frozen on the application's apply date.
+function formatSidebarTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const now = new Date();
+  const then = new Date(t);
+  const sameDay =
+    now.getFullYear() === then.getFullYear() &&
+    now.getMonth() === then.getMonth() &&
+    now.getDate() === then.getDate();
+  if (sameDay) {
+    return then.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  }
+  const diffMs = now.getTime() - t;
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffDays === 1) return "أمس";
+  if (diffDays < 7) {
+    return then.toLocaleDateString("ar-SA", { weekday: "long" });
+  }
+  return then.toLocaleDateString("ar-SA", { day: "2-digit", month: "2-digit" });
+}
+
 function mapConversation(c: ApiConversation, idx: number): DisplayConversation {
   const name = c.hackathon.title || "هاكاثون";
   const firstChar = name.trim().length > 0 ? name.trim()[0] : "ه";
-  const lastMsg =
-    c.status === "pending"
-      ? "بانتظار رد المنظم على طلبكم..."
-      : c.status === "accepted"
-      ? "تم قبول رعايتكم! ابدؤوا التفاوض على الشروط."
-      : "تم الاعتذار عن طلبكم.";
+
+  // Real last-message preview from the chat itself. Falls back to a status-based
+  // placeholder only when the conversation has zero messages yet (right after
+  // the sponsor first applies — pending and no one has spoken yet).
+  let lastMsg: string;
+  if (c.lastMessageText && c.lastMessageText.trim().length > 0) {
+    lastMsg = c.lastMessageText.trim();
+  } else if (c.lastMessageFileName) {
+    lastMsg = `📎 ${c.lastMessageFileName}`;
+  } else if (c.status === "pending") {
+    lastMsg = "بانتظار رد المنظم على طلبكم...";
+  } else if (c.status === "rejected") {
+    lastMsg = "تم الاعتذار عن طلبكم.";
+  } else {
+    lastMsg = "تم قبول رعايتكم! ابدؤوا التفاوض على الشروط.";
+  }
+
+  // Time stamp reflects the latest chat activity. If no message yet, use the
+  // application's applied-at so the row at least has a meaningful date.
+  const stampSource = c.lastMessageAt ?? c.appliedAt;
+
   return {
     id: c.id,
     name,
     sub: c.organizer.name || "—",
     lastMsg,
-    time: new Date(c.appliedAt).toLocaleDateString("ar-SA"),
+    time: formatSidebarTime(stampSource),
     unread: 0,
     online: true,
     avatar: firstChar,
@@ -146,14 +169,12 @@ function mapConversation(c: ApiConversation, idx: number): DisplayConversation {
   };
 }
 
-// مراحل التفاوض الأربع. الـ step=3 في الـ DB مهجور؛ الباك يقفز من 2 → 4
-// مراحل التفاوض الأربع. بعد دمج migration ربى 030، الـ ids متسلسلة 0,1,2,3
-// (step 3 = مكتمل، الـ DB ما تستخدم step 4).
+// مراحل التفاوض الثلاث المعروضة في الشريط. لما تكتمل (step=3) نخفي الشريط
+// كله ونعرض بانر "العقد ساري" بدلاً منه، فمافي حاجة لإدخال step 3 هنا.
 const NEGOTIATION_STEPS = [
   { id: 0, label: "التفاوض", icon: MessageCircle },
   { id: 1, label: "مراجعة الشروط", icon: Edit3 },
   { id: 2, label: "العقد الرقمي", icon: FileText },
-  { id: 3, label: "مكتمل", icon: CheckCircle2 },
 ];
 
 type Msg = {
@@ -270,48 +291,20 @@ export function MessagesPage() {
     }
   };
 
-  // وضع الرفع: "receipt" يرفع للسيرفر كإيصال دفع · "attach" يرفع ملف عادي للشات
-  const [attachMode, setAttachMode] = useState<"receipt" | "attach">("attach");
-
+  // The chat used to expose a separate "receipt" upload mode that hit a
+  // dedicated /upload-receipt endpoint and bumped the negotiation step to 4.
+  // We removed that — receipts are now just regular chat attachments and the
+  // contract is considered complete the moment both parties sign (step 3).
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // reset so same file can be re-selected
     if (!file || selected === null) return;
     if (!conv) return;
 
-    // إرفاق ملف عادي → يُحفظ كرسالة في الـ DB
-    if (attachMode === "attach") {
-      setUploading(true);
-      try {
-        await postChatMessage(selected, { file });
-        toast.success("تم إرفاق الملف في المحادثة");
-      } catch (err: unknown) {
-        const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
-        toast.error(message);
-      } finally {
-        setUploading(false);
-      }
-      return;
-    }
-
-    // رفع إيصال الدفع → endpoint منفصل + رسالة شات تأكيد
-    if (conv.status !== "accepted") {
-      toast.error("لا يمكنك رفع الإيصال قبل قبول طلب الرعاية");
-      return;
-    }
     setUploading(true);
     try {
-      await uploadReceiptFile(selected, file);
-      toast.success("تم رفع الإيصال بنجاح", {
-        description: "تمّ تسجيل الدفع.",
-      });
-      try {
-        await postChatMessage(selected, {
-          text: `💳 تم رفع إيصال الدفع: ${file.name}`,
-        });
-      } catch {
-        // الإيصال نجح، فشل لصق الرسالة لا يعني فشل الرفع
-      }
+      await postChatMessage(selected, { file });
+      toast.success("تم إرفاق الملف في المحادثة");
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.message : "تعذّر رفع الملف";
       toast.error(message);
@@ -403,10 +396,12 @@ export function MessagesPage() {
 
   const conv = conversations.find((c) => c.id === selected) ?? null;
 
-  // مزامنة المرحلة المعروضة عند تغيير المحادثة
+  // مزامنة المرحلة المعروضة عند تغيير المحادثة. بعد ما العقد ينكمل (step 3)
+  // الافتراضي يصير المحادثة الحرّة (viewedStep=0) — يفتح العقد فقط لو ضغط
+  // الراعي زر "عرض العقد" في الهيدر. قبل الاكتمال نفتح على المرحلة الحالية كالسابق.
   useEffect(() => {
     if (!conv) return;
-    setViewedStep(conv.currentStep);
+    setViewedStep(conv.currentStep >= 3 ? 0 : conv.currentStep);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // تحميل العقد عند اختيار محادثة (بدون polling — التوقيع نادر نسبياً).
@@ -600,73 +595,84 @@ export function MessagesPage() {
             </div>
           </div>
 
-          {/* Negotiation Steps Strip — قابلة للنقر للتنقّل الحرّ */}
-          <div className="bg-white border-b border-gray-100 px-5 py-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              {NEGOTIATION_STEPS.map((step, idx) => {
-                const Icon = step.icon;
-                // المقارنة بـ step.id لأن ids غير متتالية (0,1,2,4).
-                const isDone = step.id < conv.currentStep;
-                const isCurrent = step.id === conv.currentStep;
-                const isViewed = step.id === viewedStep;
-                const baseColor = isCurrent ? "#e35654" : isDone ? "#10b981" : "#d1d5db";
-                return (
-                  <div key={step.id} className="flex items-center flex-1">
-                    <button
-                      type="button"
-                      onClick={() => setViewedStep(step.id)}
-                      className="flex flex-col items-center flex-1 group focus:outline-none"
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all group-hover:scale-110 ${
-                          isViewed ? "ring-2 ring-offset-2 ring-[#e35654]/40" : ""
-                        }`}
-                        style={{
-                          borderColor: baseColor,
-                          background: isCurrent ? baseColor : isDone ? baseColor : "white",
-                        }}
+          {/* Pre-completion: show the steps strip with clickable navigation.
+              Post-completion (both signed, step 3): the strip is replaced by a
+              compact "View Contract" header — the chat below is a free
+              conversation thread for any post-signing follow-up. */}
+          {conv.currentStep < 3 ? (
+            <div className="bg-white border-b border-gray-100 px-5 py-3 flex-shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                {NEGOTIATION_STEPS.map((step, idx) => {
+                  const Icon = step.icon;
+                  const isDone = step.id < conv.currentStep;
+                  const isCurrent = step.id === conv.currentStep;
+                  const isViewed = step.id === viewedStep;
+                  const baseColor = isCurrent ? "#e35654" : isDone ? "#10b981" : "#d1d5db";
+                  return (
+                    <div key={step.id} className="flex items-center flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setViewedStep(step.id)}
+                        className="flex flex-col items-center flex-1 group focus:outline-none"
                       >
-                        <Icon
-                          className="w-3.5 h-3.5"
-                          style={{ color: isCurrent || isDone ? "white" : baseColor }}
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all group-hover:scale-110 ${
+                            isViewed ? "ring-2 ring-offset-2 ring-[#e35654]/40" : ""
+                          }`}
+                          style={{
+                            borderColor: baseColor,
+                            background: isCurrent ? baseColor : isDone ? baseColor : "white",
+                          }}
+                        >
+                          <Icon
+                            className="w-3.5 h-3.5"
+                            style={{ color: isCurrent || isDone ? "white" : baseColor }}
+                          />
+                        </div>
+                        <span
+                          className="text-[10px] mt-1"
+                          style={{
+                            color: baseColor,
+                            fontWeight: isViewed ? 700 : isCurrent ? 700 : 500,
+                          }}
+                        >
+                          {step.label}
+                        </span>
+                      </button>
+                      {idx < NEGOTIATION_STEPS.length - 1 && (
+                        <div
+                          className="h-0.5 flex-1 mb-4"
+                          style={{ background: step.id < conv.currentStep ? "#10b981" : "#e5e7eb" }}
                         />
-                      </div>
-                      <span
-                        className="text-[10px] mt-1"
-                        style={{
-                          color: baseColor,
-                          fontWeight: isViewed ? 700 : isCurrent ? 700 : 500,
-                        }}
-                      >
-                        {step.label}
-                      </span>
-                    </button>
-                    {idx < NEGOTIATION_STEPS.length - 1 && (
-                      <div
-                        className="h-0.5 flex-1 mb-4"
-                        style={{ background: step.id < conv.currentStep ? "#10b981" : "#e5e7eb" }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            {conv.currentStep === 3 && (
-              <p className="text-xs text-green-600 text-center mt-2" style={{ fontWeight: 600 }}>
-                ✓ اكتملت جميع مراحل التفاوض
-              </p>
-            )}
-          </div>
+          ) : (
+            <div className="bg-green-50 border-b border-green-100 px-5 py-3 flex-shrink-0 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-green-700 text-sm" style={{ fontWeight: 600 }}>
+                <CheckCircle2 className="w-4 h-4" />
+                العقد ساري — موقّع من الطرفين
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewedStep(2)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-white border border-green-200 text-green-700 hover:bg-green-100 transition-colors"
+                style={{ fontWeight: 600 }}
+              >
+                عرض العقد
+              </button>
+            </div>
+          )}
 
-          {/* Hidden file input — يتغيّر accept حسب وضع الإرفاق */}
+          {/* Hidden file input — accepts any file type since receipts are now
+              just regular chat attachments, not a separate upload mode. */}
           <input
             ref={fileInputRef}
             type="file"
-            accept={
-              attachMode === "receipt"
-                ? "image/jpeg,image/png,image/webp,application/pdf"
-                : "*"
-            }
+            accept="*/*"
             className="hidden"
             onChange={handleFileSelected}
           />
@@ -760,62 +766,18 @@ export function MessagesPage() {
               {/* Input */}
               <div className="bg-white border-t border-gray-100 px-5 py-4 flex-shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <details className="relative group">
-                    <summary className="list-none p-2.5 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center">
-                      {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
-                    </summary>
-                    <div className="absolute bottom-full mb-2 right-0 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 w-56 z-50">
-                      <p className="text-gray-400 text-xs px-3 pb-1.5 pt-0.5" style={{ fontWeight: 600 }}>
-                        إرفاق ملف
-                      </p>
-                      <button
-                        onClick={(e) => {
-                          setAttachMode("attach");
-                          (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
-                          setTimeout(() => fileInputRef.current?.click(), 0);
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-right"
-                      >
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#eef2ff]">
-                          <Paperclip className="w-4 h-4 text-[#6366f1]" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 text-xs" style={{ fontWeight: 600 }}>
-                            إرفاق ملف
-                          </p>
-                          <p className="text-gray-400" style={{ fontSize: 10 }}>
-                            أي نوع — يظهر في المحادثة
-                          </p>
-                        </div>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          setAttachMode("receipt");
-                          (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
-                          setTimeout(() => fileInputRef.current?.click(), 0);
-                        }}
-                        disabled={uploading || conv.status !== "accepted"}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-right disabled:opacity-50 disabled:cursor-not-allowed mt-1"
-                      >
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#fef2f2]">
-                          <CreditCard className="w-4 h-4 text-[#e35654]" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-gray-800 text-xs" style={{ fontWeight: 600 }}>
-                            {uploading ? "جاري الرفع..." : "رفع إيصال الدفع"}
-                          </p>
-                          <p className="text-gray-400" style={{ fontSize: 10 }}>
-                            PDF · PNG · JPG — حتى 10MB
-                          </p>
-                        </div>
-                      </button>
-                      {conv.status !== "accepted" && (
-                        <p className="text-[10px] text-gray-400 px-3 pt-1.5 leading-relaxed">
-                          رفع الإيصال متاح بعد قبول الطلب.
-                        </p>
-                      )}
-                    </div>
-                  </details>
+                  {/* Single attach button — file goes straight to chat as a
+                      regular message. The old menu had a second "upload receipt"
+                      mode; removed because receipts are now ordinary attachments. */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    title="إرفاق ملف"
+                    className="p-2.5 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex items-center justify-center disabled:opacity-50"
+                  >
+                    {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
+                  </button>
                   <input
                     value={newMsg}
                     onChange={(e) => setNewMsg(e.target.value)}
@@ -835,7 +797,11 @@ export function MessagesPage() {
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
-                {conv.status === "accepted" && (
+                {/* Quick link to the terms panel — only while the contract is
+                    still in negotiation. After step 3 (both signed) the chat
+                    becomes a free thread and the terms view is reached only
+                    through the "عرض العقد" header button. */}
+                {conv.status === "accepted" && conv.currentStep < 3 && (
                   <div className="flex justify-end mt-2">
                     <button
                       onClick={() => setViewedStep(1)}

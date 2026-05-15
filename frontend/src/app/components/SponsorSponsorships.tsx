@@ -15,12 +15,11 @@ import {
   FileSignature,
   Loader2,
   Trash2,
+  X,
 } from "lucide-react";
 import { apiGet, apiDelete, ApiError } from "../../lib/api";
 import { HackathonCover, BrandingPayload } from "./HackathonCover";
 import { LogoPattern } from "./LogoPatterns";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 // ── API Types ────────────────────────────────────────────────
 
@@ -29,7 +28,6 @@ interface ApiApplication {
   status: "pending" | "accepted" | "rejected";
   negotiationStep: number;
   appliedAt: string;
-  paidAt: string | null;
   package: {
     id: number;
     name: string;
@@ -70,7 +68,7 @@ function formatLongDate(iso: string | null): string {
 
 interface ApiContract {
   id: number;
-  status: "ساري" | "بانتظار توقيعك";
+  status: "ساري" | "في انتظار التوقيع" | "قيد المراجعة";
   signed: boolean;
   sponsorSigned: boolean;
   organizerSigned: boolean;
@@ -80,7 +78,6 @@ interface ApiContract {
   organizer: { name: string };
   signDate: string | null;
   organizerSignedAt: string | null;
-  receiptFile: string | null;
   appliedAt: string;
 }
 
@@ -137,7 +134,6 @@ interface DisplayContract {
   statusBg: string;
   signed: boolean;
   pendingHint: string;
-  receiptFile: string | null;
   rawPrice: number;
 }
 
@@ -154,7 +150,13 @@ function mapContractToDisplay(c: ApiContract): DisplayContract {
   // العقد "ساري" بمجرد ما يخلّص الراعي خطواته (step=4). لو ما خلّص → بانتظار توقيعك
   const pendingHint = c.signed
     ? ""
-    : "أكمل مراحل التفاوض ورفع الإيصال لتوقيع العقد.";
+    : "في انتظار توقيعك على العقد.";
+
+  // Unified label across the whole sponsor surface — the stats card, the status
+  // badge, and the filter tabs all say "في انتظار التوقيع" without specifying
+  // which party. The signing phase belongs to both: a contract sits in this
+  // state until BOTH parties have signed, then it flips to "ساري".
+  const displayStatus = c.signed ? "ساري" : "في انتظار التوقيع";
 
   return {
     id: c.id,
@@ -167,12 +169,11 @@ function mapContractToDisplay(c: ApiContract): DisplayContract {
     signDate: signedDateStr,
     expiryDate: startDateStr,
     value,
-    status: c.status,
+    status: displayStatus,
     statusColor: c.signed ? "#10b981" : "#f59e0b",
     statusBg: c.signed ? "#f0fdf4" : "#fffbeb",
     signed: c.signed,
     pendingHint,
-    receiptFile: c.receiptFile,
     rawPrice: c.package.price ?? 0,
   };
 }
@@ -191,14 +192,14 @@ interface DisplaySponsorship {
   statusBg: string;
   payDate: string;
   financialDate: string;
-  deliveryStatus: string;
-  deliveryColor: string;
   progress: number;
   note: string;
   actionPrimary: string;
   actionSecondary: string;
   urgent: boolean;
   contractSigned: boolean;
+  rawStatus: ApiApplication["status"];
+  negotiationStep: number;
   branding: BrandingPayload | null;
   appliedAtTime: number;
   rawPrice: number;
@@ -206,54 +207,80 @@ interface DisplaySponsorship {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<
-  ApiApplication["status"],
-  { label: string; color: string; bg: string; deliveryStatus: string; note: string }
-> = {
-  pending: {
-    label: "قيد التقديم",
-    color: "#f59e0b",
-    bg: "#fffbeb",
-    deliveryStatus: "بانتظار الموافقة",
-    note: "تم استلام طلبك. سيراجعه المنظم قريباً.",
-  },
-  accepted: {
-    label: "نشط",
-    color: "#10b981",
-    bg: "#f0fdf4",
-    deliveryStatus: "تم القبول",
-    note: "تم قبول طلبك. تابع تفاصيل الهاكاثون.",
-  },
-  rejected: {
-    label: "مرفوض",
-    color: "#ef4444",
-    bg: "#fef2f2",
-    deliveryStatus: "تم الرفض",
-    note: "للأسف، لم يتم قبول طلبك على هذه الباقة.",
-  },
-};
+// Sponsorship card status — 4 progressive states, matching the conceptual
+// flow agreed with the user:
+//   pending                 → قيد المراجعة   (organizer hasn't responded yet)
+//   accepted + step 0       → قيد التفاوض   (chat opened, talking)
+//   accepted + step 1 or 2  → قيد التنفيذ   (terms review / signing in progress)
+//   accepted + step 3       → مكتمل         (both signed, contract complete)
+// 'rejected' is kept as a fallback only — there is no UI path to set it today.
+
+interface DerivedStatus {
+  label: string;
+  color: string;
+  bg: string;
+  note: string;
+  progress: number;
+}
+
+function deriveSponsorshipStatus(app: ApiApplication): DerivedStatus {
+  if (app.status === "rejected") {
+    return {
+      label: "مرفوض",
+      color: "#ef4444",
+      bg: "#fef2f2",
+      note: "للأسف، لم يتم قبول طلبك على هذه الباقة.",
+      progress: 0,
+    };
+  }
+  if (app.status === "pending") {
+    return {
+      label: "قيد المراجعة",
+      color: "#f59e0b",
+      bg: "#fffbeb",
+      note: "تم استلام طلبك. سيراجعه المنظم قريباً.",
+      progress: 10,
+    };
+  }
+  // accepted from here on
+  if (app.negotiationStep >= 3) {
+    return {
+      label: "مكتمل",
+      color: "#10b981",
+      bg: "#f0fdf4",
+      note: "تمّت الرعاية بنجاح — العقد ساري وموثّق من الطرفين.",
+      progress: 100,
+    };
+  }
+  if (app.negotiationStep >= 1) {
+    return {
+      label: "قيد التنفيذ",
+      color: "#8b5cf6",
+      bg: "#f5f3ff",
+      note: "تمت مراجعة الشروط — الإجراء التالي هو التوقيع الرقمي.",
+      progress: 70,
+    };
+  }
+  return {
+    label: "قيد التفاوض",
+    color: "#3b82f6",
+    bg: "#eff6ff",
+    note: "بدأت محادثة التفاوض مع المنظم.",
+    progress: 40,
+  };
+}
 
 function mapApplicationToDisplay(app: ApiApplication): DisplaySponsorship {
-  const baseStatus = STATUS_LABELS[app.status];
+  const derived = deriveSponsorshipStatus(app);
   const packageVisual =
     PACKAGE_TYPE_VISUALS[app.package.type] ?? PACKAGE_TYPE_VISUALS.other;
-  // مكتمل = step 3 بعد دمج migration ربى 030 (تقلّص المراحل من 5 لـ 4).
-  const isCompleted = app.status === "accepted" && app.negotiationStep >= 3;
+  const isCompleted = derived.label === "مكتمل";
 
-  const label = isCompleted ? "مكتمل" : baseStatus.label;
-  const color = isCompleted ? "#10b981" : baseStatus.color;
-  const bg = isCompleted ? "#f0fdf4" : baseStatus.bg;
-  const deliveryStatus = isCompleted
-    ? "مدفوع بالكامل"
-    : baseStatus.deliveryStatus;
-  const note = isCompleted
-    ? "تمّت الرعاية بنجاح — العقد ساري والدفع مستلَم."
-    : baseStatus.note;
-  const progress = isCompleted
-    ? 100
-    : app.status === "accepted"
-    ? 50
-    : 0;
+  const label = derived.label;
+  const color = derived.color;
+  const bg = derived.bg;
+  const note = derived.note;
+  const progress = derived.progress;
 
   return {
     id: app.id,
@@ -267,23 +294,25 @@ function mapApplicationToDisplay(app: ApiApplication): DisplaySponsorship {
     statusBg: bg,
     payDate: formatLongDate(app.hackathon.startDate),
     financialDate: formatLongDate(app.appliedAt),
-    deliveryStatus,
-    deliveryColor: color,
     progress,
     note,
     actionPrimary: "عرض الهاكاثون",
     actionSecondary: "تفاصيل الباقة",
     urgent: false,
     contractSigned: isCompleted,
+    rawStatus: app.status,
+    negotiationStep: app.negotiationStep,
     branding: app.hackathon.branding ?? null,
     appliedAtTime: new Date(app.appliedAt).getTime(),
     rawPrice: app.package.price ?? 0,
   };
 }
 
-const tabs = ["الكل", "نشط", "قيد التقديم", "مكتمل"];
+// Sponsorship tabs mirror the derived status labels exactly.
+const tabs = ["الكل", "قيد المراجعة", "قيد التفاوض", "قيد التنفيذ", "مكتمل"];
 
-const contractTabs = ["الكل", "ساري", "بانتظار توقيعك"];
+// Contracts tabs match the unified status labels in displayStatus above.
+const contractTabs = ["الكل", "ساري", "في انتظار التوقيع", "قيد المراجعة"];
 
 type SortKey = "الأحدث أولاً" | "الأقدم أولاً" | "الأعلى قيمةً";
 
@@ -337,6 +366,7 @@ export function SponsorSponsorships() {
   // /sponsors/contracts).
   const [contractDetail, setContractDetail] = useState<FullContract | null>(null);
   const [contractDetailLoading, setContractDetailLoading] = useState(false);
+  const [contractDetailError, setContractDetailError] = useState<string | null>(null);
   const [seenContracts, setSeenContracts] = useState<Set<number>>(() => readSeenContracts());
 
   const unseenContractsCount = useMemo(
@@ -374,16 +404,22 @@ export function SponsorSponsorships() {
   useEffect(() => {
     if (viewingContractId === null) {
       setContractDetail(null);
+      setContractDetailError(null);
       return;
     }
     let cancelled = false;
     setContractDetailLoading(true);
+    setContractDetailError(null);
     apiGet<FullContract>(`/sponsors/applications/${viewingContractId}/contract`)
       .then((c) => {
         if (!cancelled) setContractDetail(c);
       })
-      .catch(() => {
-        if (!cancelled) setContractDetail(null);
+      .catch((err) => {
+        if (cancelled) return;
+        setContractDetail(null);
+        setContractDetailError(
+          err instanceof ApiError ? err.message : "تعذّر تحميل العقد. حاول مرة أخرى.",
+        );
       })
       .finally(() => {
         if (!cancelled) setContractDetailLoading(false);
@@ -734,20 +770,13 @@ export function SponsorSponsorships() {
 
               {/* Card Body */}
               <div className="px-5 py-4">
-                {/* Dates Row */}
-                <div className="flex items-center justify-between mb-3 text-xs">
+                {/* Date Row — the old "حالة الدفع" column was removed because the
+                    backend no longer tracks payment as a discrete state. Status
+                    is captured solely by the main badge above the card. */}
+                <div className="flex items-center mb-3 text-xs">
                   <div>
-                    <p className="text-gray-400 mb-0.5">التاريخ</p>
+                    <p className="text-gray-400 mb-0.5">تاريخ التقديم</p>
                     <p className="text-gray-700" style={{ fontWeight: 600 }}>{sp.financialDate}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-gray-400 mb-0.5 text-center">حالة ادفع</p>
-                    <p style={{ color: sp.deliveryColor, fontWeight: 600 }}>
-                      {sp.deliveryStatus === "مدفوع بالكامل" && "● "}
-                      {sp.deliveryStatus === "في انتظار الفاتورة" && "⏳ "}
-                      {sp.deliveryStatus === "تأخر السداد" && "⚠ "}
-                      {sp.deliveryStatus}
-                    </p>
                   </div>
                 </div>
 
@@ -787,14 +816,16 @@ export function SponsorSponsorships() {
                       </button>
                     );
                   })()}
-                  <button
-                    onClick={() => setCancellingId(sp.id)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-600 text-xs hover:bg-red-50 hover:border-red-300 transition-colors"
-                    title="حذف الفرصة"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    حذف
-                  </button>
+                  {sp.rawStatus === "pending" && (
+                    <button
+                      onClick={() => setCancellingId(sp.id)}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-600 text-xs hover:bg-red-50 hover:border-red-300 transition-colors"
+                      title="سحب الطلب قبل بدء التفاوض"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      سحب الطلب
+                    </button>
+                  )}
                   <button
                     onClick={() => navigate(`/sponsor/messages?app=${sp.id}`)}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-gray-500 text-xs hover:bg-gray-50 hover:border-gray-300 transition-colors"
@@ -875,7 +906,7 @@ export function SponsorSponsorships() {
                   return [
                     { label: "إجمالي العقود", value: contracts.length.toString(), color: "#6366f1", bg: "#eef2ff" },
                     { label: "عقود سارية", value: contracts.filter(c => c.status === "ساري").length.toString(), color: "#10b981", bg: "#f0fdf4" },
-                    { label: "بانتظار التوقيع", value: contracts.filter(c => !c.signed).length.toString(), color: "#f59e0b", bg: "#fffbeb" },
+                    { label: "في انتظار التوقيع", value: contracts.filter(c => !c.signed).length.toString(), color: "#f59e0b", bg: "#fffbeb" },
                     { label: "إجمالي القيمة", value: totalValueLabel, color: "#e35654", bg: "#fef2f2" },
                   ];
                 })().map((stat, i) => (
@@ -1063,10 +1094,29 @@ export function SponsorSponsorships() {
               className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto contract-print"
               onClick={(e) => e.stopPropagation()}
             >
-              {contractDetailLoading || !contractDetail ? (
+              {contractDetailLoading ? (
                 <div className="p-12 text-center">
                   <div className="inline-block w-6 h-6 border-2 border-gray-200 border-t-[#e35654] rounded-full animate-spin mb-2" />
                   <p className="text-gray-500 text-xs">جاري تحميل ملف العقد...</p>
+                </div>
+              ) : contractDetailError || !contractDetail ? (
+                <div className="p-12 text-center">
+                  <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-3">
+                    <X className="w-6 h-6 text-red-500" />
+                  </div>
+                  <p className="text-gray-800 text-sm mb-1" style={{ fontWeight: 700 }}>
+                    تعذّر تحميل العقد
+                  </p>
+                  <p className="text-gray-500 text-xs mb-4">
+                    {contractDetailError ?? "حدث خطأ غير متوقع. حاول مرة أخرى."}
+                  </p>
+                  <button
+                    onClick={() => setViewingContractId(null)}
+                    className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200 transition-colors"
+                    style={{ fontWeight: 600 }}
+                  >
+                    إغلاق
+                  </button>
                 </div>
               ) : (
                 <>
@@ -1238,10 +1288,10 @@ export function SponsorSponsorships() {
               className="text-gray-900 mb-2"
               style={{ fontWeight: 700, fontSize: "1.1rem" }}
             >
-              تأكيد الحذف
+              تأكيد سحب الطلب
             </h3>
             <p className="text-sm text-gray-600 mb-1">
-              هل أنت متأكد من حذف الرعاية على:
+              هل أنت متأكدة من سحب طلب الرعاية على:
             </p>
             <p
               className="text-base mb-1"
@@ -1250,7 +1300,7 @@ export function SponsorSponsorships() {
               {cancelTarget.name}
             </p>
             <p className="text-xs text-gray-500 mb-6">
-              سيتم حذف السجل بشكل نهائي. لو الطلب كان مقبولاً، ستفقد العقد والمدفوعات المرتبطة به.
+              سيُحذف الطلب بشكل نهائي. يمكنك التقديم مجدداً لاحقاً إذا غيّرتِ رأيك.
             </p>
             <div className="flex gap-2">
               <button

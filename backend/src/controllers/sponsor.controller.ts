@@ -51,17 +51,12 @@ interface ApplicationOwnerRow extends RowDataPacket {
   SA_Status: 'pending' | 'accepted' | 'rejected';
 }
 
-interface NegotiationRow extends RowDataPacket {
-  SM_ID: number;
-  SA_NegotiationStep: number;
-  SA_Status: 'pending' | 'accepted' | 'rejected';
-}
-
 interface OpportunityDetailHackathonRow extends RowDataPacket {
   id: number;
   title: string;
   slug: string | null;
   type: string | null;
+  city: string | null;
   description: string | null;
   startDate: Date | null;
   registrationDeadline: Date | null;
@@ -150,6 +145,10 @@ interface MyConversationRow extends RowDataPacket {
   hackathonTitle: string;
   hackathonStartDate: Date | null;
   organizerName: string | null;
+  lastMessageText: string | null;
+  lastMessageFileName: string | null;
+  lastMessageIsSystem: number | null;
+  lastMessageAt: Date | null;
 }
 
 interface MyPaymentRow extends RowDataPacket {
@@ -326,6 +325,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
        h.H_title AS title,
        h.H_slug AS slug,
        h.H_type AS type,
+       h.H_city AS city,
        h.H_description AS description,
        h.H_Hackathon_StartDate AS startDate,
        h.H_Registration_EndDate AS registrationDeadline,
@@ -416,6 +416,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
       title: hk.title,
       slug: hk.slug,
       type: hk.type,
+      city: hk.city,
       description: hk.description,
       startDate: hk.startDate,
       registrationDeadline: hk.registrationDeadline,
@@ -549,13 +550,19 @@ export const getMyInsights = async (req: Request, res: Response) => {
     [sponsorId]
   );
 
-  // 3) توزيع الحالات
+  // 3) توزيع الحالات — 4 حالات منطقية تتدرج مع تقدّم الطلب:
+  //   pending                  → قيد المراجعة (لم يرد المنظم)
+  //   accepted + step 0        → قيد التفاوض (المحادثة فقط)
+  //   accepted + step 1 أو 2   → قيد التنفيذ (مراجعة شروط / توقيع)
+  //   accepted + step 3        → مكتمل (الطرفان وقّعا)
+  // الـ rejected موجودة في الـ enum لكن لا يوجد مسار في الكود يضعها — نتركها كخريطة احتياطية فقط.
   const [statuses] = await pool.query<InsightStatusRow[]>(
     `SELECT
        CASE
-         WHEN sa.SA_Status = 'accepted' AND sa.SA_NegotiationStep >= 4 THEN 'مكتمل'
+         WHEN sa.SA_Status = 'accepted' AND sa.SA_NegotiationStep >= 3 THEN 'مكتمل'
+         WHEN sa.SA_Status = 'accepted' AND sa.SA_NegotiationStep >= 1 THEN 'قيد التنفيذ'
          WHEN sa.SA_Status = 'accepted' THEN 'قيد التفاوض'
-         WHEN sa.SA_Status = 'pending' THEN 'قيد التقديم'
+         WHEN sa.SA_Status = 'pending'  THEN 'قيد المراجعة'
          WHEN sa.SA_Status = 'rejected' THEN 'مرفوض'
          ELSE 'أخرى'
        END AS label,
@@ -712,6 +719,8 @@ export const listMyConversations = async (req: Request, res: Response) => {
   const sponsorId = req.user!.memberId;
 
   // كل محادثة = تقديم. التقديم النشط (pending أو accepted) يكون محادثة فعّالة.
+  // نضيف آخر رسالة فعلية + وقتها كـ subqueries عشان قائمة الـ sidebar تعرض
+  // اللي يصير حقيقة في الشات بدل نص ثابت مرتبط بحالة الطلب.
   const [rows] = await pool.query<MyConversationRow[]>(
     `SELECT
        sa.SA_ID                AS applicationId,
@@ -726,13 +735,22 @@ export const listMyConversations = async (req: Request, res: Response) => {
        h.hackathon_ID          AS hackathonId,
        h.H_title               AS hackathonTitle,
        h.H_Hackathon_StartDate AS hackathonStartDate,
-       op.ORG_Name             AS organizerName
+       op.ORG_Name             AS organizerName,
+       (SELECT m.SAM_Text     FROM sponsor_application_message m
+          WHERE m.SA_ID = sa.SA_ID ORDER BY m.SAM_CreatedAt DESC LIMIT 1) AS lastMessageText,
+       (SELECT m.SAM_FileName FROM sponsor_application_message m
+          WHERE m.SA_ID = sa.SA_ID ORDER BY m.SAM_CreatedAt DESC LIMIT 1) AS lastMessageFileName,
+       (SELECT m.SAM_IsSystem FROM sponsor_application_message m
+          WHERE m.SA_ID = sa.SA_ID ORDER BY m.SAM_CreatedAt DESC LIMIT 1) AS lastMessageIsSystem,
+       (SELECT m.SAM_CreatedAt FROM sponsor_application_message m
+          WHERE m.SA_ID = sa.SA_ID ORDER BY m.SAM_CreatedAt DESC LIMIT 1) AS lastMessageAt
        FROM sponsor_application sa
        JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE sa.SM_ID = ?
-      ORDER BY sa.SA_AppliedAt DESC`,
+      ORDER BY COALESCE((SELECT MAX(m.SAM_CreatedAt) FROM sponsor_application_message m
+                          WHERE m.SA_ID = sa.SA_ID), sa.SA_AppliedAt) DESC`,
     [sponsorId]
   );
 
@@ -742,6 +760,10 @@ export const listMyConversations = async (req: Request, res: Response) => {
     appliedAt: r.appliedAt,
     currentStep: r.negotiationStep,
     sponsorSignedAt: r.sponsorSignedAt,
+    lastMessageText: r.lastMessageText ?? null,
+    lastMessageFileName: r.lastMessageFileName ?? null,
+    lastMessageIsSystem: Number(r.lastMessageIsSystem ?? 0) === 1,
+    lastMessageAt: r.lastMessageAt ?? null,
     hackathon: {
       id: r.hackathonId,
       title: r.hackathonTitle,
@@ -829,9 +851,11 @@ export const listMyContracts = async (req: Request, res: Response) => {
   // مراجعة الشروط (step 1) لا تُعتبر عقوداً بعد — تظل في قائمة الرعايات
   // الجارية فقط، حتى لا يربك الراعي بـ"عقود قيد التوقيع" لطلبات لم تتم
   // المفاوضة عليها فعلاً.
-  // الحالة المشتقّة:
-  //  - "ساري"            : وصل المرحلة 4 (وقّع الطرفان)
-  //  - "بانتظار توقيعك" : steps 2-3 (الراعي وافق على الشروط ودخل التوقيع)
+  // الحالة المشتقّة (3 مراحل):
+  //  - "ساري"              : وقّع الطرفان (step >= 3)
+  //  - "في انتظار التوقيع" : step 2 (الراعي وافق على الشروط وفتحت مرحلة التوقيع)
+  //  - "قيد المراجعة"      : step 1 (المنظم أرسل الشروط، الراعي ما وافق بعد)
+  // اللغة موحّدة مع SponsorSponsorships.tsx والـ stats card عشان نفس المسمّى يظهر في كل مكان.
   const [rows] = await pool.query<MyContractRow[]>(
     `SELECT
        sa.SA_ID                AS contractId,
@@ -854,14 +878,19 @@ export const listMyContracts = async (req: Request, res: Response) => {
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
        LEFT JOIN organizer_profile op ON op.M_ID = h.HAM_ID
       WHERE sa.SM_ID = ? AND sa.SA_Status = 'accepted'
-        AND sa.SA_NegotiationStep >= 2
+        AND sa.SA_NegotiationStep >= 1
       ORDER BY sa.SA_AppliedAt DESC`,
     [sponsorId]
   );
 
   const items = rows.map((r) => {
     const sponsorSigned = r.negotiationStep >= 3;
-    const status: 'ساري' | 'بانتظار توقيعك' = sponsorSigned ? 'ساري' : 'بانتظار توقيعك';
+    const status: 'ساري' | 'في انتظار التوقيع' | 'قيد المراجعة' =
+      r.negotiationStep >= 3
+        ? 'ساري'
+        : r.negotiationStep >= 2
+          ? 'في انتظار التوقيع'
+          : 'قيد المراجعة';
 
     return {
       id: r.contractId,
@@ -933,13 +962,18 @@ async function ensureChatParticipant(
   req: Request,
   res: Response,
   applicationId: number,
-): Promise<{ allowed: boolean; sponsorId?: number }> {
+): Promise<{ allowed: boolean; sponsorId?: number; isOrganizerSide?: boolean }> {
   if (!req.user) {
     res.status(401).json({ error: 'unauthenticated' });
     return { allowed: false };
   }
-  const [rows] = await pool.query<ApplicationOwnersRow[]>(
-    `SELECT sa.SM_ID, h.HAM_ID
+  interface ChatGuardRow extends RowDataPacket {
+    SM_ID: number;
+    HAM_ID: number;
+    hackathon_ID: number;
+  }
+  const [rows] = await pool.query<ChatGuardRow[]>(
+    `SELECT sa.SM_ID, h.HAM_ID, h.hackathon_ID
        FROM sponsor_application sa
        JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
        JOIN hackathon h ON h.hackathon_ID = sp.hackathon_ID
@@ -950,13 +984,35 @@ async function ensureChatParticipant(
     res.status(404).json({ error: 'التقديم غير موجود' });
     return { allowed: false };
   }
-  const { SM_ID, HAM_ID } = rows[0];
+  const { SM_ID, HAM_ID, hackathon_ID } = rows[0];
   const me = req.user.memberId;
-  if (me !== SM_ID && me !== HAM_ID) {
-    res.status(403).json({ error: 'لا تملك صلاحية الوصول لهذه المحادثة' });
-    return { allowed: false };
+
+  // The sponsor on the application is always allowed.
+  if (me === SM_ID) {
+    return { allowed: true, sponsorId: SM_ID, isOrganizerSide: false };
   }
-  return { allowed: true, sponsorId: SM_ID };
+  // Owner is always allowed and counts as the organizer side.
+  if (me === HAM_ID) {
+    return { allowed: true, sponsorId: SM_ID, isOrganizerSide: true };
+  }
+  // Co-manager assigned to the 'sponsors' section of this hackathon also counts
+  // as the organizer side. Mirrors the registrations/projects section pattern
+  // in hackathon.controller.ts.
+  const [hcmRows] = await pool.query<RowDataPacket[]>(
+    `SELECT 1 FROM hackathon_co_manager
+      WHERE hackathon_ID = ?
+        AND M_ID = ?
+        AND HCM_InviteStatus = 'accepted'
+        AND HCM_Section = 'sponsors'
+      LIMIT 1`,
+    [hackathon_ID, me],
+  );
+  if (hcmRows.length > 0) {
+    return { allowed: true, sponsorId: SM_ID, isOrganizerSide: true };
+  }
+
+  res.status(403).json({ error: 'لا تملك صلاحية الوصول لهذه المحادثة' });
+  return { allowed: false };
 }
 
 export const listApplicationMessages = async (req: Request, res: Response) => {
@@ -1024,6 +1080,57 @@ export const sendApplicationMessage = async (req: Request, res: Response) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
       [applicationId, req.user!.memberId, text, fileName, fileUrl, fileSize, mimeType],
     );
+
+    // Notify the OTHER party that a new chat message arrived. To avoid spamming
+    // the organizer with one notification per typed line, we dedupe: skip insert
+    // if an unread chat notification already exists for this conversation.
+    try {
+      const senderIsSponsor = req.user!.memberId === guard.sponsorId;
+      interface ChatNotifInfoRow extends RowDataPacket {
+        HAM_ID: number;
+        SM_ID: number;
+        H_title: string;
+        hackathonId: number;
+        sponsorName: string;
+      }
+      const [infoRows] = await pool.query<ChatNotifInfoRow[]>(
+        `SELECT h.HAM_ID, sa.SM_ID, h.H_title, h.hackathon_ID AS hackathonId,
+                COALESCE(s.S_Brand, CONCAT_WS(' ', m.M_FName, m.M_LName)) AS sponsorName
+           FROM sponsor_application sa
+           JOIN sponsor_package sp ON sp.SP_ID = sa.SP_ID
+           JOIN hackathon h        ON h.hackathon_ID = sp.hackathon_ID
+           JOIN member m           ON m.M_ID = sa.SM_ID
+           LEFT JOIN sponsor s     ON s.SM_ID = m.M_ID
+          WHERE sa.SA_ID = ?`,
+        [applicationId],
+      );
+      if (infoRows.length > 0) {
+        const info = infoRows[0];
+        const recipientId = senderIsSponsor ? info.HAM_ID : info.SM_ID;
+        const actionRoute = senderIsSponsor
+          ? `/admin/hackathon/${info.hackathonId}/sponsors?app=${applicationId}`
+          : `/sponsor/messages?app=${applicationId}`;
+        const [dupe] = await pool.query<RowDataPacket[]>(
+          `SELECT 1 FROM notification
+            WHERE M_ID = ? AND N_ActionRoute = ? AND N_Read = 0 LIMIT 1`,
+          [recipientId, actionRoute],
+        );
+        if (dupe.length === 0) {
+          await notifySponsorEvent(
+            recipientId,
+            senderIsSponsor ? `رسالة جديدة من ${info.sponsorName}` : `رسالة جديدة من المنظم`,
+            senderIsSponsor
+              ? `رسالة جديدة بخصوص رعاية هاكاثون "${info.H_title}".`
+              : `رسالة جديدة بخصوص هاكاثون "${info.H_title}".`,
+            'فتح المحادثة',
+            actionRoute,
+          );
+        }
+      }
+    } catch (notifErr) {
+      console.error('[sendApplicationMessage] notification failed:', notifErr);
+    }
+
     return res.status(201).json({
       id: result.insertId,
       senderId: req.user!.memberId,
@@ -1215,8 +1322,9 @@ export const saveContractTerms = async (req: Request, res: Response) => {
   const c = await loadContract(applicationId);
   if (!c) return res.status(404).json({ error: 'التقديم غير موجود' });
 
-  // كتابة الشروط من اختصاص المنظم فقط
-  if (req.user!.memberId !== c.hamId) {
+  // كتابة الشروط من اختصاص المنظم — يشمل المالك ومدير قسم الرعاة
+  // (guard.isOrganizerSide مضبوط من ensureChatParticipant).
+  if (!guard.isOrganizerSide) {
     return res.status(403).json({ error: 'كتابة الشروط من اختصاص المنظم فقط' });
   }
   if (c.status !== 'accepted') {
@@ -1348,7 +1456,9 @@ export const signContract = async (req: Request, res: Response) => {
   }
 
   const me = req.user!.memberId;
-  const isOrganizer = me === c.hamId;
+  // Organizer side = the hackathon owner OR a co-manager assigned to the
+  // 'sponsors' section. ensureChatParticipant already validated this.
+  const isOrganizer = guard.isOrganizerSide === true;
   const isSponsor = me === c.smId;
 
   try {
@@ -1413,123 +1523,6 @@ export const signContract = async (req: Request, res: Response) => {
   }
 };
 
-export const uploadReceipt = async (req: Request, res: Response) => {
-  if (!ensureSponsor(req, res)) return;
-
-  const applicationId = Number(req.params.id);
-  if (!Number.isInteger(applicationId) || applicationId <= 0) {
-    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
-  }
-
-  if (!req.file) {
-    return res.status(400).json({ error: 'لم يتم إرفاق ملف الإيصال' });
-  }
-
-  const sponsorId = req.user!.memberId;
-
-  try {
-    const [rows] = await pool.query<NegotiationRow[]>(
-      'SELECT SM_ID, SA_NegotiationStep, SA_Status FROM sponsor_application WHERE SA_ID = ?',
-      [applicationId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'التقديم غير موجود' });
-    }
-    if (rows[0].SM_ID !== sponsorId) {
-      return res.status(403).json({ error: 'لا يحق لكِ رفع إيصال على هذا التقديم' });
-    }
-    if (rows[0].SA_Status !== 'accepted') {
-      return res
-        .status(409)
-        .json({ error: 'لا يمكنكِ رفع الإيصال قبل قبول طلب الرعاية' });
-    }
-
-    await pool.execute(
-      `UPDATE sponsor_application
-          SET SA_PaidAt = NOW(),
-              SA_ReceiptFile = ?,
-              SA_NegotiationStep = 4
-        WHERE SA_ID = ?`,
-      [req.file.filename, applicationId]
-    );
-
-    return res.json({
-      id: applicationId,
-      paidAt: new Date(),
-      receiptFile: req.file.filename,
-      negotiationStep: 4,
-    });
-  } catch (err) {
-    console.error('[uploadReceipt] error:', err);
-    return res.status(500).json({ error: 'تعذّر رفع الإيصال، حاولي لاحقاً' });
-  }
-};
-
-// شغل ربى — مرحلة advance يدوية (generic). نحتفظ بها كـ fallback لأي
-// flow يستخدمها، ونستخدم signContract حقّنا للتوقيع الصريح بـ gates أقوى.
-export const advanceNegotiationStep = async (req: Request, res: Response) => {
-  if (!ensureSponsor(req, res)) return;
-
-  const applicationId = Number(req.params.id);
-  if (!Number.isInteger(applicationId) || applicationId <= 0) {
-    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
-  }
-
-  const sponsorId = req.user!.memberId;
-
-  try {
-    const [rows] = await pool.query<NegotiationRow[]>(
-      'SELECT SM_ID, SA_NegotiationStep, SA_Status FROM sponsor_application WHERE SA_ID = ?',
-      [applicationId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'التقديم غير موجود' });
-    }
-    if (rows[0].SM_ID !== sponsorId) {
-      return res.status(403).json({ error: 'لا يحق لكِ تعديل هذا التقديم' });
-    }
-    if (rows[0].SA_Status === 'rejected') {
-      return res.status(409).json({ error: 'لا يمكن إكمال التفاوض على تقديم مرفوض' });
-    }
-
-    const currentStep = rows[0].SA_NegotiationStep;
-    if (currentStep >= 3) {
-      return res.status(409).json({ error: 'وصلتِ إلى المرحلة الأخيرة بالفعل' });
-    }
-
-    const nextStep = currentStep + 1;
-    if (nextStep === 3) {
-      await pool.execute(
-        `UPDATE sponsor_application
-            SET SA_NegotiationStep = ?,
-                SA_SponsorSignedAt = COALESCE(SA_SponsorSignedAt, NOW())
-          WHERE SA_ID = ?`,
-        [nextStep, applicationId]
-      );
-      await pool.execute(
-        `INSERT INTO sponsor_application_message
-           (SA_ID, M_ID, SAM_Text, SAM_IsSystem)
-         VALUES (?, ?, ?, 1)`,
-        [
-          applicationId,
-          sponsorId,
-          '🎉 تم توقيع العقد رقمياً واكتملت الرعاية بنجاح',
-        ]
-      );
-    } else {
-      await pool.execute(
-        'UPDATE sponsor_application SET SA_NegotiationStep = ? WHERE SA_ID = ?',
-        [nextStep, applicationId]
-      );
-    }
-
-    return res.json({ id: applicationId, negotiationStep: nextStep });
-  } catch (err) {
-    console.error('[advanceNegotiationStep] error:', err);
-    return res.status(500).json({ error: 'تعذّر تحديث الخطوة، حاولي لاحقاً' });
-  }
-};
-
 export const cancelApplication = async (req: Request, res: Response) => {
   if (!ensureSponsor(req, res)) return;
 
@@ -1550,6 +1543,15 @@ export const cancelApplication = async (req: Request, res: Response) => {
     }
     if (rows[0].SM_ID !== sponsorId) {
       return res.status(403).json({ error: 'لا يحق لك إلغاء هذا التقديم' });
+    }
+
+    // الحذف مسموح فقط طالما المنظم لم يبدأ التفاوض بعد — أي SA_Status='pending'.
+    // بمجرد ما المنظم يقبل (status='accepted')، حتى لو لم يبدأ توقيع، نمنع الحذف
+    // لتجنّب فقدان محادثات / شروط / تواقيع متبادلة.
+    if (rows[0].SA_Status !== 'pending') {
+      return res.status(409).json({
+        error: 'لا يمكن إلغاء الطلب بعد أن يبدأ المنظم بالتفاوض. تواصل مع المنظم في المحادثة.',
+      });
     }
 
     await pool.execute(
@@ -1655,3 +1657,93 @@ export const applyToPackage = async (req: Request, res: Response) => {
   }
 };
 
+// ═════════════════════════════════════════════════════════════════════════════
+// In-platform notifications for the sponsor
+// Reads from the same `notification` table the organizer reads from. Sponsor's
+// notifications are written by event-driven triggers (terms received, organizer
+// signed, new chat message, etc.) via notifySponsorEvent() throughout this file.
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface SponsorNotificationRow extends RowDataPacket {
+  N_ID: number;
+  N_Type: string;
+  N_Title: string;
+  N_Message: string;
+  N_Read: number;
+  N_ActionLabel: string | null;
+  N_ActionRoute: string | null;
+  N_CreatedAt: Date | string;
+}
+
+export const listNotifications = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+  const memberId = req.user!.memberId;
+  try {
+    const [rows] = await pool.query<SponsorNotificationRow[]>(
+      `SELECT N_ID, N_Type, N_Title, N_Message, N_Read, N_ActionLabel, N_ActionRoute, N_CreatedAt
+         FROM notification
+        WHERE M_ID = ?
+        ORDER BY N_CreatedAt DESC
+        LIMIT 100`,
+      [memberId],
+    );
+    const items = rows.map((r) => ({
+      id: r.N_ID,
+      type: r.N_Type,
+      title: r.N_Title,
+      message: r.N_Message,
+      read: r.N_Read === 1,
+      actionLabel: r.N_ActionLabel,
+      actionRoute: r.N_ActionRoute,
+      createdAt: r.N_CreatedAt,
+    }));
+    return res.json({ items });
+  } catch (err) {
+    console.error('[sponsor.listNotifications] error:', err);
+    return res.status(500).json({ error: 'تعذّر تحميل الإشعارات' });
+  }
+};
+
+export const markNotificationRead = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'رقم الإشعار غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+  const [result] = await pool.execute<ResultSetHeader>(
+    'UPDATE notification SET N_Read = 1 WHERE N_ID = ? AND M_ID = ?',
+    [id, memberId],
+  );
+  if (result.affectedRows === 0) {
+    return res.status(404).json({ error: 'الإشعار غير موجود' });
+  }
+  return res.status(204).send();
+};
+
+export const markAllNotificationsRead = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+  const memberId = req.user!.memberId;
+  await pool.execute(
+    'UPDATE notification SET N_Read = 1 WHERE M_ID = ? AND N_Read = 0',
+    [memberId],
+  );
+  return res.status(204).send();
+};
+
+export const deleteNotification = async (req: Request, res: Response) => {
+  if (!ensureSponsor(req, res)) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'رقم الإشعار غير صالح' });
+  }
+  const memberId = req.user!.memberId;
+  const [result] = await pool.execute<ResultSetHeader>(
+    'DELETE FROM notification WHERE N_ID = ? AND M_ID = ?',
+    [id, memberId],
+  );
+  if (result.affectedRows === 0) {
+    return res.status(404).json({ error: 'الإشعار غير موجود' });
+  }
+  return res.status(204).send();
+};

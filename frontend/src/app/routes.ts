@@ -12,7 +12,6 @@ import { ParticipantDashboard } from "./components/ParticipantDashboard";
 import { ParticipantHackathons } from "./components/ParticipantHackathons";
 import { ParticipantHackathonDetails } from "./components/ParticipantHackathonDetails";
 import { SmartMatchmaking } from "./components/SmartMatchmaking";
-import { PaymentsPage } from "./components/PaymentsPage";
 import { CreateHackathon } from "./components/CreateHackathon";
 import MyHackathons from "./components/MyHackathons";
 import HackathonPreview from "./components/HackathonPreview";
@@ -108,7 +107,6 @@ export const router = createBrowserRouter([
           { path: "workspace", Component: ParticipantWorkspace },
           { path: "matchmaking", Component: SmartMatchmaking },
           { path: "messages", Component: MessagesPage },
-          { path: "payments", Component: PaymentsPage },
           { path: "notifications", Component: ParticipantNotifications },
           { path: "profile", Component: ParticipantProfile },
         ],

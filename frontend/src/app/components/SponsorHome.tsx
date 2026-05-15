@@ -23,12 +23,17 @@ interface InsightsResponse {
   statuses: { label: string; count: number }[];
 }
 
+// Keys here must match exactly what getMyInsights returns in
+// backend/src/controllers/sponsor.controller.ts. The 4-state model:
+//   قيد المراجعة → قيد التفاوض → قيد التنفيذ → مكتمل
+// مرفوض and أخرى are fallbacks (rejection enum exists but no UI path sets it).
 const STATUS_COLOR: Record<string, { color: string; bg: string }> = {
-  "مكتمل": { color: "#10b981", bg: "#f0fdf4" },
-  "قيد التفاوض": { color: "#6366f1", bg: "#eef2ff" },
-  "قيد التقديم": { color: "#f59e0b", bg: "#fffbeb" },
-  "مرفوض": { color: "#ef4444", bg: "#fef2f2" },
-  "أخرى": { color: "#64748b", bg: "#f8fafc" },
+  "مكتمل":        { color: "#10b981", bg: "#f0fdf4" },
+  "قيد التنفيذ":  { color: "#8b5cf6", bg: "#f5f3ff" },
+  "قيد التفاوض":  { color: "#3b82f6", bg: "#eff6ff" },
+  "قيد المراجعة": { color: "#f59e0b", bg: "#fffbeb" },
+  "مرفوض":        { color: "#ef4444", bg: "#fef2f2" },
+  "أخرى":         { color: "#64748b", bg: "#f8fafc" },
 };
 
 export function SponsorHome() {
@@ -359,31 +364,40 @@ export function SponsorHome() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Top Organizers */}
-                <div className="bg-white rounded-xl border border-gray-100 p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <Building2 className="w-3.5 h-3.5 text-[#6366f1]" />
-                    <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
-                      أكثر المنظمين تعاوناً
-                    </p>
+                {/* Top Organizers — clickable card, hover lifts + sets border tint */}
+                <button
+                  type="button"
+                  onClick={() => navigate("/sponsor/sponsorships")}
+                  className="group bg-white rounded-xl border border-gray-100 p-4 text-right transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-[#6366f1]/40 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-[#6366f1] transition-transform group-hover:scale-110" />
+                      <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
+                        أكثر المنظمين تعاوناً
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-[#6366f1] opacity-0 group-hover:opacity-100 transition-opacity" style={{ fontWeight: 600 }}>
+                      عرض ←
+                    </span>
                   </div>
                   <div className="space-y-2.5">
                     {insights!.organizers.length === 0 ? (
                       <p className="text-gray-400 text-xs">لا توجد بيانات بعد</p>
                     ) : (
                       insights!.organizers.map((o, i) => (
-                        <div key={i}>
+                        <div key={i} className="group/row rounded-lg p-1.5 -m-1.5 transition-colors hover:bg-[#6366f1]/5">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
                               {o.name}
                             </span>
-                            <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>
-                              {o.count} رعايات
+                            <span className="text-gray-400 group-hover/row:text-[#6366f1]" style={{ fontSize: "0.65rem", fontWeight: 600 }}>
+                              {o.count} {o.count === 1 ? "رعاية" : "رعايات"}
                             </span>
                           </div>
-                          <div className="w-full bg-gray-100 rounded-full h-1.5">
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                             <div
-                              className="h-1.5 rounded-full"
+                              className="h-1.5 rounded-full transition-all duration-500 group-hover/row:opacity-90"
                               style={{
                                 width: `${(o.count / maxOrganizerCount) * 100}%`,
                                 background: "#6366f1",
@@ -394,33 +408,42 @@ export function SponsorHome() {
                       ))
                     )}
                   </div>
-                </div>
+                </button>
 
                 {/* Top Packages */}
-                <div className="bg-white rounded-xl border border-gray-100 p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <Package className="w-3.5 h-3.5 text-[#f59e0b]" />
-                    <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
-                      أكثر الباقات اختياراً
-                    </p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/sponsor/sponsorships")}
+                  className="group bg-white rounded-xl border border-gray-100 p-4 text-right transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-[#f59e0b]/40 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <Package className="w-3.5 h-3.5 text-[#f59e0b] transition-transform group-hover:scale-110" />
+                      <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
+                        أكثر الباقات اختياراً
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-[#f59e0b] opacity-0 group-hover:opacity-100 transition-opacity" style={{ fontWeight: 600 }}>
+                      عرض ←
+                    </span>
                   </div>
                   <div className="space-y-2.5">
                     {insights!.packages.length === 0 ? (
                       <p className="text-gray-400 text-xs">لا توجد بيانات بعد</p>
                     ) : (
                       insights!.packages.map((p, i) => (
-                        <div key={i}>
+                        <div key={i} className="group/row rounded-lg p-1.5 -m-1.5 transition-colors hover:bg-[#f59e0b]/5">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
                               {p.name}
                             </span>
-                            <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>
-                              {p.count} مرّات
+                            <span className="text-gray-400 group-hover/row:text-[#f59e0b]" style={{ fontSize: "0.65rem", fontWeight: 600 }}>
+                              {p.count} {p.count === 1 ? "مرة" : "مرّات"}
                             </span>
                           </div>
-                          <div className="w-full bg-gray-100 rounded-full h-1.5">
+                          <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                             <div
-                              className="h-1.5 rounded-full"
+                              className="h-1.5 rounded-full transition-all duration-500 group-hover/row:opacity-90"
                               style={{
                                 width: `${(p.count / maxPackageCount) * 100}%`,
                                 background: "#f59e0b",
@@ -431,15 +454,24 @@ export function SponsorHome() {
                       ))
                     )}
                   </div>
-                </div>
+                </button>
 
                 {/* Status Breakdown */}
-                <div className="bg-white rounded-xl border border-gray-100 p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <BarChart3 className="w-3.5 h-3.5 text-[#10b981]" />
-                    <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
-                      حالة الرعايات
-                    </p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/sponsor/sponsorships")}
+                  className="group bg-white rounded-xl border border-gray-100 p-4 text-right transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-[#10b981]/40 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <BarChart3 className="w-3.5 h-3.5 text-[#10b981] transition-transform group-hover:scale-110" />
+                      <p className="text-gray-600 text-xs" style={{ fontWeight: 600 }}>
+                        حالة الرعايات
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-[#10b981] opacity-0 group-hover:opacity-100 transition-opacity" style={{ fontWeight: 600 }}>
+                      عرض ←
+                    </span>
                   </div>
                   <div className="space-y-2.5">
                     {insights!.statuses.length === 0 ? (
@@ -448,18 +480,24 @@ export function SponsorHome() {
                       insights!.statuses.map((s, i) => {
                         const palette = STATUS_COLOR[s.label] ?? STATUS_COLOR["أخرى"];
                         return (
-                          <div key={i}>
+                          <div
+                            key={i}
+                            className="group/row rounded-lg p-1.5 -m-1.5 transition-colors"
+                            style={{ background: "transparent" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = palette.bg; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                          >
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-gray-700" style={{ fontSize: "0.75rem", fontWeight: 600 }}>
                                 {s.label}
                               </span>
-                              <span className="text-gray-400" style={{ fontSize: "0.65rem" }}>
-                                {s.count} رعاية
+                              <span style={{ fontSize: "0.65rem", fontWeight: 600, color: palette.color }}>
+                                {s.count} {s.count === 1 ? "رعاية" : "رعايات"}
                               </span>
                             </div>
-                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                            <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                               <div
-                                className="h-1.5 rounded-full"
+                                className="h-1.5 rounded-full transition-all duration-500"
                                 style={{
                                   width: `${(s.count / maxStatusCount) * 100}%`,
                                   background: palette.color,
@@ -471,7 +509,7 @@ export function SponsorHome() {
                       })
                     )}
                   </div>
-                </div>
+                </button>
               </div>
             )}
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router";
-import { Sparkles, LogOut } from "lucide-react";
+import { useLocation, useNavigate, Link } from "react-router";
+import { Bell, Sparkles, LogOut } from "lucide-react";
 import { clearAuth } from "../../lib/auth";
 import { apiGet } from "../../lib/api";
 
@@ -34,9 +34,23 @@ const NAV_ITEMS: { label: string; page: SponsorNavPage; path: string }[] = [
 
 export function SponsorNavbar({ activePage }: SponsorNavbarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarLetter, setAvatarLetter] = useState<string>("ش");
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Refetch unread on every route change so the badge clears the moment the
+  // sponsor opens /sponsor/notifications (which auto-marks-all-read on mount).
+  useEffect(() => {
+    apiGet<{ items: { read?: boolean }[] }>("/sponsors/notifications")
+      .then((data) => setUnreadCount(data.items.filter((n) => !n.read).length))
+      .catch(() => setUnreadCount(0));
+  }, [location.pathname]);
+
+  // While the sponsor is on the notifications page itself, hide the dot — the
+  // inbox is open so the signal would just be noise.
+  const showDot = unreadCount > 0 && location.pathname !== "/sponsor/notifications";
 
   // اجلب الـ avatar من الـ API + استمع لأي تحديث للصورة من البروفايل
   useEffect(() => {
@@ -111,6 +125,27 @@ export function SponsorNavbar({ activePage }: SponsorNavbarProps) {
 
         {/* ── Actions (left side in RTL) ── */}
         <div className="flex items-center gap-1.5">
+          {/* Notifications bell */}
+          <button
+            onClick={() => navigate("/sponsor/notifications")}
+            title="الإشعارات"
+            aria-label="الإشعارات"
+            className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+              activePage === "notifications"
+                ? "bg-[#fef2f2] text-[#e35654]"
+                : "text-gray-400 hover:bg-[#fef2f2] hover:text-[#e35654]"
+            }`}
+            style={{ border: "1px solid #f3f4f6" }}
+          >
+            <Bell className="w-4 h-4" />
+            {showDot && (
+              <span
+                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white"
+                style={{ background: "#e35654" }}
+              />
+            )}
+          </button>
+
           {/* Avatar */}
           <button
             onClick={() => navigate("/sponsor/profile")}
@@ -129,10 +164,6 @@ export function SponsorNavbar({ activePage }: SponsorNavbarProps) {
             ) : (
               avatarLetter
             )}
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
-              style={{ background: "#10b981" }}
-            />
           </button>
 
           {/* Logout */}

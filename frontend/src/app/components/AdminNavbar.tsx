@@ -1,6 +1,8 @@
-import { Link, useNavigate } from 'react-router';
-import { Search, Bell, Sparkles, LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
+import { Bell, Sparkles, LogOut } from 'lucide-react';
 import { clearAuth } from '../../lib/auth';
+import { apiGet } from '../../lib/api';
 
 export type AdminNavPage = 'home' | 'hackathons' | 'create';
 
@@ -10,6 +12,22 @@ interface AdminNavbarProps {
 
 export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Re-fetch unread count whenever the URL changes — this catches the case where
+  // the user opens the notifications page (which auto-marks-all-read), then
+  // navigates away: the badge should reflect the new zero count without a full reload.
+  useEffect(() => {
+    apiGet<{ items: { read?: boolean }[] }>('/organizers/notifications')
+      .then((data) => setUnreadCount(data.items.filter((n) => !n.read).length))
+      .catch(() => setUnreadCount(0));
+  }, [location.pathname]);
+
+  // While the user is sitting on the notifications page, hide the badge regardless
+  // of the cached count — they are already viewing the inbox, the red dot is noise.
+  const showDot = unreadCount > 0 && location.pathname !== '/admin/notifications';
+
   const handleLogout = () => {
     clearAuth();
     navigate('/');
@@ -72,15 +90,6 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
 
         {/* Actions (Left side) */}
         <div className="flex items-center gap-1.5 justify-self-end">
-          {/* Search */}
-          <div className="relative hidden lg:block">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              placeholder="ابحث..."
-              className="pr-9 pl-4 py-2 rounded-xl border border-gray-100 bg-gray-50 text-xs w-36 focus:outline-none focus:border-[#e35654] focus:bg-white focus:w-44 transition-all duration-200"
-            />
-          </div>
-
           {/* Bell */}
           <Link
             to="/admin/notifications"
@@ -88,10 +97,12 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
             style={{ border: '1px solid #f3f4f6' }}
           >
             <Bell className="w-4 h-4" />
-            <span
-              className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white"
-              style={{ background: '#e35654' }}
-            />
+            {showDot && (
+              <span
+                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white"
+                style={{ background: '#e35654' }}
+              />
+            )}
           </Link>
 
           {/* Avatar */}
@@ -106,10 +117,6 @@ export function AdminNavbar({ activePage = 'home' }: AdminNavbarProps) {
             }}
           >
             م
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
-              style={{ background: '#10b981' }}
-            />
           </Link>
 
           {/* Logout */}

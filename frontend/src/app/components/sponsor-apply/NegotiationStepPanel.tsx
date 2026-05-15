@@ -11,6 +11,7 @@ import {
   ArrowRight,
   Loader2,
   User,
+  X,
 } from "lucide-react";
 
 interface ConversationInfo {
@@ -373,13 +374,26 @@ export function NegotiationStepPanel({
     }
     return (
       <div className="mx-5 my-3 bg-white rounded-2xl border border-gray-200">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
-            العقد الرقمي
-          </h3>
-          <p className="text-gray-400 text-xs mt-1">
-            راجع العقد ووقّع عليه إلكترونياً لإتمام الرعاية.
-          </p>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-gray-900" style={{ fontWeight: 700 }}>
+              العقد الرقمي
+            </h3>
+            <p className="text-gray-400 text-xs mt-1">
+              راجع العقد ووقّع عليه إلكترونياً لإتمام الرعاية.
+            </p>
+          </div>
+          {/* Close button — returns the user to the free chat thread so they
+              can keep talking without leaving this conversation. */}
+          <button
+            type="button"
+            onClick={() => onViewStep(0)}
+            title="إغلاق والعودة للمحادثة"
+            aria-label="إغلاق"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
         <div className="px-5 py-4">
           <div className="border border-gray-200 rounded-2xl overflow-hidden">

@@ -15,6 +15,7 @@ import {
   sendJudgeAssignmentEmail,
 } from '../lib/mail';
 import { env } from '../config/env';
+import { notifyHackathonOrganizer } from '../lib/notifyOrganizer';
 
 interface HackathonRow extends RowDataPacket {
   hackathon_ID: number;
@@ -1651,6 +1652,35 @@ export const acceptInvitation = async (req: Request, res: Response) => {
           WHERE HCM_ID = ?`,
         [req.user.memberId, r.HCM_ID],
       );
+
+      // Notify the hackathon's owner that a co-manager / staff member has joined.
+      try {
+        const [hcmRows] = await pool.query<RowDataPacket[]>(
+          `SELECT hcm.hackathon_ID, hcm.HCM_FullName, hcm.HCM_Role, hcm.HCM_Section
+             FROM hackathon_co_manager hcm
+            WHERE hcm.HCM_ID = ?`,
+          [r.HCM_ID],
+        );
+        if (hcmRows.length > 0) {
+          const hcm = hcmRows[0] as {
+            hackathon_ID: number;
+            HCM_FullName: string;
+            HCM_Role: 'manager' | 'staff';
+            HCM_Section: string | null;
+          };
+          const roleLabel = hcm.HCM_Role === 'manager' ? 'مدير قسم' : 'موظف';
+          void notifyHackathonOrganizer(hcm.hackathon_ID, {
+            type: 'acceptance',
+            title: `${roleLabel} جديد انضم لفريق التنظيم`,
+            message: `قَبِل ${hcm.HCM_FullName || 'العضو'} الدعوة للانضمام لفريق التنظيم.`,
+            actionLabel: 'عرض الفريق',
+            actionRoute: `/admin/hackathon/${hcm.hackathon_ID}/team`,
+          });
+        }
+      } catch (notifErr) {
+        console.error('acceptInvitation (co-manager) notification failed:', notifErr);
+      }
+
       return res.json({ kind: 'co_manager', status: 'accepted' });
     }
 
@@ -1691,6 +1721,27 @@ export const acceptInvitation = async (req: Request, res: Response) => {
           WHERE HJ_ID = ?`,
         [req.user.memberId, j.HJ_ID],
       );
+
+      // Notify the hackathon's owner that a judge accepted the invitation.
+      try {
+        const [hjRows] = await pool.query<RowDataPacket[]>(
+          'SELECT hackathon_ID, HJ_FullName FROM hackathon_judge WHERE HJ_ID = ?',
+          [j.HJ_ID],
+        );
+        if (hjRows.length > 0) {
+          const hj = hjRows[0] as { hackathon_ID: number; HJ_FullName: string };
+          void notifyHackathonOrganizer(hj.hackathon_ID, {
+            type: 'acceptance',
+            title: `محكم قَبِل الدعوة للتحكيم`,
+            message: `قَبِل ${hj.HJ_FullName || 'المحكم'} دعوة التحكيم.`,
+            actionLabel: 'عرض المحكمين',
+            actionRoute: `/admin/hackathon/${hj.hackathon_ID}/projects`,
+          });
+        }
+      } catch (notifErr) {
+        console.error('acceptInvitation (judge) notification failed:', notifErr);
+      }
+
       return res.json({ kind: 'judge', status: 'accepted' });
     }
 
@@ -2207,7 +2258,10 @@ export const listHackathonSponsorApplications = async (req: Request, res: Respon
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) {
+  // Section-level access: owner OR a co-manager whose HCM_Section is 'sponsors'.
+  // The other section endpoints (registrations, projects) already follow this
+  // pattern; sponsors had been incorrectly locked to ensureOwner.
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'sponsors'))) {
     return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
@@ -2311,7 +2365,7 @@ export const startSponsorNegotiation = async (req: Request, res: Response) => {
   const saId = Number(req.params.saId);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
   if (!Number.isInteger(saId) || saId <= 0) return res.status(400).json({ error: 'invalid saId' });
-  if (!(await ensureOwner(id, req.user.memberId))) {
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'sponsors'))) {
     return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
   }
 
@@ -2380,7 +2434,9 @@ export const replaceSponsorPackages = async (req: Request, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'unauthenticated' });
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-  if (!(await ensureOwner(id, req.user.memberId))) return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+  if (!(await ensureSectionAccess(id, req.user.memberId, 'sponsors'))) {
+    return res.status(403).json({ error: 'forbidden', message: 'ليس لديك صلاحية لتنفيذ هذا الإجراء' });
+  }
 
   const items = Array.isArray(req.body?.sponsorPackages) ? req.body.sponsorPackages : null;
   if (!items) return res.status(400).json({ error: 'sponsorPackages must be an array' });
@@ -4126,28 +4182,27 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
     const targetCol = sub.T_ID !== null ? 'T_ID' : 'PM_ID';
     const targetVal = sub.T_ID !== null ? sub.T_ID : sub.PM_ID;
 
+    // Per the product spec: a judge's evaluation is FINAL the moment they
+    // submit. There is no edit-after-submit UI, and we don't want one — so
+    // we reject re-submission outright instead of silently updating the row.
     const [existing] = await conn.query<RowDataPacket[]>(
       `SELECT E_ID FROM evaluation
         WHERE HJ_ID = ? AND hackathon_ID = ? AND ${targetCol} = ? LIMIT 1`,
       [hjId, hackathonId, targetVal],
     );
-
-    let evaluationId: number;
     if (existing.length > 0) {
-      evaluationId = (existing[0] as { E_ID: number }).E_ID;
-      await conn.execute(
-        `UPDATE evaluation SET E_Comment = ?, E_EvaluatedAt = NOW() WHERE E_ID = ?`,
-        [comment || null, evaluationId],
-      );
-      await conn.execute('DELETE FROM evaluation_score WHERE E_ID = ?', [evaluationId]);
-    } else {
-      const [result] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO evaluation (HJ_ID, ${targetCol}, hackathon_ID, E_Comment)
-         VALUES (?, ?, ?, ?)`,
-        [hjId, targetVal, hackathonId, comment || null],
-      );
-      evaluationId = result.insertId;
+      await conn.rollback();
+      return res.status(409).json({
+        error: 'سبق تقييم هذا المشروع، لا يمكن تعديل التقييم بعد إرساله.',
+      });
     }
+
+    const [result] = await conn.execute<ResultSetHeader>(
+      `INSERT INTO evaluation (HJ_ID, ${targetCol}, hackathon_ID, E_Comment)
+       VALUES (?, ?, ?, ?)`,
+      [hjId, targetVal, hackathonId, comment || null],
+    );
+    const evaluationId = result.insertId;
 
     for (const s of normalizedScores) {
       await conn.execute(
@@ -4158,7 +4213,68 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
     }
 
     await conn.commit();
-    return res.json({ evaluationId, updated: existing.length > 0 });
+
+    // Two notifications fire after a successful evaluation submit:
+    //  (a) per-evaluation: "judge X submitted an evaluation"
+    //  (b) only the first time all expected evaluations are complete: "judging done"
+    try {
+      const [judgeRow] = await pool.query<RowDataPacket[]>(
+        'SELECT HJ_FullName FROM hackathon_judge WHERE HJ_ID = ?',
+        [hjId],
+      );
+      const judgeName = (judgeRow[0] as { HJ_FullName?: string } | undefined)?.HJ_FullName
+        || 'محكم';
+      void notifyHackathonOrganizer(hackathonId, {
+        type: 'evaluation',
+        title: `تقييم جديد من ${judgeName}`,
+        message: `سجّل ${judgeName} تقييماً لمشروع.`,
+        actionLabel: 'عرض التقييمات',
+        actionRoute: `/admin/hackathon/${hackathonId}/projects#eval=${evaluationId}`,
+      });
+
+      // Check whether ALL expected evaluations are now complete. Expected =
+      // every distinct (judge, assigned-team-submission) pair where the judge
+      // is accepted. If actual >= expected, fire the "all done" milestone —
+      // but only the first time (dedupe against an existing same-route row).
+      const [pendingCnt] = await pool.query<RowDataPacket[]>(
+        `SELECT
+            (SELECT COUNT(*) FROM team_submission ts
+               JOIN hackathon_judge hj
+                 ON hj.HJ_ID = ts.assigned_judge_id
+              WHERE ts.hackathon_ID = ?
+                AND hj.HJ_InviteStatus = 'accepted'
+                AND ts.assigned_judge_id IS NOT NULL) AS expected,
+            (SELECT COUNT(*) FROM evaluation
+              WHERE hackathon_ID = ?) AS actual`,
+        [hackathonId, hackathonId],
+      );
+      const { expected, actual } = (pendingCnt[0] as { expected: number; actual: number }) || { expected: 0, actual: 0 };
+      if (expected > 0 && actual >= expected) {
+        const [hamRow] = await pool.query<RowDataPacket[]>(
+          'SELECT HAM_ID FROM hackathon WHERE hackathon_ID = ?',
+          [hackathonId],
+        );
+        const ham = (hamRow[0] as { HAM_ID?: number } | undefined)?.HAM_ID;
+        if (ham) {
+          const milestoneRoute = `/admin/hackathon/${hackathonId}/projects#judging-complete`;
+          const [dupe] = await pool.query<RowDataPacket[]>(
+            'SELECT 1 FROM notification WHERE M_ID = ? AND N_ActionRoute = ? LIMIT 1',
+            [ham, milestoneRoute],
+          );
+          if (dupe.length === 0) {
+            await pool.execute(
+              `INSERT INTO notification (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+               VALUES (?, 'achievement', ?, ?, ?, ?)`,
+              [ham, 'اكتمل تحكيم الهاكاثون', 'سلّم جميع المحكمين تقييماتهم — الوقت لمراجعة النتائج.', 'عرض النتائج', milestoneRoute],
+            );
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.error('submitJudgeEvaluation notification failed:', notifErr);
+    }
+
+    return res.json({ evaluationId });
   } catch (err) {
     await conn.rollback();
     console.error('submitJudgeEvaluation error:', err);
