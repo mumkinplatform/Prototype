@@ -789,6 +789,34 @@ function newInviteToken(): string {
  * All-or-nothing: any bad email rejects the whole list so the leader can fix
  * it before retrying.
  */
+/**
+ * True iff the string matches a basic email shape (something@something.tld).
+ * Extracted as a pure helper so it can be unit-tested independently of any
+ * DB or HTTP context.
+ */
+export function isValidEmailFormat(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Normalises a raw `inviteEmails` payload coming from the request body:
+ *   - rejects non-array input by returning null
+ *   - trims + lowercases each entry
+ *   - drops empty strings and non-string values
+ *   - removes duplicates (so the same address can't take two slots)
+ * Pure — no DB, no I/O. Returns null on bad shape so callers can branch.
+ */
+export function cleanInviteEmails(emails: unknown): string[] | null {
+  if (!Array.isArray(emails)) return null;
+  return Array.from(
+    new Set(
+      emails
+        .map((e) => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
+        .filter((e) => e.length > 0),
+    ),
+  );
+}
+
 async function validateManualTeamInvites(
   emails: unknown,
   leaderMemberId: number,
@@ -799,21 +827,13 @@ async function validateManualTeamInvites(
   | { ok: true; emails: string[] }
   | { ok: false; status: number; error: string; detail?: string }
 > {
-  if (!Array.isArray(emails)) {
+  const cleaned = cleanInviteEmails(emails);
+  if (cleaned === null) {
     return { ok: false, status: 400, error: 'inviteEmails يجب أن تكون قائمة' };
   }
 
-  // Normalize, dedupe, basic format check
-  const cleaned = Array.from(
-    new Set(
-      emails
-        .map((e) => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
-        .filter((e) => e.length > 0),
-    ),
-  );
-
   for (const e of cleaned) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
+    if (!isValidEmailFormat(e)) {
       return { ok: false, status: 400, error: 'إيميل غير صالح', detail: e };
     }
   }
@@ -2506,7 +2526,7 @@ export const confirmSubmission = async (req: Request, res: Response) => {
 // Team Invitations — preview / accept / decline (manual team formation)
 // ═════════════════════════════════════════════════════════════════════════════
 
-interface TeamInviteLookupRow extends RowDataPacket {
+export interface TeamInviteLookupRow extends RowDataPacket {
   TI_ID: number;
   TI_Email: string;
   TI_Status: 'pending' | 'accepted' | 'declined' | 'expired';
@@ -2557,7 +2577,7 @@ async function loadTeamInviteContext(token: string): Promise<TeamInviteLookupRow
  * invite may also be effectively expired because of time. We don't auto-update
  * the row here — that's done by a separate cleanup, or just at next access.
  */
-function effectiveInviteStatus(
+export function effectiveInviteStatus(
   row: TeamInviteLookupRow,
   now = Date.now(),
 ): 'pending' | 'accepted' | 'declined' | 'expired' {
