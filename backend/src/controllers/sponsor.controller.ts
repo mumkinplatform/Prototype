@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../db/pool';
 import { extractBranding } from '../lib/branding';
+import { validatePackageId } from '../lib/sponsor-validation';
 
 interface SponsorProfileRow extends RowDataPacket {
   M_ID: number;
@@ -1569,12 +1570,12 @@ export const cancelApplication = async (req: Request, res: Response) => {
 export const applyToPackage = async (req: Request, res: Response) => {
   if (!ensureSponsor(req, res)) return;
 
-  // 1) تحقق من المدخل
-  const rawId = req.body?.packageId;
-  const packageId = Number(rawId);
-  if (!Number.isInteger(packageId) || packageId <= 0) {
-    return res.status(400).json({ error: 'رقم الباقة غير صالح' });
+  // 1) تحقق من المدخل (منطق التحقق منفصل في lib/sponsor-validation لتسهيل الـ unit testing)
+  const validation = validatePackageId(req.body?.packageId);
+  if (!validation.ok) {
+    return res.status(400).json({ error: validation.error });
   }
+  const packageId = validation.value;
 
   const sponsorId = req.user!.memberId;
 
