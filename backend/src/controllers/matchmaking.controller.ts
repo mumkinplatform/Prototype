@@ -106,7 +106,7 @@ export const suggestTeamsHandler = async (req: Request, res: Response) => {
   }
 
   const userId = req.user.memberId;
-  const { skills, hackathonId, teamSize, numTeams } = req.body ?? {};
+  const { skills, hackathonId } = req.body ?? {};
 
   if (!Array.isArray(skills) || skills.length === 0) {
     return res.status(400).json({ error: 'skills array is required' });
@@ -123,6 +123,18 @@ export const suggestTeamsHandler = async (req: Request, res: Response) => {
   }
 
   try {
+    // Team size is derived from the hackathon's own limits — subtract 1 because
+    // the requesting user counts as a member, so we only suggest teammates.
+    const [hackRows] = await pool.query<RowDataPacket[]>(
+      'SELECT H_Team_Max FROM hackathon WHERE hackathon_ID = ?',
+      [hackId],
+    );
+    if (hackRows.length === 0) {
+      return res.status(404).json({ error: 'hackathon not found' });
+    }
+    const teamMax = Number(hackRows[0].H_Team_Max) || 5;
+    const teamSize = Math.max(1, teamMax - 1);
+
     const sql = `
       SELECT
         m.M_ID,
@@ -156,17 +168,21 @@ export const suggestTeamsHandler = async (req: Request, res: Response) => {
       }))
       .filter((c) => c.skills.length > 0);
 
+    // Cap suggestion count by how many full teams we could actually build.
+    const buildable = Math.floor(candidates.length / teamSize);
+    const numTeams = Math.max(1, Math.min(3, buildable));
+
     const teams = suggestTeams({
       userSkills: skills as string[],
       candidates,
-      teamSize:
-        typeof teamSize === 'number' ? Math.max(2, Math.min(teamSize, 6)) : 3,
-      numTeams:
-        typeof numTeams === 'number' ? Math.max(1, Math.min(numTeams, 5)) : 3,
+      teamSize,
+      numTeams,
     });
 
     return res.json({
       candidatesCount: candidates.length,
+      teamSize,
+      numTeams,
       suggestedTeams: teams,
     });
   } catch (err) {

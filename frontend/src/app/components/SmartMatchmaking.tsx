@@ -140,8 +140,6 @@ export function SmartMatchmaking() {
       const data = await apiPost<ApiResponse>("/matchmaking/suggest-teams", {
         skills: skillLabels,
         hackathonId: fixedHackathonId,
-        teamSize: 3,
-        numTeams: 3,
       });
       setSuggestedTeams(data.suggestedTeams);
       setCandidatesCount(data.candidatesCount);
