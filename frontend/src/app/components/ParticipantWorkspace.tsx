@@ -322,7 +322,7 @@ interface ApiEvaluationsResponse {
 }
 
 // ─── Submission ───────────────────────────────────────────
-interface ApiSubmissionFile {
+export interface ApiSubmissionFile {
   id: number;
   name: string;
   url: string;
@@ -332,7 +332,7 @@ interface ApiSubmissionFile {
   uploaderName?: string | null;
 }
 
-interface ApiSubmission {
+export interface ApiSubmission {
   submissionId: number;
   projectName: string | null;
   projectDescription: string | null;
@@ -2334,7 +2334,7 @@ const PROJECT_TEXT_FIELDS: Record<
   demo:   { apiField: 'demoUrl',            type: 'url',      label: 'رابط النسخة التجريبية', placeholder: 'https://...' },
 };
 
-interface ProjectFormState {
+export interface ProjectFormState {
   projectName: string;
   projectDescription: string;
   repoUrl: string;
@@ -2349,7 +2349,7 @@ interface ProjectFormState {
 // typing); file-type fields are checked against the server's file list —
 // since we can't distinguish "this PDF is the presentation" from "this PDF
 // is the video", any uploaded file marks all file-type entries as filled.
-function computeSubmissionFieldStates(
+export function computeSubmissionFieldStates(
   data: ApiSubmission,
   form: ProjectFormState,
 ): Array<{ id: string; label: string; isFilled: boolean }> {
