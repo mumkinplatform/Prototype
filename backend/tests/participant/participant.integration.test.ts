@@ -123,7 +123,7 @@ describe('Integration: participant journey', () => {
     expect(submitRes.body.ok).toBe(true);
 
     const [submissions] = await pool.query<RowDataPacket[]>(
-      `SELECT TS_SubmittedAt, TS_ProjectName FROM team_submission
+      `SELECT TS_SubmittedAt, TS_ProjectName FROM submission
         WHERE PM_ID = 3 AND hackathon_ID = ?`,
       [hackathonId],
     );
