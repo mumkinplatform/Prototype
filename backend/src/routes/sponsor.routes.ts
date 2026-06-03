@@ -10,7 +10,6 @@ import {
   getOpportunityDetail,
   applyToPackage,
   listMyApplications,
-  cancelApplication,
   listMyContracts,
   listMyConversations,
   listApplicationMessages,
@@ -37,13 +36,12 @@ router.get('/opportunities', requireAuth, listOpportunities);
 router.get('/opportunities/:id', requireAuth, getOpportunityDetail);
 router.get('/applications', requireAuth, listMyApplications);
 router.post('/applications', requireAuth, applyToPackage);
-router.delete('/applications/:id', requireAuth, cancelApplication);
 router.get('/contracts', requireAuth, listMyContracts);
 router.get('/conversations', requireAuth, listMyConversations);
 router.get('/applications/:id/messages', requireAuth, listApplicationMessages);
-// رسائل الشات تقبل text و/أو ملف (multipart) — chatFileUpload middleware من ربى.
+// Chat messages accept text and/or a file (multipart) — chatFileUpload middleware (Ruba's).
 router.post('/applications/:id/messages', requireAuth, chatFileUpload, sendApplicationMessage);
-// شغل عقد المنظم/الراعي (شغلنا) — يتعايش مع شغل ربى:
+// Organizer/sponsor contract flow (our work) — coexists with Ruba's work:
 router.get('/applications/:id/contract', requireAuth, getApplicationContract);
 router.put('/applications/:id/contract', requireAuth, saveContractTerms);
 router.post('/applications/:id/accept-terms', requireAuth, acceptContractTerms);

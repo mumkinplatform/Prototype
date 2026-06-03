@@ -47,11 +47,6 @@ interface ExistingApplicationRow extends RowDataPacket {
   SP_Name: string;
 }
 
-interface ApplicationOwnerRow extends RowDataPacket {
-  SM_ID: number;
-  SA_Status: 'pending' | 'accepted' | 'rejected';
-}
-
 interface OpportunityDetailHackathonRow extends RowDataPacket {
   id: number;
   title: string;
@@ -74,8 +69,8 @@ interface SponsorPackageRow extends RowDataPacket {
   SP_Price: string | null;
   SP_Sponsor_Offer: string | null;
   SP_Resources: string | null;
-  // عمود JSON في قاعدة البيانات: mysql2 يفك التشفير تلقائياً ويرجّع array،
-  // لكن في بعض الإصدارات قد يرجّع string. نتعامل مع الحالتين أدناه.
+  // JSON column in the database: mysql2 decodes it automatically and returns an array,
+  // but some versions may return a string. We handle both cases below.
   SP_Benefits: unknown;
 }
 
@@ -182,8 +177,8 @@ interface MyApplicationDetailRow extends RowDataPacket {
 }
 
 /**
- * يتحقق من إن المستخدم الحالي راعٍ موثّق.
- * يستخدم في كل دوال الراعي لتجنب تكرار الفحص.
+ * Verifies that the current user is an authenticated sponsor.
+ * Used in all sponsor functions to avoid repeating the check.
  */
 function ensureSponsor(req: Request, res: Response): boolean {
   if (!req.user) {
@@ -245,11 +240,6 @@ export const listOpportunities = async (req: Request, res: Response) => {
   if (!req.user || req.user.role !== 'SPONSOR') {
     return res.status(403).json({ error: 'sponsor_required', message: 'هذه العملية متاحة للرعاة فقط' });
   }
-
-  // Two-step query — same pattern as participant.listHackathons / listMyRegistered.
-  // ORDER BY + H_Branding (large JSON / image data URLs) blows MySQL's sort_buffer
-  // once an organizer uploads a banner image, so we sort small columns first and
-  // fetch branding in a follow-up IN(...) query.
   const [rows] = await pool.query<OpportunityRow[]>(
     `SELECT
        h.hackathon_ID AS id,
@@ -284,7 +274,6 @@ export const listOpportunities = async (req: Request, res: Response) => {
       brandingById.set(b.hackathon_ID, b.H_Branding ?? null);
     }
   }
-
   const items = rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -300,7 +289,6 @@ export const listOpportunities = async (req: Request, res: Response) => {
     branding: extractBranding(brandingById.get(r.id) ?? null),
     views: r.views,
   }));
-
   return res.json({ items });
 };
 
@@ -314,12 +302,12 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
 
   const sponsorId = req.user!.memberId;
 
-  // زيادة عداد المشاهدات للهاكاثون (fire-and-forget — ما يأثر على الرد لو فشل)
+  // Increment the hackathon's view counter (fire-and-forget — doesn't affect the response if it fails)
   pool
     .execute('UPDATE hackathon SET H_views = H_views + 1 WHERE hackathon_ID = ?', [id])
     .catch((err) => console.error('[views increment] error:', err));
 
-  // 1) معلومات الهاكاثون الأساسية (مع التخصيص)
+  // 1) Basic hackathon info (with branding)
   const [hackathonRows] = await pool.query<OpportunityDetailHackathonRow[]>(
     `SELECT
        h.hackathon_ID AS id,
@@ -343,7 +331,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
   }
   const hk = hackathonRows[0];
 
-  // 2) الباقات المتاحة لهذا الهاكاثون
+  // 2) Available packages for this hackathon
   const [packageRows] = await pool.query<SponsorPackageRow[]>(
     `SELECT SP_ID, SP_Name, SP_Type, SP_Description, SP_Duration,
             SP_Price, SP_Sponsor_Offer, SP_Resources, SP_Benefits
@@ -353,7 +341,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
     [id]
   );
 
-  // 3) الباقات اللي قدّمت لها مسبقاً (لإظهار "تم التقديم" بدل زر التقديم)
+  // 3) Packages already applied to (to show "Applied" instead of the apply button)
   const [appliedRows] = await pool.query<MyApplicationRow[]>(
     `SELECT sa.SP_ID
        FROM sponsor_application sa
@@ -363,7 +351,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
   );
   const appliedSet = new Set(appliedRows.map((r) => r.SP_ID));
 
-  // 4) المسارات والجوائز (لعرض أغنى)
+  // 4) Tracks and prizes (for a richer display)
   const [trackRows] = await pool.query<TrackRow[]>(
     `SELECT HT_ID, HT_Name, HT_Description
        FROM hackathon_track
@@ -380,8 +368,8 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
   );
 
   const packages = packageRows.map((p) => {
-    // SP_Benefits عمود JSON: mysql2 يرجّعه عادةً array مفكوكة، ونادراً string.
-    // نتعامل مع الحالتين: لو array نأخذها مباشرة، ولو string نفك تشفيرها.
+    // SP_Benefits is a JSON column: mysql2 usually returns it as a parsed array, rarely a string.
+    // We handle both: if it's an array we take it directly, if a string we parse it.
     let benefits: string[] = [];
     const raw = p.SP_Benefits;
     let parsed: unknown = null;
@@ -408,7 +396,7 @@ export const getOpportunityDetail = async (req: Request, res: Response) => {
     };
   });
 
-  // ID لأول باقة قدّم لها الراعي في هذا الهاكاثون (null لو ما قدّم)
+  // The ID of the first package the sponsor applied to in this hackathon (null if none)
   const myApplicationPackageId = appliedRows.length > 0 ? appliedRows[0].SP_ID : null;
 
   return res.json({
@@ -525,7 +513,7 @@ export const getMyInsights = async (req: Request, res: Response) => {
   if (!ensureSponsor(req, res)) return;
   const sponsorId = req.user!.memberId;
 
-  // 1) أكثر المنظمين تعاوناً (عدد التقديمات لكل منظم)
+  // 1) Most collaborative organizers (number of applications per organizer)
   const [organizers] = await pool.query<InsightOrganizerRow[]>(
     `SELECT op.ORG_Name AS name, COUNT(*) AS count
        FROM sponsor_application sa
@@ -539,7 +527,7 @@ export const getMyInsights = async (req: Request, res: Response) => {
     [sponsorId]
   );
 
-  // 2) أكثر الباقات اختياراً
+  // 2) Most chosen packages
   const [packages] = await pool.query<InsightPackageRow[]>(
     `SELECT sp.SP_Name AS name, COUNT(*) AS count
        FROM sponsor_application sa
@@ -551,12 +539,12 @@ export const getMyInsights = async (req: Request, res: Response) => {
     [sponsorId]
   );
 
-  // 3) توزيع الحالات — 4 حالات منطقية تتدرج مع تقدّم الطلب:
-  //   pending                  → قيد المراجعة (لم يرد المنظم)
-  //   accepted + step 0        → قيد التفاوض (المحادثة فقط)
-  //   accepted + step 1 أو 2   → قيد التنفيذ (مراجعة شروط / توقيع)
-  //   accepted + step 3        → مكتمل (الطرفان وقّعا)
-  // الـ rejected موجودة في الـ enum لكن لا يوجد مسار في الكود يضعها — نتركها كخريطة احتياطية فقط.
+  // 3) Status distribution — 4 logical states that progress as the application advances:
+  //   pending                  → "قيد المراجعة" / under review (organizer hasn't responded)
+  //   accepted + step 0        → "قيد التفاوض" / negotiating (chat only)
+  //   accepted + step 1 or 2   → "قيد التنفيذ" / in progress (terms review / signing)
+  //   accepted + step 3        → "مكتمل" / completed (both parties signed)
+  // rejected exists in the enum but no code path sets it — we keep it as a fallback map only.
   const [statuses] = await pool.query<InsightStatusRow[]>(
     `SELECT
        CASE
@@ -606,7 +594,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
     website,
   } = req.body ?? {};
 
-  // التحقق من المدخلات
+  // Validate the inputs
   if (typeof fullName !== 'string' || fullName.trim().length < 2) {
     return res.status(400).json({ error: 'الاسم الكامل مطلوب (حرفين على الأقل)' });
   }
@@ -638,7 +626,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
     }
   }
 
-  // فصل الاسم الأول والأخير
+  // Split the first and last name
   const trimmedName = fullName.trim();
   const parts = trimmedName.split(/\s+/);
   const fname = parts.length > 1 ? parts.slice(0, -1).join(' ') : trimmedName;
@@ -675,7 +663,7 @@ export const updateMyProfile = async (req: Request, res: Response) => {
     );
     await conn.commit();
 
-    // أرجع البيانات الكاملة بعد الحفظ
+    // Return the full data after saving
     const [rows] = await pool.query<SponsorProfileRow[]>(
       `SELECT m.M_ID, m.M_Email, m.M_FName, m.M_LName, m.M_Bio,
               m.phone, m.city, m.avatar_url,
@@ -719,9 +707,9 @@ export const listMyConversations = async (req: Request, res: Response) => {
 
   const sponsorId = req.user!.memberId;
 
-  // كل محادثة = تقديم. التقديم النشط (pending أو accepted) يكون محادثة فعّالة.
-  // نضيف آخر رسالة فعلية + وقتها كـ subqueries عشان قائمة الـ sidebar تعرض
-  // اللي يصير حقيقة في الشات بدل نص ثابت مرتبط بحالة الطلب.
+  // Each conversation = an application. An active application (pending or accepted) is an active conversation.
+  // We add the last actual message + its time as subqueries so the sidebar list shows
+  // what's really happening in the chat instead of static text tied to the application status.
   const [rows] = await pool.query<MyConversationRow[]>(
     `SELECT
        sa.SA_ID                AS applicationId,
@@ -787,7 +775,7 @@ export const listMyPayments = async (req: Request, res: Response) => {
 
   const sponsorId = req.user!.memberId;
 
-  // مدفوعات الراعي = تقديماته المقبولة فقط (status='accepted')
+  // The sponsor's payments = only their accepted applications (status='accepted')
   const [rows] = await pool.query<MyPaymentRow[]>(
     `SELECT
        sa.SA_ID         AS applicationId,
@@ -821,7 +809,7 @@ export const listMyPayments = async (req: Request, res: Response) => {
     };
   });
 
-  // الإجماليات
+  // Totals
   const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
   const paidAmount = items
     .filter((it) => it.status === 'paid')
@@ -846,17 +834,17 @@ export const listMyContracts = async (req: Request, res: Response) => {
 
   const sponsorId = req.user!.memberId;
 
-  // العقود = الطلبات التي وصلت لمرحلة العقد الرقمي فعلاً.
-  // نشترط SA_NegotiationStep >= 2، أي بعد ما الراعي وافق على الشروط
-  // وانتقلت المرحلة لـ "العقد الرقمي". الطلبات في الشات (step 0) أو في
-  // مراجعة الشروط (step 1) لا تُعتبر عقوداً بعد — تظل في قائمة الرعايات
-  // الجارية فقط، حتى لا يربك الراعي بـ"عقود قيد التوقيع" لطلبات لم تتم
-  // المفاوضة عليها فعلاً.
-  // الحالة المشتقّة (3 مراحل):
-  //  - "ساري"              : وقّع الطرفان (step >= 3)
-  //  - "في انتظار التوقيع" : step 2 (الراعي وافق على الشروط وفتحت مرحلة التوقيع)
-  //  - "قيد المراجعة"      : step 1 (المنظم أرسل الشروط، الراعي ما وافق بعد)
-  // اللغة موحّدة مع SponsorSponsorships.tsx والـ stats card عشان نفس المسمّى يظهر في كل مكان.
+  // Contracts = applications that actually reached the digital-contract phase.
+  // We require SA_NegotiationStep >= 2, i.e. after the sponsor approved the terms
+  // and the phase moved to "digital contract". Applications still in chat (step 0) or in
+  // terms review (step 1) aren't considered contracts yet — they stay in the ongoing
+  // sponsorships list only, so the sponsor isn't confused by "contracts awaiting signature"
+  // for applications that haven't actually been negotiated.
+  // Derived status (3 phases):
+  //  - "ساري" (live)              : both parties signed (step >= 3)
+  //  - "في انتظار التوقيع" (awaiting signature) : step 2 (sponsor approved the terms and the signing phase opened)
+  //  - "قيد المراجعة" (under review)      : step 1 (organizer sent the terms, sponsor hasn't approved yet)
+  // The wording is unified with SponsorSponsorships.tsx and the stats card so the same label appears everywhere.
   const [rows] = await pool.query<MyContractRow[]>(
     `SELECT
        sa.SA_ID                AS contractId,
@@ -956,8 +944,8 @@ export const uploadBanner = async (req: Request, res: Response) => {
 };
 
 /**
- * يتأكد إن المستخدم الحالي طرف في التقديم (الراعي صاحبه أو المنظم المالك للهاكاثون).
- * يرجع true لو مسموح، يرسل خطأ ويرجع false لو غير مسموح.
+ * Ensures the current user is a party to the application (the owning sponsor or the organizer who owns the hackathon).
+ * Returns true if allowed; sends an error and returns false if not.
  */
 async function ensureChatParticipant(
   req: Request,
@@ -1150,18 +1138,18 @@ export const sendApplicationMessage = async (req: Request, res: Response) => {
 };
 
 // ─── Contract terms + signing ────────────────────────────────────────────────
-// تدفّق العقد بعد التفاوض في الشات:
-//   1. المنظم يكتب الشروط ويرسلها (PUT terms → step 1, SA_TermsSubmittedAt = NOW)
-//   2. الراعي يراجعها
-//   3. كل طرف يوقّع رقمياً (POST sign)
-//      - منظم يوقّع: SA_OrganizerSigned=1, step→2
-//      - راعي يوقّع: SA_SponsorSigned=1
-//      - لمن يوقّع الطرفان: step→4 (مكتمل) — العقد جاهز ويظهر في صفحة عقود
-//        الطرفين.
+// Contract flow after the chat negotiation:
+//   1. The organizer writes the terms and sends them (PUT terms → step 1, SA_TermsSubmittedAt = NOW)
+//   2. The sponsor reviews them
+//   3. Each party signs digitally (POST sign)
+//      - organizer signs: SA_OrganizerSigned=1, step→2
+//      - sponsor signs: SA_SponsorSigned=1
+//      - when both sign: step→4 (completed) — the contract is ready and shows on both
+//        parties' contracts page.
 //
-// نستخدم نفس الـ ensureChatParticipant guard الموجود — يقبل الراعي
-// (SM_ID === me) أو المنظم (HAM_ID === me). الدوال داخل كل endpoint تفحص
-// الدور قبل العمل الحساس (كتابة الشروط = منظم فقط).
+// We use the existing ensureChatParticipant guard — it accepts the sponsor
+// (SM_ID === me) or the organizer (HAM_ID === me). The functions inside each endpoint check
+// the role before any sensitive action (writing terms = organizer only).
 
 interface ContractRow extends RowDataPacket {
   applicationId: number;
@@ -1236,9 +1224,6 @@ async function loadContract(applicationId: number): Promise<ContractRow | null> 
   return rows[0] ?? null;
 }
 
-// إشعار خفيف لأحداث الرعاية. نستخدم نوع 'system' لأن ENUM الإشعارات الحالي
-// ما فيه 'sponsor' (وللحفاظ على التوافق مع شغل ربى ورفال). الفشل في إنشاء
-// الإشعار لا يجب أن يفشل العملية الأصلية — نسجل الخطأ فقط.
 async function notifySponsorEvent(
   recipientId: number,
   title: string,
@@ -1309,8 +1294,8 @@ export const getApplicationContract = async (req: Request, res: Response) => {
 /**
  * PUT /sponsors/applications/:id/contract   (organizer-only)
  * Body: { duration?, value?, logoRights?, displayTime?, dataAccess?, notes? }
- * يحفظ الشروط ويرفع المرحلة إلى 1 (مراجعة الشروط) + يسجّل وقت الإرسال.
- * مسموح فقط لو المرحلة <= 2 ولم يوقّع أي طرف (لمنع التعديل بعد التوقيع).
+ * Saves the terms and raises the phase to 1 (terms review) + records the submission time.
+ * Allowed only if the phase <= 2 and no party has signed (to prevent edits after signing).
  */
 export const saveContractTerms = async (req: Request, res: Response) => {
   const applicationId = Number(req.params.id);
@@ -1323,16 +1308,16 @@ export const saveContractTerms = async (req: Request, res: Response) => {
   const c = await loadContract(applicationId);
   if (!c) return res.status(404).json({ error: 'التقديم غير موجود' });
 
-  // كتابة الشروط من اختصاص المنظم — يشمل المالك ومدير قسم الرعاة
-  // (guard.isOrganizerSide مضبوط من ensureChatParticipant).
+  // Writing the terms is the organizer's responsibility — includes the owner and the sponsors-section manager
+  // (guard.isOrganizerSide is set by ensureChatParticipant).
   if (!guard.isOrganizerSide) {
     return res.status(403).json({ error: 'كتابة الشروط من اختصاص المنظم فقط' });
   }
   if (c.status !== 'accepted') {
     return res.status(409).json({ error: 'يجب قبول طلب الرعاية أولاً قبل تحرير الشروط' });
   }
-  // التعديل مسموح طول ما الراعي ما وافق على الشروط بعد. بمجرد ما يوافق
-  // (SA_SponsorAcceptedTerms=1)، الشروط مقفلة.
+  // Editing is allowed as long as the sponsor hasn't approved the terms yet. Once they approve
+  // (SA_SponsorAcceptedTerms=1), the terms are locked.
   if (c.sponsorAcceptedTerms === 1) {
     return res.status(409).json({ error: 'لا يمكن تعديل الشروط بعد موافقة الراعي عليها' });
   }
@@ -1349,8 +1334,8 @@ export const saveContractTerms = async (req: Request, res: Response) => {
   const dataAccess = norm(body.dataAccess);
   const notes = norm(body.notes);
 
-  // المرحلة بعد إرسال الشروط: 1 (مراجعة من الراعي). الانتقال إلى 2 (العقد
-  // الرقمي) يصير لاحقاً بعد قبول الراعي عبر /accept-terms.
+  // The phase after sending the terms: 1 (sponsor review). Moving to 2 (the digital
+  // contract) happens later after the sponsor accepts via /accept-terms.
   const newStep = 1;
 
   try {
@@ -1362,7 +1347,7 @@ export const saveContractTerms = async (req: Request, res: Response) => {
         WHERE SA_ID = ?`,
       [duration, value, logoRights, displayTime, dataAccess, notes, newStep, applicationId],
     );
-    // إشعار للراعي بوصول شروط العقد للمراجعة
+    // Notify the sponsor that the contract terms have arrived for review
     await notifySponsorEvent(
       c.smId,
       'وصلتك شروط عقد الرعاية',
@@ -1379,10 +1364,10 @@ export const saveContractTerms = async (req: Request, res: Response) => {
 
 /**
  * POST /sponsors/applications/:id/accept-terms   (sponsor-only)
- * الراعي يوافق على الشروط المرسلة. بعد القبول:
+ * The sponsor approves the sent terms. After approval:
  *   - SA_SponsorAcceptedTerms = 1
- *   - المرحلة ترتفع إلى 2 (العقد الرقمي) — يصبح التوقيع متاحاً للطرفين
- *   - الشروط تُقفل (المنظم ما يقدر يعدّلها بعد كذا)
+ *   - The phase rises to 2 (the digital contract) — signing becomes available to both parties
+ *   - The terms are locked (the organizer can't edit them after this)
  */
 export const acceptContractTerms = async (req: Request, res: Response) => {
   const applicationId = Number(req.params.id);
@@ -1413,7 +1398,7 @@ export const acceptContractTerms = async (req: Request, res: Response) => {
         WHERE SA_ID = ?`,
       [applicationId],
     );
-    // إشعار للمنظم بموافقة الراعي على الشروط
+    // Notify the organizer that the sponsor approved the terms
     await notifySponsorEvent(
       c.hamId,
       'وافق الراعي على الشروط',
@@ -1430,10 +1415,10 @@ export const acceptContractTerms = async (req: Request, res: Response) => {
 
 /**
  * POST /sponsors/applications/:id/sign   (organizer or sponsor)
- * يوقّع الطرف الحالي حسب دوره. القواعد:
- *   - لا توقيع قبل إرسال الشروط (SA_TermsSubmittedAt يجب ألا يكون NULL)
- *   - المنظم يوقّع أولاً (يرفع المرحلة إلى 2 — العقد الرقمي)
- *   - الراعي يوقّع بعد المنظم؛ لمن يوقّع الاثنان، المرحلة → 4 (مكتمل)
+ * Signs on behalf of the current party according to their role. Rules:
+ *   - No signing before the terms are sent (SA_TermsSubmittedAt must not be NULL)
+ *   - The organizer signs first (raises the phase to 2 — the digital contract)
+ *   - The sponsor signs after the organizer; when both sign, the phase → 4 (completed)
  */
 export const signContract = async (req: Request, res: Response) => {
   const applicationId = Number(req.params.id);
@@ -1467,10 +1452,8 @@ export const signContract = async (req: Request, res: Response) => {
       if (c.organizerSigned === 1) {
         return res.status(409).json({ error: 'سبق ووقّعت العقد' });
       }
-      // المنظم يوقّع: يرفع المرحلة إلى 2 على الأقل
+      // Organizer signs: raises the phase to at least 2
       const newStep = Math.max(2, c.negotiationStep);
-      // لو الراعي بالفعل موقّع (نادر لكن ممكن لو غيّرنا الترتيب لاحقاً)،
-      // يصبح العقد مكتملاً (step 3 بعد دمج migration ربى 030).
       const finalStep = c.sponsorSigned === 1 ? 3 : newStep;
       await pool.execute(
         `UPDATE sponsor_application
@@ -1479,7 +1462,7 @@ export const signContract = async (req: Request, res: Response) => {
           WHERE SA_ID = ?`,
         [finalStep, applicationId],
       );
-      // إشعار للراعي بتوقيع المنظم — جاء دوره للتوقيع
+      // Notify the sponsor that the organizer signed — it's their turn to sign
       await notifySponsorEvent(
         c.smId,
         'وقّع المنظم العقد',
@@ -1497,8 +1480,8 @@ export const signContract = async (req: Request, res: Response) => {
       if (c.organizerSigned !== 1) {
         return res.status(409).json({ error: 'لا يمكنك التوقيع قبل توقيع المنظم' });
       }
-      // الراعي يوقّع بعد المنظم → العقد مكتمل (step 3 بعد دمج migration
-      // ربى 030 اللي قلّصت المراحل من 5 إلى 4).
+      // The sponsor signs after the organizer → the contract is complete (step 3 after merging
+      // Ruba's migration 030, which reduced the phases from 5 to 4).
       await pool.execute(
         `UPDATE sponsor_application
             SET SA_SponsorSigned = 1, SA_SponsorSignedAt = NOW(),
@@ -1506,7 +1489,7 @@ export const signContract = async (req: Request, res: Response) => {
           WHERE SA_ID = ?`,
         [applicationId],
       );
-      // إشعار للمنظم بتوقيع الراعي — العقد ساري
+      // Notify the organizer that the sponsor signed — the contract is live
       await notifySponsorEvent(
         c.hamId,
         'وقّع الراعي العقد — العقد ساري',
@@ -1524,63 +1507,18 @@ export const signContract = async (req: Request, res: Response) => {
   }
 };
 
-export const cancelApplication = async (req: Request, res: Response) => {
-  if (!ensureSponsor(req, res)) return;
-
-  const applicationId = Number(req.params.id);
-  if (!Number.isInteger(applicationId) || applicationId <= 0) {
-    return res.status(400).json({ error: 'رقم التقديم غير صالح' });
-  }
-
-  const sponsorId = req.user!.memberId;
-
-  try {
-    const [rows] = await pool.query<ApplicationOwnerRow[]>(
-      'SELECT SM_ID, SA_Status FROM sponsor_application WHERE SA_ID = ?',
-      [applicationId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'التقديم غير موجود' });
-    }
-    if (rows[0].SM_ID !== sponsorId) {
-      return res.status(403).json({ error: 'لا يحق لك إلغاء هذا التقديم' });
-    }
-
-    // الحذف مسموح فقط طالما المنظم لم يبدأ التفاوض بعد — أي SA_Status='pending'.
-    // بمجرد ما المنظم يقبل (status='accepted')، حتى لو لم يبدأ توقيع، نمنع الحذف
-    // لتجنّب فقدان محادثات / شروط / تواقيع متبادلة.
-    if (rows[0].SA_Status !== 'pending') {
-      return res.status(409).json({
-        error: 'لا يمكن إلغاء الطلب بعد أن يبدأ المنظم بالتفاوض. تواصل مع المنظم في المحادثة.',
-      });
-    }
-
-    await pool.execute(
-      'DELETE FROM sponsor_application WHERE SA_ID = ?',
-      [applicationId]
-    );
-
-    return res.json({ id: applicationId, cancelled: true });
-  } catch (err) {
-    console.error('[cancelApplication] error:', err);
-    return res.status(500).json({ error: 'تعذّر إلغاء التقديم، حاول لاحقاً' });
-  }
-};
-
 export const applyToPackage = async (req: Request, res: Response) => {
   if (!ensureSponsor(req, res)) return;
 
-  // 1) تحقق من المدخل (منطق التحقق منفصل في lib/sponsor-validation لتسهيل الـ unit testing)
+  // 1) Validate the input
   const validation = validatePackageId(req.body?.packageId);
   if (!validation.ok) {
     return res.status(400).json({ error: validation.error });
   }
   const packageId = validation.value;
-
   const sponsorId = req.user!.memberId;
-
   try {
-    // 2) تحقق إن الباقة موجودة فعلاً + احصل على hackathon_ID
+    // 2) Verify the package actually exists + get the hackathon_ID
     const [packageRows] = await pool.query<PackageExistsRow[]>(
       'SELECT SP_ID, hackathon_ID FROM sponsor_package WHERE SP_ID = ?',
       [packageId]
@@ -1590,7 +1528,7 @@ export const applyToPackage = async (req: Request, res: Response) => {
     }
     const hackathonId = packageRows[0].hackathon_ID;
 
-    // 3) قيد العمل: راعٍ واحد = باقة واحدة لكل هاكاثون
+    // 3) Business rule: one sponsor = one package per hackathon
     const [existing] = await pool.query<ExistingApplicationRow[]>(
       `SELECT sa.SA_ID, sp.SP_Name
          FROM sponsor_application sa
@@ -1605,14 +1543,14 @@ export const applyToPackage = async (req: Request, res: Response) => {
       });
     }
 
-    // 4) أضف التقديم — UNIQUE KEY يمنع التكرار على نفس الباقة تلقائياً
+    // 4) Add the application — the UNIQUE KEY prevents duplicates on the same package automatically
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO sponsor_application (SM_ID, SP_ID, SA_Status)
        VALUES (?, ?, 'pending')`,
       [sponsorId, packageId]
     );
 
-    // 5) إشعار للمنظم بوصول طلب رعاية جديد
+    // 5) Notify the organizer that a new sponsorship request arrived
     interface NotifyApplyRow extends RowDataPacket {
       HAM_ID: number;
       H_title: string;
@@ -1648,7 +1586,6 @@ export const applyToPackage = async (req: Request, res: Response) => {
       status: 'pending',
     });
   } catch (err) {
-    // 5) معالجة التكرار (نفس الراعي قدّم لنفس الباقة قبل)
     const code = (err as { code?: string }).code;
     if (code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'سبق وقدّمت على هذه الباقة' });
