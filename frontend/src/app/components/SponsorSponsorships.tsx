@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
 import {
   ArrowRight,
   FileText,
@@ -14,10 +13,9 @@ import {
   Building2,
   FileSignature,
   Loader2,
-  Trash2,
   X,
 } from "lucide-react";
-import { apiGet, apiDelete, ApiError } from "../../lib/api";
+import { apiGet, ApiError } from "../../lib/api";
 import { HackathonCover, BrandingPayload } from "./HackathonCover";
 import { LogoPattern } from "./LogoPatterns";
 
@@ -85,9 +83,9 @@ interface ContractsResponse {
   items: ApiContract[];
 }
 
-// شكل العقد الكامل من /sponsors/applications/:id/contract — نفس الشكل
-// المستخدم عند المنظم. يحتوي البنود الستة + الأطراف + التواقيع، فالـ
-// modal يطلع متطابق على الجهتين.
+// The full contract shape from /sponsors/applications/:id/contract — the same
+// shape used on the organizer side. It holds the six terms + the parties + the
+// signatures, so the modal renders identically on both sides.
 interface FullContract {
   applicationId: number;
   terms: {
@@ -147,7 +145,8 @@ function mapContractToDisplay(c: ApiContract): DisplayContract {
     ? `${c.package.price.toLocaleString("ar-SA")} ر.س`
     : "—";
 
-  // العقد "ساري" بمجرد ما يخلّص الراعي خطواته (step=4). لو ما خلّص → بانتظار توقيعك
+  // The contract is "ساري" (live) once the sponsor finishes their steps (step=4).
+  // If not finished → awaiting your signature.
   const pendingHint = c.signed
     ? ""
     : "في انتظار توقيعك على العقد.";
@@ -354,16 +353,14 @@ export function SponsorSponsorships() {
   const [sponsorships, setSponsorships] = useState<DisplaySponsorship[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [cancellingId, setCancellingId] = useState<number | null>(null);
-  const [cancelling, setCancelling] = useState(false);
   const [contracts, setContracts] = useState<DisplayContract[]>([]);
   const [contractsLoading, setContractsLoading] = useState(true);
   const [contractsError, setContractsError] = useState<string | null>(null);
   const [viewingContractId, setViewingContractId] = useState<number | null>(null);
-  // العقد الكامل (بنود + تواقيع + أسماء الأطراف) يجي من
-  // /sponsors/applications/:id/contract. نخزنه per-application لمن المستخدم
-  // يفتح ملف العقد، عشان نعرض نفس محتوى المنظم بالضبط (مو نسخة قديمة من
-  // /sponsors/contracts).
+  // The full contract (terms + signatures + party names) comes from
+  // /sponsors/applications/:id/contract. We store it per-application for when the
+  // user opens the contract file, so we show exactly the organizer's content (not
+  // a stale copy from /sponsors/contracts).
   const [contractDetail, setContractDetail] = useState<FullContract | null>(null);
   const [contractDetailLoading, setContractDetailLoading] = useState(false);
   const [contractDetailError, setContractDetailError] = useState<string | null>(null);
@@ -390,7 +387,7 @@ export function SponsorSponsorships() {
     }
   };
 
-  // لو وصلت العقود بعد ما المستخدم فتح التبويب، علّمها كمشاهَدة مباشرة
+  // If the contracts arrive after the user opened the tab, mark them as seen right away
   useEffect(() => {
     if (mainView === "contracts" && !contractsLoading) {
       markContractsAsSeen();
@@ -398,9 +395,9 @@ export function SponsorSponsorships() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainView, contractsLoading, contracts.length]);
 
-  // عند فتح ملف العقد، نجلب التفاصيل الكاملة (البنود + التواقيع) من
-  // /sponsors/applications/:id/contract. هذا نفس endpoint اللي يستخدمه
-  // المنظم، فالـ modal على الجهتين يطلع متطابق المحتوى.
+  // When opening the contract file, we fetch the full details (terms + signatures)
+  // from /sponsors/applications/:id/contract. This is the same endpoint the
+  // organizer uses, so the modal renders identical content on both sides.
   useEffect(() => {
     if (viewingContractId === null) {
       setContractDetail(null);
@@ -487,29 +484,6 @@ export function SponsorSponsorships() {
     }
     return sorted;
   }, [sponsorships, activeTab, search, sortKey]);
-
-  const cancelTarget = cancellingId
-    ? sponsorships.find((s) => s.id === cancellingId)
-    : null;
-
-  const handleConfirmCancel = async () => {
-    if (cancellingId === null) return;
-    setCancelling(true);
-    try {
-      await apiDelete<{ id: number; cancelled: boolean }>(
-        `/sponsors/applications/${cancellingId}`
-      );
-      toast.success("تم حذف الرعاية بنجاح");
-      setSponsorships((prev) => prev.filter((s) => s.id !== cancellingId));
-      setCancellingId(null);
-    } catch (err: unknown) {
-      const message =
-        err instanceof ApiError ? err.message : "تعذّر حذف الرعاية";
-      toast.error(message);
-    } finally {
-      setCancelling(false);
-    }
-  };
 
   // Smart action config based on sponsorship status
   const getActionConfig = (sp: DisplaySponsorship) => {
@@ -635,7 +609,7 @@ export function SponsorSponsorships() {
                     key={label}
                     onClick={(e) => {
                       setSortKey(label);
-                      // أغلق الـ <details> بعد الاختيار
+                      // Close the <details> after selecting
                       (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open");
                     }}
                     className="w-full text-right px-3 py-2 rounded-xl text-sm transition-colors hover:bg-gray-50"
@@ -816,16 +790,6 @@ export function SponsorSponsorships() {
                       </button>
                     );
                   })()}
-                  {sp.rawStatus === "pending" && (
-                    <button
-                      onClick={() => setCancellingId(sp.id)}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-600 text-xs hover:bg-red-50 hover:border-red-300 transition-colors"
-                      title="سحب الطلب قبل بدء التفاوض"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      سحب الطلب
-                    </button>
-                  )}
                   <button
                     onClick={() => navigate(`/sponsor/messages?app=${sp.id}`)}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-gray-500 text-xs hover:bg-gray-50 hover:border-gray-300 transition-colors"
@@ -1057,9 +1021,10 @@ export function SponsorSponsorships() {
       {/* Contract View Modal */}
       {(() => {
         if (viewingContractId === null) return null;
-        // الـ modal على وجهة الراعي نفس بنية المنظم تماماً — يقرأ من
-        // /sponsors/applications/:id/contract الذي يرجّع البنود الستة +
-        // أسماء الأطراف (مع اسم المنظمة) + التواقيع الرقمية.
+        // The modal on the sponsor side has the exact same structure as the
+        // organizer's — it reads from /sponsors/applications/:id/contract, which
+        // returns the six terms + party names (with the organization name) +
+        // the digital signatures.
         return (
           <div
             className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 contract-modal-overlay"
@@ -1273,57 +1238,6 @@ export function SponsorSponsorships() {
         );
       })()}
 
-      {/* Cancel Confirmation Dialog */}
-      {cancelTarget && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => !cancelling && setCancellingId(null)}
-        >
-          <div
-            dir="rtl"
-            className="bg-white rounded-2xl p-6 max-w-md w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3
-              className="text-gray-900 mb-2"
-              style={{ fontWeight: 700, fontSize: "1.1rem" }}
-            >
-              تأكيد سحب الطلب
-            </h3>
-            <p className="text-sm text-gray-600 mb-1">
-              هل أنت متأكدة من سحب طلب الرعاية على:
-            </p>
-            <p
-              className="text-base mb-1"
-              style={{ fontWeight: 700, color: "#e35654" }}
-            >
-              {cancelTarget.name}
-            </p>
-            <p className="text-xs text-gray-500 mb-6">
-              سيُحذف الطلب بشكل نهائي. يمكنك التقديم مجدداً لاحقاً إذا غيّرتِ رأيك.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCancellingId(null)}
-                disabled={cancelling}
-                className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                style={{ fontWeight: 600 }}
-              >
-                تراجع
-              </button>
-              <button
-                onClick={handleConfirmCancel}
-                disabled={cancelling}
-                className="flex-1 py-2.5 rounded-xl text-sm text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ fontWeight: 600 }}
-              >
-                {cancelling && <Loader2 className="w-4 h-4 animate-spin" />}
-                {cancelling ? "جاري الحذف..." : "تأكيد الحذف"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

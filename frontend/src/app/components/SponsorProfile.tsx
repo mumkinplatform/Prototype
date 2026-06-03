@@ -155,7 +155,7 @@ export function SponsorProfile() {
   };
 
   const handleSave = async () => {
-    // كل الحقول إلزامية (ما عدا النبذة والبريد المقروء فقط)
+    // All fields are required (except the bio and the read-only email)
     const requiredFields: { key: keyof ProfileForm; label: string }[] = [
       { key: "brandName", label: "اسم الشركة" },
       { key: "fullName", label: "اسم المسؤول" },
@@ -222,7 +222,7 @@ export function SponsorProfile() {
       const res = await uploadProfileImage("avatar", file);
       const newAvatar = res.avatar ?? null;
       setAvatar(newAvatar);
-      // أبلغ الـ navbar حتى يحدّث الصورة فوراً
+      // Notify the navbar so it updates the image immediately
       window.dispatchEvent(
         new CustomEvent("mumkin:avatar-updated", { detail: { avatar: newAvatar } })
       );

@@ -25,8 +25,8 @@ interface InsightsResponse {
 
 // Keys here must match exactly what getMyInsights returns in
 // backend/src/controllers/sponsor.controller.ts. The 4-state model:
-//   قيد المراجعة → قيد التفاوض → قيد التنفيذ → مكتمل
-// مرفوض and أخرى are fallbacks (rejection enum exists but no UI path sets it).
+//   "قيد المراجعة" (under review) → "قيد التفاوض" (negotiating) → "قيد التنفيذ" (in progress) → "مكتمل" (completed)
+// "مرفوض" (rejected) and "أخرى" (other) are fallbacks (rejection enum exists but no UI path sets it).
 const STATUS_COLOR: Record<string, { color: string; bg: string }> = {
   "مكتمل":        { color: "#10b981", bg: "#f0fdf4" },
   "قيد التنفيذ":  { color: "#8b5cf6", bg: "#f5f3ff" },
@@ -75,39 +75,39 @@ export function SponsorHome() {
       {/* Hero Section */}
       <section className="relative bg-white py-20 overflow-hidden">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          {/* Soft gradient blobs - مموهة */}
+          {/* Soft gradient blobs - blurred */}
           <div className="absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
-            {/* Top left blob - أحمر */}
+            {/* Top left blob - red */}
             <div 
               className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full opacity-25 blur-3xl"
               style={{ background: 'radial-gradient(circle, rgba(227, 86, 84, 0.4) 0%, rgba(227, 86, 84, 0.2) 50%, transparent 70%)' }}
             ></div>
             
-            {/* Top right blob - ذهبي */}
+            {/* Top right blob - gold */}
             <div 
               className="absolute -top-24 -right-24 w-[600px] h-[600px] rounded-full opacity-30 blur-3xl"
               style={{ background: 'radial-gradient(circle, rgba(250, 187, 91, 0.4) 0%, rgba(250, 187, 91, 0.25) 50%, transparent 70%)' }}
             ></div>
             
-            {/* Center blob - أحمر وذهبي مدمج */}
+            {/* Center blob - red and gold blended */}
             <div 
               className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[450px] h-[450px] rounded-full opacity-20 blur-3xl"
               style={{ background: 'radial-gradient(circle, rgba(250, 187, 91, 0.3) 0%, rgba(227, 86, 84, 0.2) 50%, transparent 70%)' }}
             ></div>
             
-            {/* Bottom left blob - ذهبي */}
+            {/* Bottom left blob - gold */}
             <div 
               className="absolute -bottom-20 -left-20 w-[550px] h-[550px] rounded-full opacity-28 blur-3xl"
               style={{ background: 'radial-gradient(circle, rgba(250, 187, 91, 0.35) 0%, rgba(250, 187, 91, 0.2) 50%, transparent 70%)' }}
             ></div>
             
-            {/* Bottom right blob - أحمر */}
+            {/* Bottom right blob - red */}
             <div 
               className="absolute -bottom-28 -right-28 w-[500px] h-[500px] rounded-full opacity-25 blur-3xl"
               style={{ background: 'radial-gradient(circle, rgba(227, 86, 84, 0.35) 0%, rgba(227, 86, 84, 0.2) 50%, transparent 70%)' }}
             ></div>
             
-            {/* Small accent blob - مزيج أحمر وذهبي */}
+            {/* Small accent blob - red and gold mix */}
             <div 
               className="absolute top-1/4 right-1/4 w-[350px] h-[350px] rounded-full opacity-22 blur-3xl"
               style={{ background: 'radial-gradient(circle, rgba(227, 86, 84, 0.3) 0%, rgba(250, 187, 91, 0.15) 50%, transparent 70%)' }}
@@ -172,9 +172,9 @@ export function SponsorHome() {
             <div className="absolute bottom-36 left-64 w-7 h-7 border-2 border-green-400 opacity-50 transform rotate-45"></div>
           </div>
 
-          {/* Floating Icons - أيقونات الرعاية والاستثمار */}
+          {/* Floating Icons - sponsorship and investment icons */}
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
-            {/* Top Right - Handshake (رعاية) */}
+            {/* Top Right - Handshake (sponsorship) */}
             <div className="absolute top-20 right-32 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center rotate-12 animate-float" style={{ animation: 'float 6s ease-in-out infinite' }}>
               <Handshake className="w-6 h-6 text-blue-600" />
             </div>

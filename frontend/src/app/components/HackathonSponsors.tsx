@@ -45,23 +45,23 @@ interface SponsorRequest {
   status: 'pending' | 'negotiating' | 'contract_review' | 'organizer_signing' | 'sponsor_signing' | 'completed' | 'rejected';
   submittedDate: string;
   negotiationStep?: NegotiationStep;
-  currentStep: number; // SA_NegotiationStep من الباك (0..4) — يحرك شريط المراحل ولوحة الـ NegotiationStepPanel
+  currentStep: number; // SA_NegotiationStep from the backend (0..4) — drives the steps strip and the NegotiationStepPanel
   lastMessage?: string;
   unreadMessages?: number;
 }
 
 // Three negotiation steps shown in the strip. Step 3 (completed) is reached
 // only when both parties have signed — at that point the strip is replaced by
-// the green "العقد ساري" banner with a "عرض العقد" button, so the strip
-// itself doesn't need a separate "مكتمل" entry. Same shape as the sponsor side.
+// the green "العقد ساري" (contract live) banner with a "عرض العقد" (view contract) button, so the
+// strip itself doesn't need a separate "مكتمل" (completed) entry. Same shape as the sponsor side.
 const NEGOTIATION_STEPS = [
   { id: 0, label: 'التفاوض', icon: MessageCircle },
   { id: 1, label: 'مراجعة الشروط', icon: Edit3 },
   { id: 2, label: 'العقد الرقمي', icon: FileText },
 ];
 
-// شكل الرسالة كما يرجّعها endpoint الراعي المشترك (sponsor.controller.ts).
-// نحن في وجهة المنظم، فـ "رسالتي" = التي أرسلها مستخدم نوعه ORGANIZER.
+// The message shape returned by the shared sponsor endpoint (sponsor.controller.ts).
+// We're on the organizer side, so "my message" = one sent by a user of type ORGANIZER.
 interface ChatMessage {
   id: number;
   senderId: number;
@@ -71,9 +71,9 @@ interface ChatMessage {
   createdAt: string;
 }
 
-// شكل العقد كما يرجّعه GET /sponsors/applications/:id/contract. مشترك بين
-// الجهتين. terms = ما يكتبه المنظم. acceptance = موافقة الراعي على الشروط
-// (خطوة مستقلة عن التوقيع). signatures = التوقيع الرسمي النهائي.
+// The contract shape returned by GET /sponsors/applications/:id/contract. Shared
+// between both sides. terms = what the organizer writes. acceptance = the sponsor's
+// approval of the terms (a step separate from signing). signatures = the final official signature.
 interface ContractData {
   applicationId: number;
   status: 'pending' | 'accepted' | 'rejected';
@@ -106,8 +106,8 @@ interface ContractData {
   };
 }
 
-// شكل الفورم المحلي لتحرير الشروط — كلها strings عشان الـ inputs تتعامل
-// معها مباشرة. نتحول لـ null عند الإرسال إن كانت فاضية.
+// The local form shape for editing the terms — all strings so the inputs deal
+// with them directly. We convert to null on submit if they're empty.
 interface TermsForm {
   duration: string;
   value: string;
@@ -182,8 +182,8 @@ interface ApiSponsorApplication {
   receiptFile: string | null;
   organizerSigned: boolean;
   organizerSignedAt: string | null;
-  // قيمة الرعاية كما كتبها المنظم في فورم العقد (SA_TermValue). null إذا
-  // الشروط لم تُحرَّر بعد. لها أولوية على سعر الباقة لأنها أحدث.
+  // The sponsorship value as written by the organizer in the contract form (SA_TermValue).
+  // null if the terms haven't been edited yet. Takes priority over the package price as it's newer.
   contractValue: string | null;
   sponsor: {
     memberId: number;
@@ -214,7 +214,7 @@ interface ApiSponsorPackage {
 }
 
 // Map "accepted but step < 3" to in-progress UI states. "Completed" when
-// step reaches 3 (both parties signed — collapsed numbering من migration ربى 030).
+// step reaches 3 (both parties signed — collapsed numbering from Ruba's migration 030).
 function deriveUiStatus(s: ApiSponsorApplication): SponsorRequest['status'] {
   if (s.status === 'rejected') return 'rejected';
   if (s.status === 'pending') return 'pending';
@@ -233,7 +233,7 @@ function deriveUiStep(s: ApiSponsorApplication): NegotiationStep | undefined {
   return 'negotiation';
 }
 
-// رمز emoji لكل نوع رعاية — يطابق التخصيص في CreateHackathon.
+// An emoji icon for each sponsorship type — matches the assignment in CreateHackathon.
 const TYPE_ICON: Record<string, string> = {
   financial: '💰',
   technical: '💻',
@@ -243,8 +243,8 @@ const TYPE_ICON: Record<string, string> = {
   other: '🎯',
 };
 
-// أول حرفين من اسم الشركة لاستخدامهما في الـ avatar البديل عن الصورة. نفلتر
-// الفراغات والرموز عشان نحصل على حروف معبّرة فقط.
+// The first two letters of the company name, used in the fallback avatar instead
+// of an image. We filter out spaces and symbols to get meaningful letters only.
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '؟';
@@ -252,8 +252,8 @@ function getInitials(name: string): string {
   return (parts[0][0] ?? '') + (parts[1][0] ?? '');
 }
 
-// لون ثابت لكل اسم شركة بناءً على hash بسيط — يضمن نفس اللون لنفس الشركة
-// عبر إعادات التحميل بدون الحاجة لتخزينه في الـ DB.
+// A fixed color per company name based on a simple hash — guarantees the same
+// color for the same company across reloads without needing to store it in the DB.
 const AVATAR_COLORS = [
   'bg-blue-500',
   'bg-purple-500',
@@ -272,11 +272,11 @@ function getAvatarColor(name: string): string {
 
 function mapApiToRequest(s: ApiSponsorApplication): SponsorRequest {
   const priceNum = s.package.price ? Number(s.package.price) : 0;
-  // أولوية القيمة المعروضة:
-  //   1. SA_TermValue (ما كتبه المنظم في فورم العقد) — يعكس الاتفاق الفعلي،
-  //      مفيد للباقات غير المالية (مثل "200 وجبة" أو "مطوّرَين لمدة شهر").
-  //   2. سعر الباقة المعلَن (للباقات المالية قبل تحرير الشروط).
-  //   3. شرطة "—" إذا لا قيمة ولا سعر.
+  // Display value priority:
+  //   1. SA_TermValue (what the organizer wrote in the contract form) — reflects the
+  //      actual agreement, useful for non-financial packages (e.g. "200 meals" or "two devs for a month").
+  //   2. The package's listed price (for financial packages before the terms are edited).
+  //   3. A dash "—" if there's neither value nor price.
   let displayValue: string;
   if (s.contractValue && s.contractValue.trim()) {
     displayValue = s.contractValue;
@@ -336,8 +336,8 @@ export function HackathonSponsors() {
     color: PACKAGE_COLOR_PALETTE[0],
   };
   const [draft, setDraft] = useState<UiPackage>(emptyDraft);
-  // كرت الباقة في السايدبار يكون مطوي بشكل افتراضي ويتوسّع عند الضغط — يوفّر
-  // مساحة للسايدبار لمن يكون فيه كثير باقات. null = الكل مطوي.
+  // The package card in the sidebar is collapsed by default and expands on click —
+  // saves sidebar space when there are many packages. null = all collapsed.
   const [expandedPkgIdx, setExpandedPkgIdx] = useState<number | null>(null);
 
   // Filters
@@ -345,29 +345,29 @@ export function HackathonSponsors() {
   const [packageFilter, setPackageFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   
-  // الشات الحقيقي — رسائل لكل SA_ID. نحمّلها عند اختيار طلب ونعمل
-  // polling كل 5 ثوانٍ لجلب رسائل جديدة من الراعي. الرسالة الجديدة عند
-  // الإرسال تنحقن مباشرة في الـ map عشان تظهر فوراً بدون انتظار الـ poll.
+  // The real chat — messages per SA_ID. We load them when a request is selected and
+  // poll every 5 seconds to fetch new messages from the sponsor. A newly-sent message
+  // is injected directly into the map so it shows immediately without waiting for the poll.
   const [messagesByAppId, setMessagesByAppId] = useState<Record<number, ChatMessage[]>>({});
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
-  // المرحلة المعروضة في شريط الـ steps (قابلة للنقر بشكل حر زي MessagesPage).
-  // المرحلة الحقيقية على السيرفر تجي من selectedRequest.currentStep.
+  // The step shown in the steps strip (freely clickable like MessagesPage).
+  // The real server-side step comes from selectedRequest.currentStep.
   const [viewedStep, setViewedStep] = useState(0);
-  // البحث في قائمة المحادثات
+  // Search within the conversations list
   const [chatSearch, setChatSearch] = useState('');
-  // بيانات العقد لكل طلب (cached). تُحمَّل عند دخول مرحلة ≥ 1.
+  // Contract data per request (cached). Loaded when entering step ≥ 1.
   const [contractByAppId, setContractByAppId] = useState<Record<number, ContractData>>({});
   const [loadingContract, setLoadingContract] = useState(false);
-  // فورم تحرير الشروط — مشترك لكل المحادثات (نعيد تعبئته عند تبديل
-  // المحادثة المختارة). isEditingTerms = هل المنظم في وضع التعديل حالياً.
+  // The terms editing form — shared across all conversations (we refill it when
+  // switching the selected conversation). isEditingTerms = whether the organizer is currently editing.
   const [termsForm, setTermsForm] = useState<TermsForm>(EMPTY_TERMS);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [savingTerms, setSavingTerms] = useState(false);
   const [signingContract, setSigningContract] = useState(false);
   const [agreedToSign, setAgreedToSign] = useState(false);
-  // عرض ملف العقد في modal من تبويب "إدارة العقود". null = ما فيه modal مفتوح.
+  // View the contract file in a modal from the "Manage Contracts" tab. null = no modal open.
   const [viewingContractId, setViewingContractId] = useState<number | null>(null);
 
   // Load real applications on mount + after start-negotiation. Mapped through
@@ -402,8 +402,8 @@ export function HackathonSponsors() {
     try {
       await apiPut(`/hackathons/${hackathonId}/sponsor-packages`, {
         sponsorPackages: next.map((p) => ({
-          // نمرّر SP_ID للباقات الموجودة عشان الباك يعمل UPDATE بدل
-          // DELETE+INSERT، فلا تنحذف طلبات الرعاية المرتبطة بها.
+          // Pass SP_ID for existing packages so the backend does an UPDATE instead of
+          // DELETE+INSERT, so the sponsorship applications linked to them aren't deleted.
           id: p.id > 0 ? p.id : undefined,
           name: p.name,
           type: p.type,
@@ -427,22 +427,22 @@ export function HackathonSponsors() {
     }
   };
 
-  // الرسائل الحالية للطلب المختار — مصدر العرض الوحيد للشات.
+  // The current messages for the selected request — the single source for rendering the chat.
   const currentMessages: ChatMessage[] = selectedRequest
     ? messagesByAppId[selectedRequest.id] ?? []
     : [];
 
-  // عند تبديل المحادثة، نرجع viewedStep للمرحلة الحقيقية (currentStep). بعد
-  // اكتمال العقد (step 3) نعرض المحادثة الحرّة (viewedStep=0) بشكل افتراضي،
-  // ويفتح المنظم العقد فقط لو ضغط "عرض العقد" في الهيدر — نفس سلوك الراعي.
+  // When switching conversation, reset viewedStep to the real step (currentStep). After
+  // the contract is complete (step 3) we show the free chat (viewedStep=0) by default,
+  // and the organizer only opens the contract if they click "عرض العقد" in the header — same as the sponsor.
   useEffect(() => {
     if (!selectedRequest) return;
     setViewedStep(selectedRequest.currentStep >= 3 ? 0 : selectedRequest.currentStep);
   }, [selectedRequest?.id, selectedRequest?.currentStep]);
 
-  // تحميل رسائل الطلب المختار + polling كل 5 ثوانٍ لمتابعة رسائل الراعي
-  // الجديدة بدون WebSocket. نوقف الـ polling لمن المستخدم يبدل طلب أو
-  // يخرج من تبويب المفاوضات.
+  // Load the selected request's messages + poll every 5 seconds to track the sponsor's
+  // new messages without WebSocket. We stop polling when the user switches request or
+  // leaves the negotiations tab.
   useEffect(() => {
     if (!hackathonId || !selectedRequest) return;
     const saId = selectedRequest.id;
@@ -451,8 +451,8 @@ export function HackathonSponsors() {
     const fetchMessages = async (showSpinner: boolean) => {
       if (showSpinner) setLoadingMessages(true);
       try {
-        // ننادي endpoint الراعي المشترك — guard فيه يقبل المنظم تلقائياً
-        // لأنه يفحص ملكية الـ hackathon عبر join لـ sponsor_application.
+        // Call the shared sponsor endpoint — its guard accepts the organizer automatically
+        // because it checks hackathon ownership via a join to sponsor_application.
         const r = await apiGet<{ items: ChatMessage[] }>(
           `/sponsors/applications/${saId}/messages`,
         );
@@ -460,7 +460,7 @@ export function HackathonSponsors() {
           setMessagesByAppId((prev) => ({ ...prev, [saId]: r.items }));
         }
       } catch {
-        // فشل صامت — نتجنب إزعاج المستخدم بإشعارات أثناء polling متكرر.
+        // Silent failure — we avoid bothering the user with notifications during frequent polling.
       } finally {
         if (showSpinner && !cancelled) setLoadingMessages(false);
       }
@@ -488,19 +488,19 @@ export function HackathonSponsors() {
     ['negotiating', 'contract_review', 'organizer_signing', 'sponsor_signing', 'completed'].includes(r.status)
   );
 
-  // فلترة قائمة المحادثات بالبحث (اسم الشركة أو الباقة)
+  // Filter the conversations list by search (company name or package)
   const filteredChatList = activeConversations.filter((c) => {
     const q = chatSearch.trim().toLowerCase();
     if (!q) return true;
     return c.companyName.toLowerCase().includes(q) || c.package.toLowerCase().includes(q);
   });
 
-  // عدادات الداش بورد بحسب مرحلة التفاوض الفعلية (currentStep) — تعطي
-  // المنظم نظرة سريعة على عدد الطلبات في كل مرحلة.
-  // قيد التفاوض = طلب لم يبدأ أو في الشات (status=pending أو currentStep=0)
-  // مراجعة الشروط = الشروط مرسلة بانتظار موافقة الراعي (currentStep=1)
-  // التوقيع = الشروط موافَق عليها والعقد في مرحلة التوقيع (currentStep=2 أو 3)
-  // مكتملة = الطرفان وقّعا (currentStep=4)
+  // Dashboard counters by the actual negotiation step (currentStep) — give the
+  // organizer a quick view of how many requests are in each phase.
+  // Negotiating = request not started or in chat (status=pending or currentStep=0)
+  // Terms review = terms sent, awaiting the sponsor's approval (currentStep=1)
+  // Signing = terms approved and the contract is in the signing phase (currentStep=2 or 3)
+  // Completed = both parties signed (currentStep=4)
   const negotiatingCount = requests.filter(r =>
     r.status !== 'rejected' && (r.status === 'pending' || r.currentStep === 0)
   ).length;
@@ -509,7 +509,7 @@ export function HackathonSponsors() {
   // Use >= 3 (not === 3) so legacy rows that still carry the old step=4 from
   // the removed receipt-upload flow are still counted as completed.
   const completedCount = requests.filter(r => r.currentStep >= 3).length;
-  // عداد المحادثات في تبويب المفاوضات (نفس النطاق القديم)
+  // Conversations counter in the negotiations tab (same old scope)
   const chatCount = activeConversations.length;
 
   // Flip SA_Status → 'accepted' via the backend, then move the UI to the
@@ -536,15 +536,15 @@ export function HackathonSponsors() {
     }
   };
 
-  // تحميل بيانات العقد لمن يدخل المنظم مرحلة ≥ 1 (الشروط فما فوق). نعمل
-  // refetch خفيف عند العودة لنفس المحادثة كذلك عشان نلتقط آخر توقيع
-  // أرسله الراعي (بدون polling — التوقيع نادر).
+  // Load the contract data when the organizer enters step ≥ 1 (terms and beyond). We do
+  // a light refetch when returning to the same conversation too, to pick up the latest
+  // signature the sponsor sent (no polling — signing is rare).
   const currentContract: ContractData | null = selectedRequest
     ? contractByAppId[selectedRequest.id] ?? null
     : null;
 
-  // تحميل العقد لمن يفتح modal عرض العقد من تبويب إدارة العقود. لو موجود
-  // في الـ cache (المنظم زاره من قبل في المفاوضات) ما يعيد الجلب.
+  // Load the contract when the view-contract modal opens from the manage-contracts tab.
+  // If it's already in the cache (the organizer visited it before in negotiations) it doesn't refetch.
   useEffect(() => {
     if (viewingContractId === null) return;
     if (contractByAppId[viewingContractId]) return;
@@ -554,7 +554,7 @@ export function HackathonSponsors() {
         if (!cancelled) setContractByAppId((prev) => ({ ...prev, [viewingContractId]: r }));
       })
       .catch(() => {
-        // فشل صامت — الـ modal يعرض loading state
+        // Silent failure — the modal shows a loading state
       });
     return () => {
       cancelled = true;
@@ -570,7 +570,7 @@ export function HackathonSponsors() {
       .then((r) => {
         if (cancelled) return;
         setContractByAppId((prev) => ({ ...prev, [saId]: r }));
-        // عبّي الفورم بالقيم الموجودة (أو فاضي)
+        // Fill the form with the existing values (or empty)
         setTermsForm({
           duration: r.terms.duration ?? '',
           value: r.terms.value ?? '',
@@ -579,13 +579,13 @@ export function HackathonSponsors() {
           dataAccess: r.terms.dataAccess ?? '',
           notes: r.terms.notes ?? '',
         });
-        // إذا الشروط ما اتأرسلت بعد، نفتح وضع التعديل تلقائياً (المنظم
-        // أول داخل، يحتاج يعبي).
+        // If the terms haven't been sent yet, open edit mode automatically (the organizer
+        // entering first needs to fill them in).
         setIsEditingTerms(!r.terms.submittedAt);
         setAgreedToSign(false);
       })
       .catch(() => {
-        // فشل صامت — placeholder ما يظهر شيء حساس
+        // Silent failure — placeholder, nothing sensitive is shown
       })
       .finally(() => {
         if (!cancelled) setLoadingContract(false);
@@ -595,8 +595,8 @@ export function HackathonSponsors() {
     };
   }, [selectedRequest?.id, viewedStep]);
 
-  // تحقق إن كل حقول الفورم معبّأة قبل الإرسال — المنظم ما يقدر يرسل
-  // شروط ناقصة للراعي.
+  // Check that all form fields are filled before submitting — the organizer can't send
+  // incomplete terms to the sponsor.
   const allTermsFilled = (f: TermsForm) =>
     f.duration.trim() !== '' &&
     f.value.trim() !== '' &&
@@ -605,7 +605,7 @@ export function HackathonSponsors() {
     f.dataAccess.trim() !== '' &&
     f.notes.trim() !== '';
 
-  // حفظ الشروط (PUT) — يرفع المرحلة على الباك إلى 1 ويسجّل وقت الإرسال.
+  // Save the terms (PUT) — raises the backend step to 1 and records the submission time.
   const handleSaveTerms = async () => {
     if (!selectedRequest) return;
     if (!allTermsFilled(termsForm)) {
@@ -616,7 +616,7 @@ export function HackathonSponsors() {
     setSavingTerms(true);
     try {
       await apiPut(`/sponsors/applications/${saId}/contract`, termsForm);
-      // اعمل refetch للتأكد من القيم بعد الحفظ + تحديث currentStep في القائمة
+      // Refetch to confirm the values after saving + update currentStep in the list
       const r = await apiGet<ContractData>(`/sponsors/applications/${saId}/contract`);
       setContractByAppId((prev) => ({ ...prev, [saId]: r }));
       setRequests((prev) =>
@@ -636,7 +636,7 @@ export function HackathonSponsors() {
     }
   };
 
-  // توقيع العقد (المنظم). الباك يرفع المرحلة لـ 2 ويوقّع SA_OrganizerSigned.
+  // Sign the contract (organizer). The backend raises the step to 2 and signs SA_OrganizerSigned.
   const handleOrganizerSign = async () => {
     if (!selectedRequest || !agreedToSign) return;
     const saId = selectedRequest.id;
@@ -662,8 +662,8 @@ export function HackathonSponsors() {
     }
   };
 
-  // إرسال رسالة حقيقية للراعي عبر POST. لا auto-reply — الرد يجي من الراعي
-  // الفعلي وينعكس عند الـ poll التالي (أو فوراً عند الراعي بعد polling).
+  // Send a real message to the sponsor via POST. No auto-reply — the response comes from
+  // the actual sponsor and shows up on the next poll (or immediately on the sponsor side after polling).
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedRequest || !hackathonId || sendingMessage) return;
     const text = newMessage.trim();
@@ -671,8 +671,8 @@ export function HackathonSponsors() {
     setNewMessage('');
     setSendingMessage(true);
     try {
-      // الباك يرجع الرسالة بدون senderType/senderName، فنبنيهم محلياً للعرض
-      // الفوري — مع polling القادم تنرجع بشكلها الكامل من الباك.
+      // The backend returns the message without senderType/senderName, so we build them
+      // locally for immediate display — on the next poll it comes back fully formed from the backend.
       const sent = await apiPost<{ id: number; senderId: number; text: string; createdAt: string }>(
         `/sponsors/applications/${saId}/messages`,
         { text },
@@ -691,7 +691,7 @@ export function HackathonSponsors() {
       }));
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'تعذّر إرسال الرسالة');
-      setNewMessage(text); // ارجاع النص للحقل عشان المستخدم يقدر يحاول
+      setNewMessage(text); // Restore the text to the field so the user can retry
     } finally {
       setSendingMessage(false);
     }
@@ -849,7 +849,7 @@ export function HackathonSponsors() {
           <div className="flex gap-6">
             {/* Main Content - Requests */}
             <div className="flex-1">
-              {/* Stats — 4 كروت بـ hover خفيف فقط (لا فلترة، لا ضغط). */}
+              {/* Stats — 4 cards with a light hover only (no filtering, no click). */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {([
                   { label: 'قيد التفاوض', count: negotiatingCount, icon: MessageCircle, bg: 'bg-blue-100', text: 'text-blue-600' },
@@ -950,8 +950,8 @@ export function HackathonSponsors() {
                         <tr key={request.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              {/* avatar حقيقي: نعرض الصورة لو متوفرة، وإلا نظهر
-                                  أول حرفين من اسم الشركة على خلفية ملوّنة ثابتة. */}
+                              {/* Real avatar: show the image if available, otherwise show
+                                  the first two letters of the company name on a fixed colored background. */}
                               {request.companyLogo ? (
                                 <img
                                   src={request.companyLogo}
@@ -1051,8 +1051,8 @@ export function HackathonSponsors() {
                         key={pkg.id || `new-${idx}`}
                         className="rounded-xl border border-gray-100 hover:border-gray-200 transition-all overflow-hidden"
                       >
-                        {/* رأس مختصر: شعار النوع + اسم + أزرار + سهم. الضغط على
-                            الرأس يطوي/يفتح؛ الأزرار يستخدمن stopPropagation. */}
+                        {/* Compact header: type icon + name + buttons + arrow. Clicking
+                            the header collapses/expands; the buttons use stopPropagation. */}
                         <button
                           onClick={() => setExpandedPkgIdx(isOpen ? null : idx)}
                           className="w-full p-3 flex items-center justify-between text-right hover:bg-gray-50 transition-colors"
@@ -1104,8 +1104,8 @@ export function HackathonSponsors() {
                           </div>
                         </button>
 
-                        {/* محتوى مفصّل يظهر فقط عند التوسعة. للباقات غير المالية
-                            ما نعرض السعر — قيمتها = الموارد في "ما يقدمه الراعي". */}
+                        {/* Detailed content shown only when expanded. For non-financial packages
+                            we don't show the price — their value = the resources in "what the sponsor offers". */}
                         {isOpen && (
                           <div className="px-3 pb-3 pt-1 border-t border-gray-100 space-y-2">
                             {pkg.type === 'financial' && pkg.price > 0 && (
@@ -1135,10 +1135,10 @@ export function HackathonSponsors() {
             </div>
           </div>
         ) : mainTab === 'negotiations' ? (
-          // المفاوضات — UI مطابقة لـ MessagesPage عند الراعي (sidebar + step
-          // strip + bubbles بنفس الألوان). الفرق الوحيد: المستخدم هنا منظم،
-          // فـ"رسالتي" = senderType === 'ORGANIZER'. مراحل 1-4 placeholder
-          // مؤقتاً حتى نبني إنشاء العقد + التوقيع في المرحلة القادمة.
+          // Negotiations — UI identical to the sponsor's MessagesPage (sidebar + step
+          // strip + bubbles with the same colors). The only difference: the user here is an
+          // organizer, so "my message" = senderType === 'ORGANIZER'. Steps 1-4 are
+          // placeholder temporarily until we build contract creation + signing in the next phase.
           <div className="flex bg-white rounded-2xl border border-gray-100 overflow-hidden" style={{ height: 'calc(100vh - 320px)', minHeight: '600px' }}>
             {/* Conversations Sidebar */}
             <div className="w-72 flex-shrink-0 bg-white border-l border-gray-100 flex flex-col">
@@ -1302,7 +1302,7 @@ export function HackathonSponsors() {
                     </div>
                   )}
 
-                  {/* Step 0 = chat. Steps 1-4 = placeholder حتى المرحلة القادمة. */}
+                  {/* Step 0 = chat. Steps 1-4 = placeholder until the next phase. */}
                   {viewedStep === 0 ? (
                     <>
                       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-[#f7f7f6]">
@@ -1358,7 +1358,7 @@ export function HackathonSponsors() {
                       {/* Input */}
                       <div className="bg-white border-t border-gray-100 px-5 py-4 flex-shrink-0">
                         <div className="flex items-center gap-2.5">
-                          {/* مؤقتاً paperclip معطّل — مرفقات الشات قيد التطوير. */}
+                          {/* Paperclip temporarily disabled — chat attachments are under development. */}
                           <button
                             type="button"
                             disabled
@@ -1397,7 +1397,7 @@ export function HackathonSponsors() {
                           <p className="text-gray-500 text-xs">جاري تحميل بيانات العقد...</p>
                         </div>
                       ) : viewedStep === 1 ? (
-                        // ── المرحلة 1: تحرير/مراجعة الشروط ──
+                        // ── Step 1: edit/review the terms ──
                         <div className="bg-white rounded-2xl border border-gray-200 max-w-2xl mx-auto">
                           <div className="px-5 py-4 border-b border-gray-100">
                             <h3 className="text-gray-900 text-sm" style={{ fontWeight: 700 }}>
@@ -1498,8 +1498,8 @@ export function HackathonSponsors() {
                                     </div>
                                   ))}
                                 </div>
-                                {/* بانر حالة موافقة الراعي على الشروط — يحدّد
-                                    هل ينفتح العقد الرقمي أو يبقى مقفلاً. */}
+                                {/* Banner for the sponsor's terms-approval status — decides
+                                    whether the digital contract opens or stays locked. */}
                                 {currentContract?.acceptance.sponsorAccepted ? (
                                   <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl">
                                     <p className="text-green-800 text-xs flex items-center gap-1.5" style={{ fontWeight: 700 }}>
@@ -1561,7 +1561,7 @@ export function HackathonSponsors() {
                                   </button>
                                 </>
                               ) : currentContract?.acceptance.sponsorAccepted ? (
-                                // الراعي وافق → ما فيه تعديل، فقط زر الانتقال للعقد الرقمي
+                                // Sponsor approved → no editing, just a button to move to the digital contract
                                 <button
                                   onClick={() => setViewedStep(2)}
                                   className="px-4 py-2 rounded-xl bg-[#e35654] text-white text-xs hover:bg-[#cc4a48] inline-flex items-center gap-1.5"
@@ -1570,7 +1570,7 @@ export function HackathonSponsors() {
                                   <FileText className="w-3.5 h-3.5" /> الانتقال للعقد الرقمي
                                 </button>
                               ) : (
-                                // الراعي ما وافق بعد → السماح بالتعديل وإعادة الإرسال
+                                // Sponsor hasn't approved yet → allow editing and re-sending
                                 <button
                                   onClick={() => setIsEditingTerms(true)}
                                   className="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs hover:bg-gray-200 inline-flex items-center gap-1.5"
@@ -1583,10 +1583,10 @@ export function HackathonSponsors() {
                           </div>
                         </div>
                       ) : viewedStep === 2 ? (
-                        // ── المرحلة 2/3: العقد الرقمي ومراحل التوقيع ──
-                        // الباك يرفض التوقيع قبل موافقة الراعي على الشروط؛
-                        // الـ UI يعكس هذا: لا تظهر معاينة العقد أصلاً قبل
-                        // الموافقة، نطلب من المنظم الرجوع لانتظار الراعي.
+                        // ── Steps 2/3: the digital contract and the signing phases ──
+                        // The backend rejects signing before the sponsor approves the terms;
+                        // the UI mirrors this: the contract preview doesn't show at all before
+                        // approval, and we ask the organizer to go back and wait for the sponsor.
                         !currentContract?.terms.submittedAt ? (
                           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 max-w-md mx-auto text-center">
                             <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
@@ -1693,7 +1693,7 @@ export function HackathonSponsors() {
                                 ))}
                               </div>
 
-                              {/* قسم التواقيع */}
+                              {/* Signatures section */}
                               <div className="mt-4 grid grid-cols-2 gap-3">
                                 <div className={`rounded-xl p-3 border ${currentContract.signatures.organizerSigned ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
                                   <p className="text-gray-500 text-[10px] mb-1">توقيع المنظم</p>
@@ -1731,7 +1731,7 @@ export function HackathonSponsors() {
                                 </div>
                               </div>
 
-                              {/* زر التوقيع للمنظم (إن لم يوقّع بعد) */}
+                              {/* Organizer's sign button (if not signed yet) */}
                               {!currentContract.signatures.organizerSigned && (
                                 <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
                                   <label className="flex items-start gap-3 cursor-pointer">
@@ -1796,10 +1796,10 @@ export function HackathonSponsors() {
             </div>
           </div>
         ) : (
-          // ── إدارة العقود ──
-          // يعرض الطلبات اللي وصلت step 3 (موقّعة من الطرفين بعد دمج
-          // migration ربى 030). الضغط على أي عقد يفتح المحادثة على
-          // المرحلة الرقمية لعرض البنود وحالة التوقيع.
+          // ── Manage Contracts ──
+          // Shows the requests that reached step 3 (signed by both parties after merging
+          // Ruba's migration 030). Clicking any contract opens the conversation at the
+          // digital phase to show the terms and the signing status.
           (() => {
             const signedContracts = requests.filter((r) => r.currentStep >= 3);
             if (signedContracts.length === 0) {
@@ -1862,9 +1862,9 @@ export function HackathonSponsors() {
         )}
       </div>
 
-      {/* Contract View Modal — يُفتح من تبويب "إدارة العقود". يعرض ملف العقد
-          كاملاً (بنود + تواقيع رقمية + رقم العقد) مع خيار طباعة/تنزيل PDF.
-          نفس بنية الـ modal عند الراعي عشان الطرفان يشوفان نفس الملف. */}
+      {/* Contract View Modal — opened from the "Manage Contracts" tab. Shows the full
+          contract file (terms + digital signatures + contract number) with a print/download
+          PDF option. Same modal structure as the sponsor side so both parties see the same file. */}
       {viewingContractId !== null && (() => {
         const contract = contractByAppId[viewingContractId];
         const req = requests.find((r) => r.id === viewingContractId);
@@ -2060,7 +2060,7 @@ export function HackathonSponsors() {
                   حفظ كـ PDF
                 </button>
               </div>
-              {/* عرض اسم الشركة للمراجعة لو احتجناه */}
+              {/* Show the company name for reference if we need it */}
               {req && (
                 <p className="px-6 pb-4 text-center text-[11px] text-gray-300 no-print">
                   عقد رعاية {req.companyName}
@@ -2098,7 +2098,7 @@ export function HackathonSponsors() {
             </div>
 
             <div className="space-y-6">
-              {/* 🧾 معلومات عامة */}
+              {/* 🧾 General information */}
               <div className="space-y-3">
                 <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
                   🧾 معلومات عامة
@@ -2153,7 +2153,7 @@ export function HackathonSponsors() {
                 </div>
               </div>
 
-              {/* 💰 القيمة — only for financial sponsorships */}
+              {/* 💰 Value — only for financial sponsorships */}
               {draft.type === 'financial' && (
                 <div className="space-y-3">
                   <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
@@ -2174,7 +2174,7 @@ export function HackathonSponsors() {
                 </div>
               )}
 
-              {/* 🎁 ما يقدمه الراعي */}
+              {/* 🎁 What the sponsor offers */}
               <div className="space-y-3">
                 <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
                   🎁 ما يقدمه الراعي
@@ -2208,7 +2208,7 @@ export function HackathonSponsors() {
                 </div>
               </div>
 
-              {/* ⭐ ما يحصل عليه الراعي */}
+              {/* ⭐ What the sponsor gets */}
               <div className="space-y-3">
                 <h4 className="text-sm text-gray-900 flex items-center gap-2" style={{ fontWeight: 700 }}>
                   ⭐ ما يحصل عليه الراعي

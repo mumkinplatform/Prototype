@@ -21,7 +21,7 @@ export type SponsorNavPage =
   | "profile";
 
 interface SponsorNavbarProps {
-  /** الصفحة الحالية لتحديد الزر النشط */
+  /** Current page, used to highlight the active button */
   activePage: SponsorNavPage;
 }
 
@@ -52,7 +52,7 @@ export function SponsorNavbar({ activePage }: SponsorNavbarProps) {
   // inbox is open so the signal would just be noise.
   const showDot = unreadCount > 0 && location.pathname !== "/sponsor/notifications";
 
-  // اجلب الـ avatar من الـ API + استمع لأي تحديث للصورة من البروفايل
+  // Fetch the avatar from the API + listen for any image update from the profile
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -64,7 +64,7 @@ export function SponsorNavbar({ activePage }: SponsorNavbarProps) {
           (data.brandName?.trim()[0] || data.fullName?.trim()[0] || "ش").toUpperCase();
         setAvatarLetter(letter);
       } catch {
-        // تجاهل الخطأ — الحرف الافتراضي يكفي
+        // Ignore the error — the default letter is enough
       }
     };
     load();
