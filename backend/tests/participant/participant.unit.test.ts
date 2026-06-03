@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { RowDataPacket } from 'mysql2';
 import {
   effectiveInviteStatus,
   isValidEmailFormat,
@@ -8,7 +9,7 @@ import {
 
 // Builds an invite row with only the fields effectiveInviteStatus reads
 // (TI_Status, TI_ExpiresAt, hackathon_reg_end); the rest are placeholders.
-function makeInvite(overrides: Partial<TeamInviteLookupRow>): TeamInviteLookupRow {
+function makeInvite(overrides: Partial<Omit<TeamInviteLookupRow, keyof RowDataPacket>>): TeamInviteLookupRow {
   return {
     TI_ID: 1,
     TI_Email: 'test@example.com',
