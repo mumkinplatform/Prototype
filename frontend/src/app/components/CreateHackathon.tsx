@@ -1040,9 +1040,17 @@ export function CreateHackathon() {
     setActiveSection(visibleSections[currentIndex + 1].id);
   };
  
+  // Switch to any section, persisting the current data first so nothing is lost
+  // when jumping via the sidebar or going back — same autosave the "Next" button does.
+  const goToSection = async (target: Section) => {
+    if (target === activeSection) return;
+    await saveDraft();
+    setActiveSection(target);
+  };
+
   const handlePrevious = () => {
     if (currentIndex > 0) {
-      setActiveSection(visibleSections[currentIndex - 1].id);
+      goToSection(visibleSections[currentIndex - 1].id);
     }
   };
  
@@ -1242,7 +1250,7 @@ export function CreateHackathon() {
     setExpandedOrgIds((prev) => new Set(prev).add(newId));
   };
 
-  const saveOrganizerRow = (orgId: string) => {
+  const saveOrganizerRow = async (orgId: string) => {
     const org = organizers.find((o) => o.id === orgId);
     if (!org) return;
     if (!org.name.trim() || !org.email.trim()) {
@@ -1283,7 +1291,12 @@ export function CreateHackathon() {
       toast.error('اختر صلاحية واحدة على الأقل');
       return;
     }
-    // Mark as collapsed (saved). Real backend save happens in saveDraft / Next click.
+    // Actually persist to the backend so the row is truly saved — not just
+    // collapsed — matching what the "تم حفظ" toast promises. If the save fails
+    // (e.g. slug conflict) saveDraft surfaces the reason and we keep the row open.
+    const ok = await saveDraft();
+    if (!ok) return;
+    // Mark as collapsed (saved).
     setExpandedOrgIds((prev) => {
       const next = new Set(prev);
       next.delete(orgId);
@@ -1479,7 +1492,7 @@ export function CreateHackathon() {
                   return (
                     <button
                       key={section.id}
-                      onClick={() => setActiveSection(section.id)}
+                      onClick={() => goToSection(section.id)}
                       className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm transition-all ${
                         isActive 
                           ? 'bg-gradient-to-l from-[#fef2f2] to-[#fee2e2] text-[#e35654] border border-[#e35654]/20' 
@@ -1634,11 +1647,13 @@ export function CreateHackathon() {
                               </div>
                               <div className="flex flex-col gap-2">
                                 <button
-                                  onClick={() => {
+                                  onClick={async () => {
                                     if (!track.name.trim()) {
                                       toast.error('اسم المسار مطلوب');
                                       return;
                                     }
+                                    const ok = await saveDraft();
+                                    if (!ok) return;
                                     toast.success('تم حفظ المسار', { duration: 2000 });
                                   }}
                                   className="w-8 h-8 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 flex items-center justify-center transition-all"
@@ -2824,11 +2839,13 @@ export function CreateHackathon() {
                               <p className="text-xs text-gray-500">سيدخل المنصة عند تسجيله بنفس الإيميل</p>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => {
+                                  onClick={async () => {
                                     if (!judge.name.trim() || !judge.email.trim()) {
                                       toast.error('الاسم والإيميل مطلوبان');
                                       return;
                                     }
+                                    const ok = await saveDraft();
+                                    if (!ok) return;
                                     toast.success('تم حفظ الحكم', { duration: 2000 });
                                   }}
                                   className="px-3 py-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 text-xs flex items-center gap-1"
@@ -2948,11 +2965,13 @@ export function CreateHackathon() {
                             </div>
                             <div className="flex flex-col gap-2 flex-shrink-0">
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   if (!prize.position.trim() || !prize.amount.trim()) {
                                     toast.error('المركز وقيمة الجائزة مطلوبان');
                                     return;
                                   }
+                                  const ok = await saveDraft();
+                                  if (!ok) return;
                                   toast.success('تم حفظ الجائزة', { duration: 2000 });
                                 }}
                                 className="w-8 h-8 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 flex items-center justify-center"
@@ -3191,7 +3210,7 @@ export function CreateHackathon() {
                               </div>
                               <div className="flex flex-col gap-2 flex-shrink-0">
                                 <button
-                                  onClick={() => {
+                                  onClick={async () => {
                                     if (!pkg.name.trim() || !pkg.type) {
                                       toast.error('اسم الباقة ونوعها مطلوبان');
                                       return;
@@ -3200,6 +3219,8 @@ export function CreateHackathon() {
                                       toast.error('عرض الراعي مطلوب');
                                       return;
                                     }
+                                    const ok = await saveDraft();
+                                    if (!ok) return;
                                     toast.success('تم حفظ الباقة', { duration: 2000 });
                                   }}
                                   className="w-8 h-8 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 flex items-center justify-center"

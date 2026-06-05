@@ -18,7 +18,6 @@ function getActivePage(pathname: string): AdminNavPage {
       return "hackathons";
     case "notifications":
     case "profile":
-    case "sponsorships":
       return "home";
     default:
       return "home";

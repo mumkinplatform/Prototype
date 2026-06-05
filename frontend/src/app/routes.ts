@@ -16,7 +16,6 @@ import { CreateHackathon } from "./components/CreateHackathon";
 import MyHackathons from "./components/MyHackathons";
 import HackathonPreview from "./components/HackathonPreview";
 import HackathonManagement from "./components/HackathonManagement";
-import { AdminSponsorships } from "./components/AdminSponsorships";
 import { HackathonProjects } from "./components/HackathonProjects";
 import { HackathonRegistrations } from "./components/HackathonRegistrations";
 import { HackathonTeams } from "./components/HackathonTeams";
@@ -77,7 +76,6 @@ export const router = createBrowserRouter([
           { path: "hackathon/:id/registrations", Component: HackathonRegistrations },
           { path: "hackathon/:id/teams", Component: HackathonTeams },
           { path: "hackathon/:id/sponsors", Component: HackathonSponsors },
-          { path: "sponsorships", Component: AdminSponsorships },
           { path: "notifications", Component: Notifications },
           { path: "profile", Component: Profile },
         ],
