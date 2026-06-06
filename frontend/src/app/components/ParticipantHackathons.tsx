@@ -151,7 +151,7 @@ export function ParticipantHackathons() {
     .sort((a, b) => {
       if (sort === "الجائزة الأكبر")
         return parseInt(b.prize.replace(/\D/g, "")) - parseInt(a.prize.replace(/\D/g, ""));
-      return b.id - a.id;
+      return a.id - b.id;
     });
 
   return (

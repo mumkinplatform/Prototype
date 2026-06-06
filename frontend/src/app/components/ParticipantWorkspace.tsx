@@ -498,7 +498,7 @@ function WorkspacesList({
           </div>
         ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {hackathons.map((h) => (
+          {[...hackathons].sort((a, b) => a.id - b.id).map((h) => (
             <div
               key={h.id}
               className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all group flex flex-col h-full"
