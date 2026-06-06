@@ -561,7 +561,7 @@ export const listHackathons = async (req: Request, res: Response) => {
           FROM hackathon_skill WHERE hackathon_ID = h.hackathon_ID) AS skillsRaw,
        (SELECT COUNT(*) FROM applies_hackathon WHERE hackathon_ID = h.hackathon_ID) AS applicantsCount
        FROM hackathon h
-      WHERE h.H_status IN ('published', 'ongoing')
+      WHERE h.H_status IN ('published', 'ongoing', 'completed')
         AND h.H_visibility = 'public'
       ORDER BY h.H_created_at DESC`
   );
