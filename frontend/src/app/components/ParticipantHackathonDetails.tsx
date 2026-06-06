@@ -675,6 +675,11 @@ export function ParticipantHackathonDetails() {
   const handleRegistrationSuccess = (type: "solo" | "team") => {
     setRegistered(true);
     setRegistrationType(type);
+    if (id) {
+      apiGet<ApiHackathonDetail>(`/participants/hackathons/${id}`)
+        .then((data) => setHackathon(toUiHackathon(data)))
+        .catch(() => {});
+    }
   };
 
   if (loading) {
