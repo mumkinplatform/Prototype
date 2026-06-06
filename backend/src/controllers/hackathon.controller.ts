@@ -4270,6 +4270,48 @@ export const submitJudgeEvaluation = async (req: Request, res: Response) => {
           }
         }
       }
+      const [hackRow] = await pool.query<RowDataPacket[]>(
+        `SELECT H_title, H_Show_Evaluations_To_Participants, H_Winners_Date
+           FROM hackathon WHERE hackathon_ID = ?`,
+        [hackathonId],
+      );
+      const hackMeta = hackRow[0] as
+        | { H_title?: string; H_Show_Evaluations_To_Participants?: number; H_Winners_Date?: Date | null }
+        | undefined;
+      const hackathonTitle = hackMeta?.H_title || 'الهاكاثون';
+      const visibilityOn = hackMeta?.H_Show_Evaluations_To_Participants === 1;
+      const winnersPassed = hackMeta?.H_Winners_Date != null
+        && new Date(hackMeta.H_Winners_Date).getTime() <= Date.now();
+      const resultsAlreadyVisible = visibilityOn && winnersPassed;
+      if (resultsAlreadyVisible) {
+        const recipientIds: number[] = [];
+        if (targetCol === 'PM_ID') {
+          recipientIds.push(Number(targetVal));
+        } else {
+          const [members] = await pool.query<RowDataPacket[]>(
+            `SELECT PM_ID FROM applies_hackathon
+              WHERE T_ID = ? AND application_status = 'accepted'`,
+            [targetVal],
+          );
+          for (const m of members as Array<{ PM_ID: number }>) {
+            recipientIds.push(m.PM_ID);
+          }
+        }
+        for (const pmId of recipientIds) {
+          await pool.execute(
+            `INSERT INTO notification
+               (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+             VALUES (?, 'evaluation', ?, ?, ?, ?)`,
+            [
+              pmId,
+              `تقييم جديد لمشروعك في "${hackathonTitle}"`,
+              `سجّل ${judgeName} تقييماً لمشروعك. يمكنك عرض الدرجات والتعليقات الآن.`,
+              'عرض التقييمات',
+              `/participant/workspace?id=${hackathonId}&tab=evaluations&eval=${evaluationId}`,
+            ],
+          );
+        }
+      }
     } catch (notifErr) {
       console.error('submitJudgeEvaluation notification failed:', notifErr);
     }

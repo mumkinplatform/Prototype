@@ -1521,6 +1521,172 @@ export const listNotifications = async (req: Request, res: Response) => {
     console.error('listNotifications: decision backfill failed', backfillErr);
   }
 
+  // Submission deadline approaching — accepted participants with <24h left
+  // and no finalised submission yet.
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT DISTINCT a.hackathon_ID, h.H_title
+         FROM applies_hackathon a
+         JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
+        WHERE a.PM_ID = ?
+          AND a.application_status = 'accepted'
+          AND h.H_Submission_Deadline IS NOT NULL
+          AND h.H_Submission_Deadline > NOW()
+          AND h.H_Submission_Deadline <= DATE_ADD(NOW(), INTERVAL 1 DAY)
+          AND NOT EXISTS (
+            SELECT 1 FROM submission s
+             WHERE s.hackathon_ID = h.hackathon_ID
+               AND s.TS_SubmittedAt IS NOT NULL
+               AND (s.PM_ID = a.PM_ID OR s.T_ID = a.T_ID)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM notification n
+             WHERE n.M_ID = a.PM_ID
+               AND n.N_Type = 'deadline'
+               AND n.N_ActionRoute = CONCAT('/participant/workspace?id=', a.hackathon_ID, '&tab=submission&notif=deadline')
+          )`,
+      [memberId],
+    );
+    for (const r of rows as Array<{ hackathon_ID: number; H_title: string }>) {
+      await pool.execute(
+        `INSERT INTO notification
+           (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+         VALUES (?, 'deadline', ?, ?, ?, ?)`,
+        [
+          memberId,
+          `اقترب موعد تسليم مشروعك في "${r.H_title}"`,
+          'بقي أقل من 24 ساعة على إغلاق نافذة التسليم. تأكد من إكمال جميع الحقول المطلوبة قبل انتهاء الموعد.',
+          'فتح التسليم',
+          `/participant/workspace?id=${r.hackathon_ID}&tab=submission&notif=deadline`,
+        ],
+      );
+    }
+  } catch (backfillErr) {
+    console.error('listNotifications: submission deadline backfill failed', backfillErr);
+  }
+
+  // Winners announcement approaching — accepted participants with <24h left.
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT DISTINCT a.hackathon_ID, h.H_title
+         FROM applies_hackathon a
+         JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
+        WHERE a.PM_ID = ?
+          AND a.application_status = 'accepted'
+          AND h.H_Winners_Date IS NOT NULL
+          AND h.H_Winners_Date > NOW()
+          AND h.H_Winners_Date <= DATE_ADD(NOW(), INTERVAL 1 DAY)
+          AND NOT EXISTS (
+            SELECT 1 FROM notification n
+             WHERE n.M_ID = a.PM_ID
+               AND n.N_Type = 'deadline'
+               AND n.N_ActionRoute = CONCAT('/participant/workspace?id=', a.hackathon_ID, '&notif=winners-soon')
+          )`,
+      [memberId],
+    );
+    for (const r of rows as Array<{ hackathon_ID: number; H_title: string }>) {
+      await pool.execute(
+        `INSERT INTO notification
+           (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+         VALUES (?, 'deadline', ?, ?, ?, ?)`,
+        [
+          memberId,
+          `اقترب موعد إعلان نتائج "${r.H_title}"`,
+          'سيتم إعلان نتائج الهاكاثون خلال أقل من 24 ساعة. ترقّب تقييماتك قريباً.',
+          'فتح مساحة العمل',
+          `/participant/workspace?id=${r.hackathon_ID}&notif=winners-soon`,
+        ],
+      );
+    }
+  } catch (backfillErr) {
+    console.error('listNotifications: winners date backfill failed', backfillErr);
+  }
+
+  // Registration deadline approaching — for participants who haven't yet
+  // applied to the hackathon.
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT h.hackathon_ID, h.H_title
+         FROM hackathon h
+        WHERE h.H_status = 'published'
+          AND h.H_visibility = 'public'
+          AND h.H_Registration_EndDate IS NOT NULL
+          AND h.H_Registration_EndDate > NOW()
+          AND h.H_Registration_EndDate <= DATE_ADD(NOW(), INTERVAL 1 DAY)
+          AND NOT EXISTS (
+            SELECT 1 FROM applies_hackathon a
+             WHERE a.PM_ID = ? AND a.hackathon_ID = h.hackathon_ID
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM notification n
+             WHERE n.M_ID = ?
+               AND n.N_Type = 'deadline'
+               AND n.N_ActionRoute = CONCAT('/participant/hackathon/', h.hackathon_ID, '?notif=reg-closing')
+          )`,
+      [memberId, memberId],
+    );
+    for (const r of rows as Array<{ hackathon_ID: number; H_title: string }>) {
+      await pool.execute(
+        `INSERT INTO notification
+           (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+         VALUES (?, 'deadline', ?, ?, ?, ?)`,
+        [
+          memberId,
+          `اقترب موعد إغلاق التسجيل في "${r.H_title}"`,
+          'بقي أقل من 24 ساعة على إغلاق التسجيل. سجّل قبل أن تفوتك الفرصة.',
+          'عرض الهاكاثون',
+          `/participant/hackathon/${r.hackathon_ID}?notif=reg-closing`,
+        ],
+      );
+    }
+  } catch (backfillErr) {
+    console.error('listNotifications: registration deadline backfill failed', backfillErr);
+  }
+
+  // Evaluation results visible — safety net when per-judge notifications were
+  // suppressed (visibility was off when judges evaluated) and toggle has since
+  // been enabled.
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT DISTINCT a.hackathon_ID, h.H_title
+         FROM applies_hackathon a
+         JOIN hackathon h ON h.hackathon_ID = a.hackathon_ID
+        WHERE a.PM_ID = ?
+          AND a.application_status = 'accepted'
+          AND h.H_Show_Evaluations_To_Participants = 1
+          AND h.H_Winners_Date IS NOT NULL
+          AND h.H_Winners_Date <= NOW()
+          AND EXISTS (
+            SELECT 1 FROM evaluation e
+             WHERE e.hackathon_ID = h.hackathon_ID
+               AND (e.PM_ID = a.PM_ID OR e.T_ID = a.T_ID)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM notification n
+             WHERE n.M_ID = a.PM_ID
+               AND n.N_Type = 'evaluation'
+               AND n.N_ActionRoute = CONCAT('/participant/workspace?id=', a.hackathon_ID, '&tab=evaluations&notif=results')
+          )`,
+      [memberId],
+    );
+    for (const r of rows as Array<{ hackathon_ID: number; H_title: string }>) {
+      await pool.execute(
+        `INSERT INTO notification
+           (M_ID, N_Type, N_Title, N_Message, N_ActionLabel, N_ActionRoute)
+         VALUES (?, 'evaluation', ?, ?, ?, ?)`,
+        [
+          memberId,
+          `ظهرت نتائج تقييمك في "${r.H_title}"`,
+          'أتاح المنظم عرض تقييمات الحكام لمشروعك. يمكنك مراجعة الدرجات والتعليقات الآن.',
+          'عرض التقييمات',
+          `/participant/workspace?id=${r.hackathon_ID}&tab=evaluations&notif=results`,
+        ],
+      );
+    }
+  } catch (backfillErr) {
+    console.error('listNotifications: evaluation visibility backfill failed', backfillErr);
+  }
+
   const [rows] = await pool.query<NotificationRow[]>(
     `SELECT N_ID, N_Type, N_Title, N_Message, N_Read, N_ActionLabel, N_ActionRoute, N_CreatedAt
        FROM notification
