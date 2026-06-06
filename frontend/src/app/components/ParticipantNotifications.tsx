@@ -73,6 +73,7 @@ const typeConfig: Record<string, { icon: any; color: string; bg: string; label: 
   evaluation: { icon: Star, color: "#e35654", bg: "#fef2f2", label: "تقييم" },
   achievement: { icon: Trophy, color: "#f59e0b", bg: "#fffbeb", label: "إنجاز" },
   system: { icon: Bell, color: "#6b7280", bg: "#f3f4f6", label: "نظام" },
+  submission: { icon: CheckCircle2, color: "#10b981", bg: "#f0fdf4", label: "تسليم" },
 };
 
 const filterTabs = ["الكل", "غير مقروء", "قبول", "فريق", "تقييم", "موعد نهائي"];
@@ -232,7 +233,7 @@ export function ParticipantNotifications() {
           ) : (
             <div className="space-y-2">
               {filtered.map((notif) => {
-                const config = typeConfig[notif.type];
+                const config = typeConfig[notif.type] ?? typeConfig.system;
                 const Icon = config.icon;
                 return (
                   <div
