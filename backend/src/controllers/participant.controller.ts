@@ -55,6 +55,7 @@ interface HackathonListRow extends RowDataPacket {
   tagsRaw: string | null;
   skillsRaw: string | null;
   applicantsCount: number;
+  isRegistered: number;
   brandingRaw: string | null;
 }
 
@@ -534,6 +535,8 @@ export const changePassword = async (req: Request, res: Response) => {
 export const listHackathons = async (req: Request, res: Response) => {
   if (!ensureParticipant(req, res)) return;
 
+  const memberId = req.user!.memberId;
+
   // Two-step query — H_Branding can hold a base64 banner up to several MB. Including
   // it in the same SELECT as ORDER BY blows MySQL's sort_buffer (256KB default) and
   // crashes with ER_OUT_OF_SORTMEMORY. Sort the small columns first, then fetch
@@ -559,11 +562,16 @@ export const listHackathons = async (req: Request, res: Response) => {
           FROM hackathon_track WHERE hackathon_ID = h.hackathon_ID) AS tagsRaw,
        (SELECT GROUP_CONCAT(skill_name SEPARATOR '|||')
           FROM hackathon_skill WHERE hackathon_ID = h.hackathon_ID) AS skillsRaw,
-       (SELECT COUNT(*) FROM applies_hackathon WHERE hackathon_ID = h.hackathon_ID) AS applicantsCount
+       (SELECT COUNT(*) FROM applies_hackathon WHERE hackathon_ID = h.hackathon_ID) AS applicantsCount,
+       EXISTS (
+         SELECT 1 FROM applies_hackathon
+          WHERE hackathon_ID = h.hackathon_ID AND PM_ID = ?
+       ) AS isRegistered
        FROM hackathon h
       WHERE h.H_status IN ('published', 'ongoing', 'completed')
         AND h.H_visibility = 'public'
-      ORDER BY h.H_created_at DESC`
+      ORDER BY h.H_created_at DESC`,
+    [memberId],
   );
 
   // Fetch branding for the listed hackathons in a separate query (no ORDER BY,
@@ -611,6 +619,7 @@ export const listHackathons = async (req: Request, res: Response) => {
       teamMax: r.teamMax,
       participationMode: r.participationMode,
       applicantsCount: r.applicantsCount,
+      isRegistered: Number(r.isRegistered) === 1,
       registrationOpen,
       branding: extractBranding(brandingById.get(r.id) ?? null),
     };

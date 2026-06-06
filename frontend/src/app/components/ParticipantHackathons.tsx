@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Play,
   MapPin,
+  CheckCircle2,
 } from "lucide-react";
 import { apiGet, ApiError } from "../../lib/api";
 import { HackathonCover, BrandingPayload } from "./HackathonCover";
@@ -32,6 +33,7 @@ interface ApiHackathon {
   teamMax: number;
   participationMode: 'teams_only' | 'individuals_and_teams' | 'individuals_only';
   applicantsCount: number;
+  isRegistered: boolean;
   registrationOpen: boolean;
   branding: BrandingPayload | null;
 }
@@ -56,6 +58,7 @@ interface HackathonCard {
   maxTeam: number;
   participationMode: 'teams_only' | 'individuals_and_teams' | 'individuals_only';
   registrationOpen: boolean;
+  isRegistered: boolean;
 }
 
 const TAG_PALETTE = ["#e35654", "#6366f1", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6"];
@@ -103,6 +106,7 @@ function toCard(h: ApiHackathon): HackathonCard {
     maxTeam: h.teamMax,
     participationMode: h.participationMode,
     registrationOpen: h.registrationOpen,
+    isRegistered: h.isRegistered,
   };
 }
 
@@ -377,16 +381,25 @@ export function ParticipantHackathons() {
                         onClick={() => navigate(`/participant/hackathon/${h.id}`)}
                         className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs transition-all group-hover:shadow-md ${
                           h.registrationOpen
-                            ? "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20"
+                            ? h.isRegistered
+                              ? "bg-[#10b981] text-white hover:bg-[#059669] shadow-sm shadow-[#10b981]/20"
+                              : "bg-[#e35654] text-white hover:bg-[#cc4a48] shadow-sm shadow-[#e35654]/20"
                             : "bg-white border border-gray-200 text-gray-700 hover:border-[#e35654] hover:text-[#e35654]"
                         }`}
                         style={{ fontWeight: 600 }}
                       >
                         {h.registrationOpen ? (
-                          <>
-                            <Play className="w-3 h-3" />
-                            سجّل الآن
-                          </>
+                          h.isRegistered ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3" />
+                              تم التسجيل
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3 h-3" />
+                              سجّل الآن
+                            </>
+                          )
                         ) : (
                           <>
                             <Eye className="w-3 h-3" />
