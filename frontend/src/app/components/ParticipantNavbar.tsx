@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router";
-import { Search, Bell, Sparkles, LogOut } from "lucide-react";
+import { Bell, Sparkles, LogOut } from "lucide-react";
 import { clearAuth } from "../../lib/auth";
 import { apiGet, API_URL } from "../../lib/api";
 
@@ -144,18 +144,6 @@ export function ParticipantNavbar({
 
         {/* ── Actions (left in RTL) ── */}
         <div className="flex items-center gap-1.5">
-          {/* Search */}
-          <div className="relative hidden lg:block">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input
-              placeholder="ابحث..."
-              className="pr-9 pl-4 py-2 rounded-xl border border-gray-100 bg-gray-50 text-xs w-36 focus:outline-none focus:border-[#e35654] focus:bg-white focus:w-44 transition-all duration-200"
-            />
-          </div>
-
-          {/* Mail */}
-          
-
           {/* Bell */}
           <button
             onClick={() => navigate("/participant/notifications")}
